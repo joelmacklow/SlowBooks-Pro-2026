@@ -8,6 +8,28 @@ from app.models.payments import Payment, PaymentAllocation
 from app.models.banking import BankAccount, BankTransaction, Reconciliation
 from app.models.settings import Settings
 
+# Phase 1: Foundation
+from app.models.audit import AuditLog
+
+# Phase 2: Accounts Payable
+from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine
+from app.models.bills import Bill, BillLine, BillPayment, BillPaymentAllocation
+from app.models.credit_memos import CreditMemo, CreditMemoLine, CreditApplication
+
+# Phase 3: Productivity
+from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
+
+# Phase 4: Communication & Export
+from app.models.email_log import EmailLog
+
+# Phase 5: Advanced Integration
+from app.models.tax import TaxCategoryMapping
+from app.models.backups import Backup
+
+# Phase 6: Ambitious
+from app.models.companies import Company
+from app.models.payroll import Employee, PayRun, PayStub
+
 __all__ = [
     "Account", "Customer", "Vendor", "Item",
     "Transaction", "TransactionLine",
@@ -16,4 +38,18 @@ __all__ = [
     "Payment", "PaymentAllocation",
     "BankAccount", "BankTransaction", "Reconciliation",
     "Settings",
+    # Phase 1
+    "AuditLog",
+    # Phase 2
+    "PurchaseOrder", "PurchaseOrderLine",
+    "Bill", "BillLine", "BillPayment", "BillPaymentAllocation",
+    "CreditMemo", "CreditMemoLine", "CreditApplication",
+    # Phase 3
+    "RecurringInvoice", "RecurringInvoiceLine",
+    # Phase 4
+    "EmailLog",
+    # Phase 5
+    "TaxCategoryMapping", "Backup",
+    # Phase 6
+    "Company", "Employee", "PayRun", "PayStub",
 ]

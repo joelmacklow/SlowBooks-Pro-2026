@@ -95,3 +95,9 @@ def get_undeposited_funds_id(db: Session) -> int:
     """Get Undeposited Funds account ID (1200)."""
     acct = db.query(Account).filter(Account.account_number == "1200").first()
     return acct.id if acct else None
+
+
+def get_ap_account_id(db: Session) -> int:
+    """Get Accounts Payable account ID (2000)."""
+    acct = db.query(Account).filter(Account.account_number == "2000").first()
+    return acct.id if acct else None

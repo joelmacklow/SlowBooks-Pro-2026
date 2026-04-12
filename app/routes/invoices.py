@@ -25,6 +25,7 @@ from app.services.accounting import (
     get_default_income_account_id, get_sales_tax_account_id,
 )
 from app.routes.settings import _get_all as get_settings
+from app.services.closing_date import check_closing_date
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -76,6 +77,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 @router.post("", response_model=InvoiceResponse, status_code=201)
 def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
+    check_closing_date(db, data.date)
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -198,6 +200,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Cannot edit voided invoice")
+    check_closing_date(db, invoice.date)
 
     for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
         setattr(invoice, key, val)
@@ -256,6 +259,7 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Invoice already voided")
+    check_closing_date(db, invoice.date)
 
     # Create reversing journal entry if original had one
     if invoice.transaction_id:
@@ -304,6 +308,53 @@ def mark_invoice_sent(invoice_id: int, db: Session = Depends(get_db)):
     if invoice.customer:
         resp.customer_name = invoice.customer.name
     return resp
+
+
+@router.post("/{invoice_id}/email")
+def email_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db)):
+    """Email invoice as PDF attachment — Feature 8"""
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    company = get_settings(db)
+    try:
+        from app.services.email_service import send_email, render_invoice_email
+        from app.models.email_log import EmailLog
+
+        pdf_bytes = generate_invoice_pdf(inv, company)
+        html_body = render_invoice_email(inv, company)
+        send_email(
+            to_email=data.get("recipient", ""),
+            subject=data.get("subject", f"Invoice #{inv.invoice_number}"),
+            html_body=html_body,
+            settings=company,
+            attachments=[{
+                "filename": f"Invoice_{inv.invoice_number}.pdf",
+                "content": pdf_bytes,
+                "mime_type": "application/pdf",
+            }],
+        )
+        # Log the email
+        log = EmailLog(
+            entity_type="invoice", entity_id=inv.id,
+            recipient=data.get("recipient", ""),
+            subject=data.get("subject", f"Invoice #{inv.invoice_number}"),
+            status="sent",
+        )
+        db.add(log)
+        db.commit()
+        return {"status": "sent"}
+    except Exception as e:
+        from app.models.email_log import EmailLog
+        log = EmailLog(
+            entity_type="invoice", entity_id=inv.id,
+            recipient=data.get("recipient", ""),
+            subject=data.get("subject", ""),
+            status="failed", error_message=str(e),
+        )
+        db.add(log)
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
 
 
 @router.post("/{invoice_id}/duplicate", response_model=InvoiceResponse, status_code=201)

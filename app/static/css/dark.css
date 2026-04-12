@@ -1,0 +1,217 @@
+/* ============================================================================
+ * Slowbooks Pro 2026 — Dark Mode Skin
+ * Feature 12: Toggle between QB2003 Blue theme and dark mode
+ * Overrides CSS custom properties when [data-theme="dark"] is set on <html>
+ * ============================================================================ */
+
+[data-theme="dark"] {
+    --qb-navy:        #1a2332;
+    --qb-navy-dark:   #0d1520;
+    --qb-navy-mid:    #1e3a5f;
+    --qb-blue:        #4a7fb5;
+    --qb-blue-light:  #5b9bd5;
+    --qb-blue-accent: #6bb3e8;
+    --qb-teal:        #7abfbf;
+    --qb-green:       #4caf7a;
+    --qb-green-dark:  #3d9065;
+    --qb-gold:        #e0a840;
+    --qb-red:         #e05555;
+    --qb-orange:      #e08050;
+
+    --invoice-bg:     #1e2028;
+    --estimate-bg:    #1a2520;
+    --form-bg:        #1a1c24;
+
+    --toolbar-bg:     #242830;
+    --toolbar-border: #3a3e48;
+    --content-bg:     #14161c;
+    --panel-bg:       #1e2028;
+    --panel-border:   #2e3240;
+    --input-border:   #3a4050;
+    --input-focus:    #5b9bd5;
+
+    --text-primary:   #e0e4ec;
+    --text-secondary: #a0a8b8;
+    --text-muted:     #6a7080;
+    --text-light:     #505868;
+    --text-on-dark:   #c8d0dc;
+    --text-on-navy:   #b0bcc8;
+
+    --success:        #4caf7a;
+    --warning:        #e0a840;
+    --danger:         #e05555;
+}
+
+/* Topbar */
+[data-theme="dark"] #topbar {
+    background: linear-gradient(180deg, #2a2e38 0%, #1e2028 100%);
+    border-bottom-color: #3a3e48;
+}
+
+[data-theme="dark"] .tb-btn { color: var(--text-secondary); }
+[data-theme="dark"] .tb-btn:hover { background: rgba(255,255,255,0.08); border-color: #4a4e58; }
+
+/* Sidebar */
+[data-theme="dark"] #sidebar {
+    background: linear-gradient(180deg, #0d1520 0%, #080c14 100%);
+    border-right-color: #1a1e28;
+}
+
+/* Status bar */
+[data-theme="dark"] #statusbar {
+    background: linear-gradient(180deg, #242830 0%, #1a1c24 100%);
+    border-top-color: #3a3e48;
+}
+
+/* Page header */
+[data-theme="dark"] .page-header {
+    background: linear-gradient(180deg, #242830 0%, #1e2028 100%);
+    border-color: var(--panel-border);
+}
+
+/* Tables */
+[data-theme="dark"] thead th {
+    background: linear-gradient(180deg, #2a2e38 0%, #222630 100%);
+    color: var(--text-secondary);
+    border-bottom-color: var(--panel-border);
+    border-right-color: #2e3240;
+}
+
+[data-theme="dark"] tbody td {
+    border-bottom-color: #252830;
+    border-right-color: #1e2028;
+}
+
+[data-theme="dark"] tbody tr:nth-child(even) { background: #181a22; }
+[data-theme="dark"] tbody tr:hover { background: #222838; }
+
+/* Cards */
+[data-theme="dark"] .card {
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+    box-shadow: 1px 1px 4px rgba(0,0,0,0.3);
+}
+
+[data-theme="dark"] .card-header { border-bottom-color: #2e3240; }
+
+/* Forms */
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group select,
+[data-theme="dark"] .form-group textarea {
+    background: #14161c;
+    color: var(--text-primary);
+    border-color: var(--input-border);
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group select:focus,
+[data-theme="dark"] .form-group textarea:focus {
+    background: #1a1e28;
+    border-color: var(--input-focus);
+}
+
+[data-theme="dark"] .form-group select {
+    background: linear-gradient(180deg, #1a1c24 0%, #14161c 100%);
+}
+
+/* Modal */
+[data-theme="dark"] .modal {
+    background: var(--form-bg);
+    border-color: #3a4050;
+}
+
+[data-theme="dark"] .modal-header {
+    background: linear-gradient(180deg, #2a3648 0%, #1a2332 100%);
+}
+
+/* Buttons */
+[data-theme="dark"] .btn {
+    background: linear-gradient(180deg, #2a2e38 0%, #1e2028 100%);
+    color: var(--text-primary);
+    border-color: #3a4050;
+}
+
+[data-theme="dark"] .btn:hover {
+    background: linear-gradient(180deg, #323640 0%, #282c38 100%);
+}
+
+[data-theme="dark"] .btn-secondary {
+    background: linear-gradient(180deg, #2a2e38 0%, #1e2028 100%);
+    border-color: #3a4050;
+}
+
+/* Toolbar */
+[data-theme="dark"] .toolbar {
+    background: #242830;
+    border-color: #3a3e48;
+}
+
+[data-theme="dark"] .toolbar input,
+[data-theme="dark"] .toolbar select {
+    background: #14161c;
+    color: var(--text-primary);
+    border-color: var(--input-border);
+}
+
+/* Settings sections */
+[data-theme="dark"] .settings-section {
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+}
+
+/* Search */
+[data-theme="dark"] .tb-search {
+    background: #14161c;
+    color: var(--text-primary);
+    border-color: var(--input-border);
+}
+
+[data-theme="dark"] .search-dropdown {
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+}
+
+[data-theme="dark"] .search-section { background: #14161c; }
+[data-theme="dark"] .search-item:hover { background: #222838; }
+
+/* Scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar-track { background: #14161c; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3a3e48 0%, #2a2e38 100%);
+    border-color: #4a4e58;
+}
+
+/* Splash */
+[data-theme="dark"] .splash-box {
+    background: linear-gradient(180deg, #0d1520 0%, #060a10 100%);
+}
+
+/* Line items table */
+[data-theme="dark"] .line-items-table { border-color: var(--panel-border); }
+[data-theme="dark"] .line-items-table th {
+    background: linear-gradient(180deg, #2a2e38 0%, #222630 100%);
+    border-right-color: #2e3240;
+}
+[data-theme="dark"] .line-items-table td {
+    border-right-color: #252830;
+    border-bottom-color: #252830;
+}
+[data-theme="dark"] .line-items-table input,
+[data-theme="dark"] .line-items-table select {
+    background: #14161c;
+    color: var(--text-primary);
+    border-color: var(--input-border);
+}
+
+/* IIF sections */
+[data-theme="dark"] .iif-section { background: var(--panel-bg); border-color: var(--panel-border); }
+[data-theme="dark"] .iif-dropzone { background: #14161c; border-color: var(--input-border); }
+
+/* Form actions border */
+[data-theme="dark"] .form-actions { border-top-color: #2e3240; }
+[data-theme="dark"] .invoice-totals { border-top-color: var(--panel-border); }
+[data-theme="dark"] .total-row.grand-total { border-top-color: var(--qb-blue); color: var(--qb-blue-accent); }
+
+/* Badges - keep bright in dark mode */
+[data-theme="dark"] .badge-draft { background: #2a2e38; color: #a0a8b8; border-color: #3a4050; }

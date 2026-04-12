@@ -43,6 +43,17 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
+                    <h3>Company Logo</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            ${s.company_logo_path ? `<img src="${escapeHtml(s.company_logo_path)}" style="max-width:200px; max-height:80px; margin-bottom:8px; display:block;">` : ''}
+                            <input type="file" id="logo-upload" accept="image/*" onchange="SettingsPage.uploadLogo(this)">
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">PNG, JPG, or SVG. Max 200x80px recommended.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Invoice Defaults</h3>
                     <div class="form-grid">
                         <div class="form-group"><label>Default Terms</label>
@@ -67,6 +78,56 @@ const SettingsPage = {
                     </div>
                 </div>
 
+                <div class="settings-section">
+                    <h3>Closing Date</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Prevent modifications to transactions before this date.
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Closing Date</label>
+                            <input name="closing_date" type="date" value="${escapeHtml(s.closing_date || '')}"></div>
+                        <div class="form-group"><label>Password (optional)</label>
+                            <input name="closing_date_password" type="password" value="${escapeHtml(s.closing_date_password || '')}"
+                                placeholder="Leave blank for no password"></div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Email (SMTP)</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Configure SMTP for sending invoices by email.
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label>SMTP Host</label>
+                            <input name="smtp_host" value="${escapeHtml(s.smtp_host || '')}" placeholder="smtp.gmail.com"></div>
+                        <div class="form-group"><label>SMTP Port</label>
+                            <input name="smtp_port" type="number" value="${escapeHtml(s.smtp_port || '587')}"></div>
+                        <div class="form-group"><label>Username</label>
+                            <input name="smtp_user" value="${escapeHtml(s.smtp_user || '')}"></div>
+                        <div class="form-group"><label>Password</label>
+                            <input name="smtp_password" type="password" value="${escapeHtml(s.smtp_password || '')}"></div>
+                        <div class="form-group"><label>From Email</label>
+                            <input name="smtp_from_email" type="email" value="${escapeHtml(s.smtp_from_email || '')}"></div>
+                        <div class="form-group"><label>From Name</label>
+                            <input name="smtp_from_name" value="${escapeHtml(s.smtp_from_name || '')}"></div>
+                        <div class="form-group"><label>Use TLS</label>
+                            <select name="smtp_use_tls">
+                                <option value="true" ${s.smtp_use_tls !== 'false' ? 'selected' : ''}>Yes</option>
+                                <option value="false" ${s.smtp_use_tls === 'false' ? 'selected' : ''}>No</option>
+                            </select></div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="SettingsPage.testEmail()" style="margin-top:8px;">
+                        Send Test Email</button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Backup / Restore</h3>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button type="button" class="btn btn-primary" onclick="SettingsPage.createBackup()">Create Backup</button>
+                    </div>
+                    <div id="backup-list"></div>
+                </div>
+
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save Settings</button>
                 </div>
@@ -76,11 +137,64 @@ const SettingsPage = {
     async save(e) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
+        // Remove file input from data
+        delete data.file;
         try {
             await API.put('/settings', data);
             toast('Settings saved');
         } catch (err) {
             toast(err.message, 'error');
         }
+    },
+
+    async uploadLogo(input) {
+        if (!input.files[0]) return;
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        try {
+            const resp = await fetch('/api/uploads/logo', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || 'Upload failed');
+            toast('Logo uploaded');
+            App.navigate('#/settings');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async testEmail() {
+        try {
+            await API.post('/settings/test-email');
+            toast('Test email sent');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async createBackup() {
+        try {
+            const result = await API.post('/backups');
+            toast(`Backup created: ${result.filename}`);
+            SettingsPage.loadBackups();
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async loadBackups() {
+        try {
+            const backups = await API.get('/backups');
+            const el = $('#backup-list');
+            if (!el) return;
+            if (backups.length === 0) {
+                el.innerHTML = '<div style="font-size:11px; color:var(--text-muted);">No backups yet.</div>';
+                return;
+            }
+            el.innerHTML = `<div class="table-container"><table>
+                <thead><tr><th>Filename</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead>
+                <tbody>${backups.map(b => `<tr>
+                    <td>${escapeHtml(b.filename)}</td>
+                    <td>${(b.file_size / 1024).toFixed(1)} KB</td>
+                    <td>${formatDate(b.created_at)}</td>
+                    <td class="actions">
+                        <a href="/api/backups/${b.id}/download" class="btn btn-sm btn-secondary" download>Download</a>
+                    </td>
+                </tr>`).join('')}</tbody>
+            </table></div>`;
+        } catch (e) { /* ignore */ }
     },
 };

@@ -56,6 +56,11 @@ class BankTransaction(Base):
     reconciled = Column(Boolean, default=False)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
 
+    # OFX/QFX import fields (Feature 18)
+    import_id = Column(String(100), nullable=True)      # OFX FITID for dedup
+    import_source = Column(String(50), nullable=True)    # e.g. "ofx", "qfx"
+    match_status = Column(String(20), nullable=True)     # "auto", "manual", "unmatched"
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     bank_account = relationship("BankAccount", back_populates="transactions")

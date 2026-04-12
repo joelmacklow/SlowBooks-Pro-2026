@@ -28,47 +28,76 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 
 ## Features
 
-### Invoicing & Payments
-- **Invoices** — Create, edit, duplicate, void, mark as sent. Auto-numbering, auto due-date from terms, dynamic line items with running totals. Print/PDF generation via WeasyPrint
+### Invoicing & Payments (Accounts Receivable)
+- **Invoices** — Create, edit, duplicate, void, mark as sent, email as PDF. Auto-numbering, auto due-date from terms, dynamic line items with running totals. Print/PDF generation via WeasyPrint
 - **Estimates** — Full estimate workflow with convert-to-invoice (deep-copies all fields and line items)
 - **Payments** — Record payments with allocation across multiple invoices. Auto-updates invoice balances and status (draft/sent/partial/paid)
-- **Quick Entry Mode** — Batch invoice entry for paper invoice backlog. Save & Next (Ctrl+Enter) with running log of created invoices
+- **Recurring Invoices** — Schedule automatic invoice generation (weekly/monthly/quarterly/yearly) with manual "Generate Now" or cron script
+- **Batch Payments** — Apply payments to multiple invoices across multiple customers in a single transaction
+- **Credit Memos** — Issue credits against customers, apply to invoices to reduce balance due. Proper reversing journal entries
+- **Quick Entry Mode** — Batch invoice entry for paper invoice backlog. Save & Next (Ctrl+Enter) with running log
+
+### Accounts Payable
+- **Purchase Orders** — Non-posting documents to vendors with auto-numbering, convert-to-bill workflow
+- **Bills** — Enter vendor bills (AP mirror of invoices). Track payables with status progression (draft/unpaid/partial/paid/void)
+- **Bill Payments** — Pay vendor bills with allocation. Journal: DR AP, CR Bank
+- **AP Aging Report** — Outstanding payables grouped by vendor with 30/60/90 day buckets
 
 ### Double-Entry Accounting
-- **Journal Entries** — Every invoice and payment automatically creates balanced journal entries (DR A/R, CR Income per line, CR Sales Tax). Void creates reversing entries
-- **Chart of Accounts** — 39 seeded accounts (Contractor template), 6 account types (asset, liability, equity, income, COGS, expense)
+- **Journal Entries** — Every invoice, payment, bill, and payroll run automatically creates balanced journal entries. Void creates reversing entries
+- **Chart of Accounts** — 39+ seeded accounts (Contractor template), 6 account types (asset, liability, equity, income, COGS, expense)
+- **Closing Date Enforcement** — Prevent modifications to transactions before a configurable closing date with optional password protection
+- **Audit Log** — Automatic logging of all create/update/delete operations with old/new value tracking via SQLAlchemy event hooks
 - **Account Balances** — Updated in real-time as transactions post
+
+### Payroll
+- **Employees** — Full employee records with pay type (hourly/salary), pay rate, filing status, allowances
+- **Pay Runs** — Create pay runs with automatic withholding calculations: Federal (progressive brackets), State (5% flat), Social Security (6.2%), Medicare (1.45%)
+- **Process Payroll** — Creates journal entries: DR Wage Expense, CR Federal Withholding, CR State Withholding, CR SS Payable, CR Medicare Payable, CR Bank
+- Tax calculations are approximate — disclaimer included. Verify with a tax professional
 
 ### Banking
 - **Bank Accounts** — Register view with deposits and withdrawals
 - **Bank Reconciliation** — Full workflow: enter statement balance, toggle cleared items, validate difference = $0, complete
+- **OFX/QFX Import** — Import bank transactions from OFX/QFX files with FITID dedup, preview before import, auto-match by amount/date
 
-### Contacts & Items
-- **Customer & Vendor Management** — Full contact info, billing/shipping addresses, terms, credit limits
-- **Items & Services** — Product, service, material, and labor types with default rates and linked income/expense accounts
-
-### Reports
+### Reports & Tax
 - **Profit & Loss** — Income vs expenses for any date range
 - **Balance Sheet** — Assets, liabilities, and equity
 - **A/R Aging** — Outstanding receivables grouped by customer with 30/60/90 day buckets
+- **A/P Aging** — Outstanding payables grouped by vendor with 30/60/90 day buckets
 - **Sales Tax** — Tax collected by invoice with taxable/non-taxable breakdowns
 - **General Ledger** — All journal entries grouped by account with debit/credit totals
 - **Income by Customer** — Sales totals per customer with invoice counts
 - **Customer Statements** — PDF statement with invoice/payment history and running balance
+- **Schedule C (Tax)** — Generate Schedule C data from P&L with configurable account-to-tax-line mappings. Export as CSV
 
-### Company Settings
-- Company name, address, phone, email, tax ID
-- Default terms, tax rate, invoice/estimate numbering
-- Default invoice notes and footer text
+### Dashboard
+- Company Snapshot with Total Receivables, Overdue Invoices, Active Customers, Total Payables
+- **AR Aging Bar Chart** — Color-coded stacked bar (Current/30/60/90+ days)
+- **Monthly Revenue Trend** — Bar chart showing last 12 months of invoiced revenue
+- Recent invoices and payments tables
+- Bank balances at a glance
+
+### Communication & Export
+- **Invoice Email** — Send invoices as PDF attachments via SMTP with configurable email settings
+- **CSV Import/Export** — Import/export customers, vendors, items, invoices, and chart of accounts as CSV
+- **Print-Optimized PDF** — Enhanced invoice PDF template with company logo support
+- **IIF Import/Export** — Full QuickBooks 2003 Pro interoperability (see below)
+
+### System & Administration
+- **Dark Mode** — Toggle between QB2003 Blue theme and dark mode (Alt+D or toolbar button). Persists in localStorage
+- **Backup/Restore** — Create and download PostgreSQL backups from the settings page
+- **Multi-Company** — Support for multiple company databases, switchable from UI
+- **Global Search** — Unified server-side search across customers, vendors, items, invoices, estimates, and payments
 
 ### UI
-- Authentic QB2003 "Default Blue" skin with navy/gold color palette
+- Authentic QB2003 "Default Blue" skin with navy/gold color palette (+ dark mode)
 - Splash screen with build info and decompilation provenance
 - Windows XP-era toolbar, sidebar navigator with icons, status bar
-- Global search bar (searches customers and invoices live)
-- Keyboard shortcuts: `Alt+N` (new invoice), `Alt+P` (payment), `Alt+Q` (quick entry), `Alt+H` (home), `Ctrl+K` (search), `Escape` (close modal)
+- Keyboard shortcuts: `Alt+N` (new invoice), `Alt+P` (payment), `Alt+Q` (quick entry), `Alt+H` (home), `Alt+D` (dark mode), `Ctrl+S` (save modal form), `Ctrl+K` (search), `Escape` (close modal)
 - No frameworks — vanilla HTML/CSS/JS single-page app
-- Dashboard with receivables, overdue count, recent invoices/payments, bank balances
+- 25 SPA routes, 24 sidebar nav links
 
 ### QuickBooks 2003 Pro Interoperability
 - **IIF Export** — Export all Slowbooks data (accounts, customers, vendors, items, invoices, payments, estimates) as .iif files importable into QB2003 via File > Utilities > Import > IIF Files
@@ -79,6 +108,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 
 ### Utilities
 - **Backup Script** — `scripts/backup.sh` — pg_dump with gzip compression, keeps last 30 backups
+- **Recurring Invoice Cron** — `scripts/run_recurring.py` — Standalone script for generating due recurring invoices
 - **IRS Mock Data** — `scripts/seed_irs_mock_data.py` — Seeds realistic test data from IRS Publication 583 (Henry Brown's Auto Body Shop: 8 customers, 13 vendors, 10 invoices, 5 payments, 3 estimates)
 
 ---
@@ -92,6 +122,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 | Migrations | Alembic |
 | Frontend | Vanilla HTML/CSS/JS (no framework) |
 | PDF | WeasyPrint 60.2 + Jinja2 |
+| Bank Import | ofxparse (OFX/QFX) |
 | Port | 3001 |
 
 ---
@@ -145,15 +176,15 @@ Open **http://localhost:3001** in your browser.
 ```
 SlowBooks-Pro-2026/
 ├── .env.example              # Environment config template
-├── requirements.txt          # Python dependencies
+├── requirements.txt          # Python dependencies (14 packages)
 ├── run.py                    # Uvicorn entry point (port 3001)
 ├── alembic.ini               # Alembic config
 ├── alembic/                  # Database migrations
 ├── app/
-│   ├── main.py               # FastAPI app + router mounting
+│   ├── main.py               # FastAPI app + 28 routers (132 routes)
 │   ├── config.py             # Environment-based settings
 │   ├── database.py           # SQLAlchemy engine + session
-│   ├── models/               # 14 SQLAlchemy models
+│   ├── models/               # 30+ SQLAlchemy models
 │   │   ├── accounts.py       # Chart of Accounts (self-referencing)
 │   │   ├── contacts.py       # Customers + Vendors
 │   │   ├── items.py          # Products, services, materials, labor
@@ -162,35 +193,56 @@ SlowBooks-Pro-2026/
 │   │   ├── payments.py       # Payments + allocations
 │   │   ├── transactions.py   # Journal entries (double-entry core)
 │   │   ├── banking.py        # Bank accounts, transactions, reconciliations
-│   │   └── settings.py       # Key-value company settings
+│   │   ├── settings.py       # Key-value company settings
+│   │   ├── audit.py          # Audit log
+│   │   ├── purchase_orders.py # Purchase orders + lines
+│   │   ├── bills.py          # Bills + lines + payments + allocations
+│   │   ├── credit_memos.py   # Credit memos + lines + applications
+│   │   ├── recurring.py      # Recurring invoices + lines
+│   │   ├── email_log.py      # Email delivery log
+│   │   ├── tax.py            # Tax category mappings
+│   │   ├── backups.py        # Backup records
+│   │   ├── companies.py      # Multi-company records
+│   │   └── payroll.py        # Employees, pay runs, pay stubs
 │   ├── schemas/              # Pydantic request/response models
-│   ├── routes/               # FastAPI routers (one per resource)
+│   ├── routes/               # FastAPI routers (28 routers)
 │   ├── services/
 │   │   ├── accounting.py     # Double-entry journal entry engine
+│   │   ├── audit.py          # SQLAlchemy after_flush audit hooks
+│   │   ├── closing_date.py   # Closing date enforcement guard
+│   │   ├── payroll_service.py # Withholding calculations
+│   │   ├── recurring_service.py # Recurring invoice generation
+│   │   ├── email_service.py  # SMTP email delivery
+│   │   ├── csv_export.py     # CSV export (5 entity types)
+│   │   ├── csv_import.py     # CSV import with error handling
+│   │   ├── ofx_import.py     # OFX/QFX bank feed parser
+│   │   ├── tax_export.py     # Schedule C data + CSV export
+│   │   ├── backup_service.py # pg_dump/pg_restore wrapper
+│   │   ├── company_service.py # Multi-company DB management
 │   │   ├── iif_export.py     # IIF export (8 export functions)
 │   │   ├── iif_import.py     # IIF parser + import + validation
 │   │   └── pdf_service.py    # WeasyPrint PDF generation
-│   ├── templates/
-│   │   ├── invoice_pdf.html  # Invoice PDF layout
-│   │   ├── estimate_pdf.html # Estimate PDF layout
-│   │   └── statement_pdf.html # Customer statement PDF layout
+│   ├── templates/            # Jinja2 templates (PDF, email)
 │   ├── seed/                 # Chart of Accounts seed data
 │   └── static/
-│       ├── css/style.css     # QB2003 "Default Blue" skin
-│       └── js/               # SPA router, API wrapper, 12 page modules
+│       ├── css/
+│       │   ├── style.css     # QB2003 "Default Blue" skin
+│       │   └── dark.css      # Dark mode CSS overrides
+│       └── js/               # SPA router, API wrapper, 23 page modules
 ├── scripts/
 │   ├── seed_database.py      # Seed the Chart of Accounts
-│   ├── seed_irs_mock_data.py # IRS Pub 583 mock data (Henry Brown's Auto Body Shop)
+│   ├── seed_irs_mock_data.py # IRS Pub 583 mock data
+│   ├── run_recurring.py      # Cron script for recurring invoices
 │   └── backup.sh             # PostgreSQL backup with rotation
 ├── screenshots/              # README images
-└── index.html                # SPA shell
+└── index.html                # SPA shell (23 script tags)
 ```
 
 ---
 
 ## Database Schema
 
-16 tables with a double-entry accounting foundation:
+35 tables with a double-entry accounting foundation:
 
 | Table | Purpose |
 |-------|---------|
@@ -205,22 +257,45 @@ SlowBooks-Pro-2026/
 | `payments` | Payment records |
 | `payment_allocations` | Maps payments to invoices (many-to-many) |
 | `transactions` | Journal entry headers |
-| `transaction_lines` | Journal entry splits (debit OR credit, enforced by CHECK) |
+| `transaction_lines` | Journal entry splits (debit OR credit) |
 | `bank_accounts` | Bank accounts linked to COA |
-| `bank_transactions` | Bank register entries |
+| `bank_transactions` | Bank register entries (with OFX import fields) |
 | `reconciliations` | Bank reconciliation sessions |
 | `settings` | Company settings key-value store |
+| `audit_log` | Automatic change tracking for all entities |
+| `purchase_orders` | Purchase order headers |
+| `purchase_order_lines` | PO line items with received quantities |
+| `bills` | Vendor bills (AP mirror of invoices) |
+| `bill_lines` | Bill line items with expense account tracking |
+| `bill_payments` | Bill payment records |
+| `bill_payment_allocations` | Maps bill payments to bills |
+| `credit_memos` | Customer credit memos |
+| `credit_memo_lines` | Credit memo line items |
+| `credit_applications` | Maps credit memos to invoices |
+| `recurring_invoices` | Recurring invoice templates |
+| `recurring_invoice_lines` | Recurring invoice line items |
+| `email_log` | Email delivery history |
+| `tax_category_mappings` | Account-to-tax-line mappings for Schedule C |
+| `backups` | Backup file records |
+| `companies` | Multi-company database list |
+| `employees` | Employee records for payroll |
+| `pay_runs` | Pay run headers with totals |
+| `pay_stubs` | Individual pay stubs with withholding breakdowns |
 
 ---
 
 ## API
 
-All endpoints under `/api/`. Swagger docs at `/docs`.
+All endpoints under `/api/`. Swagger docs at `/docs`. 132 routes across 28 routers.
 
+### Core (Original)
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/api/dashboard` | GET | Company snapshot stats |
+| `/api/dashboard/charts` | GET | AR aging buckets + monthly revenue trend |
 | `/api/settings` | GET, PUT | Company settings |
+| `/api/settings/test-email` | POST | Send SMTP test email |
+| `/api/search` | GET | Unified search across all entities |
 | `/api/accounts` | GET, POST, PUT, DELETE | Chart of Accounts CRUD |
 | `/api/customers` | GET, POST, PUT, DELETE | Customer management |
 | `/api/vendors` | GET, POST, PUT, DELETE | Vendor management |
@@ -229,28 +304,71 @@ All endpoints under `/api/`. Swagger docs at `/docs`.
 | `/api/invoices/{id}/pdf` | GET | Generate invoice PDF |
 | `/api/invoices/{id}/void` | POST | Void with reversing journal entry |
 | `/api/invoices/{id}/send` | POST | Mark invoice as sent |
+| `/api/invoices/{id}/email` | POST | Email invoice as PDF attachment |
 | `/api/invoices/{id}/duplicate` | POST | Duplicate invoice as new draft |
 | `/api/estimates` | GET, POST, PUT | Estimate CRUD with line items |
-| `/api/estimates/{id}/pdf` | GET | Generate estimate PDF |
 | `/api/estimates/{id}/convert` | POST | Convert estimate to invoice |
 | `/api/payments` | GET, POST | Record payments with invoice allocation |
 | `/api/banking/accounts` | GET, POST, PUT | Bank account management |
 | `/api/banking/transactions` | GET, POST | Bank register entries |
 | `/api/banking/reconciliations` | GET, POST | Reconciliation sessions |
-| `/api/banking/reconciliations/{id}/transactions` | GET | Transactions for reconciliation |
-| `/api/banking/reconciliations/{id}/toggle/{txn}` | POST | Toggle cleared status |
-| `/api/banking/reconciliations/{id}/complete` | POST | Complete reconciliation |
+
+### Accounts Payable
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/purchase-orders` | GET, POST, PUT | Purchase order CRUD |
+| `/api/purchase-orders/{id}/convert-to-bill` | POST | Convert PO to bill |
+| `/api/bills` | GET, POST, PUT | Bill CRUD with line items |
+| `/api/bills/{id}/void` | POST | Void bill |
+| `/api/bill-payments` | POST | Pay vendor bills with allocation |
+| `/api/credit-memos` | GET, POST | Credit memo CRUD |
+| `/api/credit-memos/{id}/apply` | POST | Apply credit to invoices |
+
+### Productivity
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/recurring` | GET, POST, PUT, DELETE | Recurring invoice templates |
+| `/api/recurring/generate` | POST | Generate due recurring invoices |
+| `/api/batch-payments` | POST | Batch payment application |
+
+### Payroll
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/employees` | GET, POST, PUT | Employee CRUD |
+| `/api/payroll` | GET, POST | Pay run CRUD |
+| `/api/payroll/{id}/process` | POST | Process pay run (creates journal entries) |
+
+### Reports & Tax
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
 | `/api/reports/profit-loss` | GET | P&L report |
 | `/api/reports/balance-sheet` | GET | Balance sheet |
 | `/api/reports/ar-aging` | GET | Accounts receivable aging |
+| `/api/reports/ap-aging` | GET | Accounts payable aging |
 | `/api/reports/sales-tax` | GET | Sales tax collected |
 | `/api/reports/general-ledger` | GET | All journal entries by account |
 | `/api/reports/income-by-customer` | GET | Sales totals per customer |
-| `/api/reports/customer-statement/{id}/pdf` | GET | Customer statement PDF |
-| `/api/iif/export/all` | GET | Export everything as single .iif file |
-| `/api/iif/export/{section}` | GET | Export accounts, customers, vendors, items, invoices, payments, or estimates |
-| `/api/iif/import` | POST | Upload and import .iif file |
-| `/api/iif/validate` | POST | Validate .iif file without importing |
+| `/api/tax/schedule-c` | GET | Schedule C data from P&L |
+| `/api/tax/schedule-c/csv` | GET | Schedule C CSV export |
+
+### Import/Export
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/iif/export/all` | GET | Export everything as .iif |
+| `/api/iif/import` | POST | Import .iif file |
+| `/api/csv/export/{type}` | GET | Export entities as CSV |
+| `/api/csv/import/{type}` | POST | Import CSV file |
+| `/api/bank-import/preview` | POST | Preview OFX/QFX transactions |
+| `/api/bank-import/import/{id}` | POST | Import OFX/QFX into bank account |
+
+### System
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/audit` | GET | Audit log viewer |
+| `/api/backups` | GET, POST | Backup management |
+| `/api/backups/{id}/download` | GET | Download backup file |
+| `/api/companies` | GET, POST | Multi-company management |
+| `/api/uploads/logo` | POST | Upload company logo |
 
 ---
 

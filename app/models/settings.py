@@ -40,4 +40,17 @@ DEFAULT_SETTINGS = {
     "estimate_next_number": "1001",
     "invoice_notes": "Thank you for your business.",
     "invoice_footer": "",
+    # Feature 10: Closing Date Enforcement
+    "closing_date": "",
+    "closing_date_password": "",
+    # Feature 8: SMTP Email
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_user": "",
+    "smtp_password": "",
+    "smtp_from_email": "",
+    "smtp_from_name": "",
+    "smtp_use_tls": "true",
+    # Feature 15: Company Logo
+    "company_logo_path": "",
 }

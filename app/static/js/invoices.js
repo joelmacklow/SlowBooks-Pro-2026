@@ -91,6 +91,7 @@ const InvoicesPage = {
             <div class="form-actions">
                 <button class="btn btn-secondary" onclick="window.open('/api/invoices/${inv.id}/pdf','_blank')">Print / PDF</button>
                 <button class="btn btn-secondary" onclick="InvoicesPage.duplicate(${inv.id})">Duplicate</button>
+                <button class="btn btn-secondary" onclick="InvoicesPage.emailInvoice(${inv.id})">Email Invoice</button>
                 ${inv.status === 'draft' ? `<button class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Mark Sent</button>` : ''}
                 ${inv.status !== 'void' ? `<button class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -122,6 +123,40 @@ const InvoicesPage = {
             toast(`Duplicated as Invoice #${inv.invoice_number}`);
             closeModal();
             App.navigate('#/invoices');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async emailInvoice(id) {
+        const inv = await API.get(`/invoices/${id}`);
+        const email = inv.customer_email || '';
+        openModal('Email Invoice', `
+            <form onsubmit="InvoicesPage.sendEmail(event, ${id})">
+                <div class="form-grid">
+                    <div class="form-group full-width"><label>Recipient Email *</label>
+                        <input name="recipient" type="email" required value="${escapeHtml(email)}"></div>
+                    <div class="form-group full-width"><label>Subject</label>
+                        <input name="subject" value="Invoice #${escapeHtml(inv.invoice_number)} from ${escapeHtml(inv.customer_name || 'us')}"></div>
+                    <div class="form-group full-width"><label>Message</label>
+                        <textarea name="message">Please find attached Invoice #${escapeHtml(inv.invoice_number)}.</textarea></div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Send Email</button>
+                </div>
+            </form>`);
+    },
+
+    async sendEmail(e, id) {
+        e.preventDefault();
+        const form = e.target;
+        try {
+            await API.post(`/invoices/${id}/email`, {
+                recipient: form.recipient.value,
+                subject: form.subject.value,
+                message: form.message.value,
+            });
+            toast('Invoice emailed');
+            closeModal();
         } catch (err) { toast(err.message, 'error'); }
     },
 

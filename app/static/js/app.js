@@ -8,19 +8,36 @@
  */
 const App = {
     routes: {
-        '/':          { page: 'dashboard', label: 'Dashboard',        render: () => App.renderDashboard() },
-        '/customers': { page: 'customers', label: 'Customer Center',  render: () => CustomersPage.render() },
-        '/vendors':   { page: 'vendors',   label: 'Vendor Center',    render: () => VendorsPage.render() },
-        '/items':     { page: 'items',     label: 'Item List',        render: () => ItemsPage.render() },
-        '/invoices':  { page: 'invoices',  label: 'Create Invoices',  render: () => InvoicesPage.render() },
-        '/estimates': { page: 'estimates', label: 'Create Estimates', render: () => EstimatesPage.render() },
-        '/payments':  { page: 'payments',  label: 'Receive Payments', render: () => PaymentsPage.render() },
-        '/banking':   { page: 'banking',   label: 'Bank Accounts',    render: () => BankingPage.render() },
-        '/accounts':  { page: 'accounts',  label: 'Chart of Accounts',render: () => App.renderAccounts() },
-        '/reports':   { page: 'reports',   label: 'Report Center',    render: () => ReportsPage.render() },
-        '/settings':  { page: 'settings', label: 'Company Settings', render: () => SettingsPage.render() },
-        '/iif':       { page: 'iif',      label: 'QuickBooks Interop', render: () => IIFPage.render() },
-        '/quick-entry': { page: 'quick-entry', label: 'Quick Entry', render: () => App.renderQuickEntry() },
+        '/':              { page: 'dashboard',       label: 'Dashboard',          render: () => App.renderDashboard() },
+        '/customers':     { page: 'customers',       label: 'Customer Center',    render: () => CustomersPage.render() },
+        '/vendors':       { page: 'vendors',         label: 'Vendor Center',      render: () => VendorsPage.render() },
+        '/items':         { page: 'items',           label: 'Item List',          render: () => ItemsPage.render() },
+        '/invoices':      { page: 'invoices',        label: 'Create Invoices',    render: () => InvoicesPage.render() },
+        '/estimates':     { page: 'estimates',       label: 'Create Estimates',   render: () => EstimatesPage.render() },
+        '/payments':      { page: 'payments',        label: 'Receive Payments',   render: () => PaymentsPage.render() },
+        '/banking':       { page: 'banking',         label: 'Bank Accounts',      render: () => BankingPage.render() },
+        '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  render: () => App.renderAccounts() },
+        '/reports':       { page: 'reports',         label: 'Report Center',      render: () => ReportsPage.render() },
+        '/settings':      { page: 'settings',        label: 'Company Settings',   render: () => SettingsPage.render() },
+        '/iif':           { page: 'iif',             label: 'QuickBooks Interop', render: () => IIFPage.render() },
+        '/quick-entry':   { page: 'quick-entry',     label: 'Quick Entry',        render: () => App.renderQuickEntry() },
+        // Phase 1: Foundation
+        '/audit':         { page: 'audit',           label: 'Audit Log',          render: () => AuditPage.render() },
+        // Phase 2: Accounts Payable
+        '/purchase-orders': { page: 'purchase-orders', label: 'Purchase Orders',  render: () => PurchaseOrdersPage.render() },
+        '/bills':         { page: 'bills',           label: 'Bills',              render: () => BillsPage.render() },
+        '/credit-memos':  { page: 'credit-memos',    label: 'Credit Memos',       render: () => CreditMemosPage.render() },
+        // Phase 3: Productivity
+        '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', render: () => RecurringPage.render() },
+        '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     render: () => BatchPaymentsPage.render() },
+        // Phase 4: CSV Import/Export
+        '/csv':           { page: 'csv',             label: 'CSV Import/Export',  render: () => App.renderCSV() },
+        // Phase 5: Advanced Integration
+        '/tax':           { page: 'tax',             label: 'Tax Reports',        render: () => TaxPage.render() },
+        // Phase 6: Ambitious
+        '/companies':     { page: 'companies',       label: 'Companies',          render: () => CompaniesPage.render() },
+        '/employees':     { page: 'employees',       label: 'Employees',          render: () => EmployeesPage.render() },
+        '/payroll':       { page: 'payroll',         label: 'Payroll',            render: () => PayrollPage.render() },
     },
 
     async navigate(hash) {
@@ -68,6 +85,25 @@ const App = {
         if (splash) splash.classList.remove('hidden');
     },
 
+    // Theme toggle — Feature 12: Dark Mode
+    toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('slowbooks-theme', next);
+        const btn = $('#theme-toggle');
+        if (btn) btn.innerHTML = next === 'dark' ? '&#9788;' : '&#9790;';
+    },
+
+    loadTheme() {
+        const saved = localStorage.getItem('slowbooks-theme');
+        if (saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            const btn = $('#theme-toggle');
+            if (btn) btn.innerHTML = '&#9788;';
+        }
+    },
+
     async renderDashboard() {
         const data = await API.get('/dashboard');
 
@@ -103,6 +139,58 @@ const App = {
             </div>`;
         }
 
+        // Feature 3: Dashboard Charts
+        let chartsHtml = '';
+        try {
+            const charts = await API.get('/dashboard/charts');
+            // AR Aging Bar Chart
+            const agingTotal = (charts.aging_current || 0) + (charts.aging_30 || 0) + (charts.aging_60 || 0) + (charts.aging_90 || 0);
+            if (agingTotal > 0) {
+                const pctCurrent = ((charts.aging_current / agingTotal) * 100).toFixed(1);
+                const pct30 = ((charts.aging_30 / agingTotal) * 100).toFixed(1);
+                const pct60 = ((charts.aging_60 / agingTotal) * 100).toFixed(1);
+                const pct90 = ((charts.aging_90 / agingTotal) * 100).toFixed(1);
+                chartsHtml += `
+                    <div class="dashboard-section">
+                        <h3>AR Aging</h3>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar" style="display:flex; height:28px; border-radius:4px; overflow:hidden;">
+                                ${pctCurrent > 0 ? `<div style="width:${pctCurrent}%; background:var(--success);" title="Current: ${formatCurrency(charts.aging_current)}"></div>` : ''}
+                                ${pct30 > 0 ? `<div style="width:${pct30}%; background:var(--qb-gold);" title="1-30 days: ${formatCurrency(charts.aging_30)}"></div>` : ''}
+                                ${pct60 > 0 ? `<div style="width:${pct60}%; background:#f97316;" title="31-60 days: ${formatCurrency(charts.aging_60)}"></div>` : ''}
+                                ${pct90 > 0 ? `<div style="width:${pct90}%; background:var(--danger);" title="61+ days: ${formatCurrency(charts.aging_90)}"></div>` : ''}
+                            </div>
+                            <div class="chart-legend" style="display:flex; gap:12px; margin-top:6px; font-size:10px;">
+                                <span><span style="color:var(--success);">&#9632;</span> Current ${formatCurrency(charts.aging_current)}</span>
+                                <span><span style="color:var(--qb-gold);">&#9632;</span> 1-30 ${formatCurrency(charts.aging_30)}</span>
+                                <span><span style="color:#f97316;">&#9632;</span> 31-60 ${formatCurrency(charts.aging_60)}</span>
+                                <span><span style="color:var(--danger);">&#9632;</span> 61+ ${formatCurrency(charts.aging_90)}</span>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            // Monthly Revenue Trend
+            if (charts.monthly_revenue && charts.monthly_revenue.length > 0) {
+                const maxRev = Math.max(...charts.monthly_revenue.map(m => m.amount), 1);
+                const bars = charts.monthly_revenue.map(m => {
+                    const pct = Math.max((m.amount / maxRev) * 100, 2);
+                    return `<div class="chart-bar-col" style="flex:1; text-align:center;">
+                        <div style="height:100px; display:flex; align-items:flex-end; justify-content:center;">
+                            <div style="width:80%; background:var(--qb-blue); height:${pct}%; border-radius:2px 2px 0 0;"
+                                 title="${m.month}: ${formatCurrency(m.amount)}"></div>
+                        </div>
+                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">${m.month}</div>
+                    </div>`;
+                }).join('');
+                chartsHtml += `
+                    <div class="dashboard-section">
+                        <h3>Monthly Revenue (Last 12 Months)</h3>
+                        <div style="display:flex; gap:2px; align-items:flex-end;">${bars}</div>
+                    </div>`;
+            }
+        } catch (e) { /* charts endpoint not available yet — that's fine */ }
+
         return `
             <div class="page-header">
                 <h2>Company Snapshot</h2>
@@ -124,12 +212,18 @@ const App = {
                     <div class="card-header">Active Customers</div>
                     <div class="card-value">${data.customer_count}</div>
                 </div>
+                ${data.total_payables !== undefined ? `<div class="card">
+                    <div class="card-header">Total Payables</div>
+                    <div class="card-value">${formatCurrency(data.total_payables)}</div>
+                </div>` : ''}
             </div>
 
             <div class="dashboard-section">
                 <h3>Bank Balances</h3>
                 <div class="card-grid">${bankCards}</div>
             </div>
+
+            ${chartsHtml}
 
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
                 <div class="dashboard-section">
@@ -227,7 +321,7 @@ const App = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    // Global search — CQBSearchEngine @ 0x00250000
+    // Feature 4: Unified Global Search — replaces CQBSearchEngine @ 0x00250000
     _searchTimeout: null,
     async globalSearch(query) {
         const dropdown = $('#search-results');
@@ -236,33 +330,91 @@ const App = {
         if (!query || query.length < 2) { dropdown.classList.add('hidden'); return; }
         App._searchTimeout = setTimeout(async () => {
             try {
-                const [customers, invoices] = await Promise.all([
-                    API.get(`/customers?search=${encodeURIComponent(query)}`),
-                    API.get('/invoices'),
-                ]);
-                const matchedInv = invoices.filter(i =>
-                    (i.invoice_number || '').toLowerCase().includes(query.toLowerCase()) ||
-                    (i.customer_name || '').toLowerCase().includes(query.toLowerCase())
-                ).slice(0, 5);
-                const matchedCust = customers.slice(0, 5);
+                const results = await API.get(`/search?q=${encodeURIComponent(query)}`);
                 let html = '';
-                if (matchedCust.length) {
-                    html += `<div class="search-section">Customers</div>`;
-                    matchedCust.forEach(c => {
-                        html += `<div class="search-item" onclick="App.navigate('#/customers');closeSearchDropdown();">${escapeHtml(c.name)}</div>`;
-                    });
-                }
-                if (matchedInv.length) {
-                    html += `<div class="search-section">Invoices</div>`;
-                    matchedInv.forEach(i => {
-                        html += `<div class="search-item" onclick="InvoicesPage.view(${i.id});closeSearchDropdown();">#${escapeHtml(i.invoice_number)} — ${escapeHtml(i.customer_name || '')}</div>`;
-                    });
+                const sections = [
+                    { key: 'customers', label: 'Customers', onClick: (item) => `App.navigate('#/customers');closeSearchDropdown();` },
+                    { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
+                    { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
+                    { key: 'invoices', label: 'Invoices', onClick: (item) => `InvoicesPage.view(${item.id});closeSearchDropdown();` },
+                    { key: 'estimates', label: 'Estimates', onClick: (item) => `App.navigate('#/estimates');closeSearchDropdown();` },
+                    { key: 'payments', label: 'Payments', onClick: (item) => `App.navigate('#/payments');closeSearchDropdown();` },
+                ];
+                for (const sec of sections) {
+                    const items = results[sec.key];
+                    if (items && items.length > 0) {
+                        html += `<div class="search-section">${sec.label}</div>`;
+                        items.forEach(item => {
+                            const label = item.display || item.name || item.invoice_number || `#${item.id}`;
+                            html += `<div class="search-item" onclick="${sec.onClick(item)}">${escapeHtml(label)}</div>`;
+                        });
+                    }
                 }
                 if (!html) html = `<div class="search-item" style="color:var(--text-muted);">No results</div>`;
                 dropdown.innerHTML = html;
                 dropdown.classList.remove('hidden');
-            } catch (e) { dropdown.classList.add('hidden'); }
+            } catch (e) {
+                // Fallback to old search if unified endpoint not available
+                dropdown.classList.add('hidden');
+            }
         }, 300);
+    },
+
+    // CSV Import/Export page — Feature 14
+    async renderCSV() {
+        return `
+            <div class="page-header">
+                <h2>CSV Import / Export</h2>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+                <div class="settings-section">
+                    <h3>Export</h3>
+                    <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Download data as CSV files.</p>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <a href="/api/csv/export/customers" class="btn btn-secondary" download>Export Customers</a>
+                        <a href="/api/csv/export/vendors" class="btn btn-secondary" download>Export Vendors</a>
+                        <a href="/api/csv/export/items" class="btn btn-secondary" download>Export Items</a>
+                        <a href="/api/csv/export/invoices" class="btn btn-secondary" download>Export Invoices</a>
+                        <a href="/api/csv/export/accounts" class="btn btn-secondary" download>Export Chart of Accounts</a>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Import</h3>
+                    <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Upload CSV files to import data.</p>
+                    <form id="csv-import-form" onsubmit="App.importCSV(event)">
+                        <div class="form-group"><label>Entity Type</label>
+                            <select name="entity_type" id="csv-entity">
+                                <option value="customers">Customers</option>
+                                <option value="vendors">Vendors</option>
+                                <option value="items">Items</option>
+                            </select></div>
+                        <div class="form-group"><label>CSV File</label>
+                            <input type="file" name="file" accept=".csv" required></div>
+                        <button type="submit" class="btn btn-primary">Import</button>
+                    </form>
+                    <div id="csv-import-results" style="margin-top:12px;"></div>
+                </div>
+            </div>`;
+    },
+
+    async importCSV(e) {
+        e.preventDefault();
+        const form = e.target;
+        const entity = form.entity_type.value;
+        const formData = new FormData();
+        formData.append('file', form.file.files[0]);
+        try {
+            const resp = await fetch(`/api/csv/import/${entity}`, { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || 'Import failed');
+            let html = `<div style="color:var(--success); font-size:11px;">Imported ${data.imported} ${entity}.</div>`;
+            if (data.errors && data.errors.length > 0) {
+                html += `<div style="color:var(--danger); font-size:11px; margin-top:6px;">Errors:<br>${data.errors.map(e => escapeHtml(e)).join('<br>')}</div>`;
+            }
+            $('#csv-import-results').innerHTML = html;
+        } catch (err) {
+            $('#csv-import-results').innerHTML = `<div style="color:var(--danger); font-size:11px;">${escapeHtml(err.message)}</div>`;
+        }
     },
 
     // Quick Entry mode — batch invoice entry for paper invoice backlog
@@ -427,12 +579,20 @@ const App = {
     init() {
         window.addEventListener('hashchange', () => App.navigate(location.hash));
 
+        // Load saved theme
+        App.loadTheme();
+
         // Keyboard shortcuts — CAcceleratorTable @ 0x00042800
         document.addEventListener('keydown', (e) => {
             // Ctrl+Enter: submit quick entry form
             if (e.ctrlKey && e.key === 'Enter') {
                 const qeForm = $('#qe-form');
                 if (qeForm) { qeForm.requestSubmit(); e.preventDefault(); }
+            }
+            // Ctrl+S: save current modal form (Feature 13)
+            if (e.ctrlKey && e.key === 's') {
+                const modalForm = document.querySelector('#modal-body form');
+                if (modalForm) { modalForm.requestSubmit(); e.preventDefault(); }
             }
             // Alt+N: new invoice
             if (e.altKey && e.key === 'n') { InvoicesPage.showForm(); e.preventDefault(); }
@@ -442,6 +602,8 @@ const App = {
             if (e.altKey && e.key === 'q') { App.navigate('#/quick-entry'); e.preventDefault(); }
             // Alt+H: home/dashboard
             if (e.altKey && e.key === 'h') { App.navigate('#/'); e.preventDefault(); }
+            // Alt+D: toggle dark mode (Feature 12)
+            if (e.altKey && e.key === 'd') { App.toggleTheme(); e.preventDefault(); }
             // Escape: close modal
             if (e.key === 'Escape') { closeModal(); }
             // Ctrl+K or /: focus search (when not in an input)

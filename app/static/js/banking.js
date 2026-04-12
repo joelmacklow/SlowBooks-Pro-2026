@@ -46,6 +46,7 @@ const BankingPage = {
                 <div class="btn-group">
                     <button class="btn btn-secondary" onclick="App.navigate('#/banking')">Back</button>
                     <button class="btn btn-primary" onclick="BankingPage.showTxnForm(${bankAccountId})">+ Transaction</button>
+                    <button class="btn btn-secondary" onclick="BankingPage.showOFXImport(${bankAccountId})">Import OFX/QFX</button>
                     <button class="btn btn-secondary" onclick="BankingPage.startReconcile(${bankAccountId})">Reconcile</button>
                 </div>
             </div>
@@ -262,6 +263,69 @@ const BankingPage = {
             await API.post(`/banking/reconciliations/${reconId}/complete`);
             toast('Reconciliation completed');
             App.navigate('#/banking');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    // Feature 18: OFX/QFX Import
+    async showOFXImport(bankAccountId) {
+        openModal('Import OFX/QFX File', `
+            <form onsubmit="BankingPage.previewOFX(event, ${bankAccountId})">
+                <div class="form-group">
+                    <label>Select OFX or QFX file from your bank</label>
+                    <input type="file" name="file" accept=".ofx,.qfx" required id="ofx-file">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Preview Import</button>
+                </div>
+            </form>
+            <div id="ofx-preview" style="margin-top:12px;"></div>`);
+    },
+
+    async previewOFX(e, bankAccountId) {
+        e.preventDefault();
+        const file = $('#ofx-file').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const resp = await fetch('/api/bank-import/preview', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || 'Parse failed');
+            BankingPage._ofxData = data;
+            let rows = data.transactions.map((t, i) => `<tr>
+                <td>${escapeHtml(t.date || '')}</td>
+                <td>${escapeHtml(t.payee || '')}</td>
+                <td class="amount" style="${t.amount >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">${formatCurrency(t.amount)}</td>
+                <td>${escapeHtml(t.fitid || '')}</td>
+            </tr>`).join('');
+            $('#ofx-preview').innerHTML = `
+                <div style="margin-bottom:8px; font-size:11px;">
+                    <strong>${data.transactions.length}</strong> transactions found.
+                    ${data.account_id ? `Account: ${escapeHtml(data.account_id)}` : ''}
+                </div>
+                <div class="table-container" style="max-height:300px; overflow-y:auto;"><table>
+                    <thead><tr><th>Date</th><th>Payee</th><th class="amount">Amount</th><th>FITID</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table></div>
+                <div class="form-actions" style="margin-top:12px;">
+                    <button class="btn btn-primary" onclick="BankingPage.confirmOFXImport(${bankAccountId})">Import ${data.transactions.length} Transactions</button>
+                </div>`;
+        } catch (err) {
+            $('#ofx-preview').innerHTML = `<div style="color:var(--danger); font-size:11px;">${escapeHtml(err.message)}</div>`;
+        }
+    },
+
+    async confirmOFXImport(bankAccountId) {
+        try {
+            const formData = new FormData();
+            formData.append('file', $('#ofx-file').files[0]);
+            const resp = await fetch(`/api/bank-import/import/${bankAccountId}`, { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || 'Import failed');
+            toast(`Imported ${data.imported} transactions (${data.skipped_duplicates} duplicates skipped)`);
+            closeModal();
+            BankingPage.viewRegister(bankAccountId);
         } catch (err) { toast(err.message, 'error'); }
     },
 };

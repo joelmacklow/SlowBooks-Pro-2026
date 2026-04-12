@@ -42,3 +42,24 @@ def update_settings(data: dict, db: Session = Depends(get_db)):
             _set(db, key, str(value) if value is not None else "")
     db.commit()
     return _get_all(db)
+
+
+@router.post("/test-email")
+def test_email(db: Session = Depends(get_db)):
+    """Feature 8: Send a test email to verify SMTP settings."""
+    settings = _get_all(db)
+    if not settings.get("smtp_host"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="SMTP not configured")
+    try:
+        from app.services.email_service import send_email
+        send_email(
+            to_email=settings.get("smtp_from_email") or settings.get("smtp_user", ""),
+            subject="Slowbooks Pro 2026 — Test Email",
+            html_body="<p>This is a test email from Slowbooks Pro 2026. SMTP is configured correctly.</p>",
+            settings=settings,
+        )
+        return {"status": "sent"}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")

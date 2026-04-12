@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><style>
+body { font-family: Arial, sans-serif; font-size: 14px; color: #333; }
+.header { background: #003366; color: white; padding: 20px; text-align: center; }
+.content { padding: 20px; }
+.amount { font-size: 24px; font-weight: bold; color: #003366; }
+.footer { padding: 20px; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+th { background: #f0f0f0; padding: 8px; text-align: left; border-bottom: 2px solid #003366; }
+td { padding: 8px; border-bottom: 1px solid #eee; }
+</style></head>
+<body>
+<div class="header">
+    <h1 style="margin:0;">{{ company.get('company_name', 'Our Company') }}</h1>
+</div>
+<div class="content">
+    <p>Dear {{ inv.customer.name if inv.customer else 'Customer' }},</p>
+    <p>Please find attached <strong>Invoice #{{ inv.invoice_number }}</strong>.</p>
+
+    <table>
+        <tr><th>Invoice #</th><td>{{ inv.invoice_number }}</td></tr>
+        <tr><th>Date</th><td>{{ inv.date }}</td></tr>
+        <tr><th>Due Date</th><td>{{ inv.due_date }}</td></tr>
+        <tr><th>Terms</th><td>{{ inv.terms or 'Net 30' }}</td></tr>
+    </table>
+
+    <p class="amount">Amount Due: ${{ "%.2f"|format(inv.balance_due|float) }}</p>
+
+    {% if inv.notes %}
+    <p style="color:#666;">{{ inv.notes }}</p>
+    {% endif %}
+
+    <p>Thank you for your business.</p>
+</div>
+<div class="footer">
+    <p>{{ company.get('company_name', '') }}<br>
+    {{ company.get('company_address1', '') }} {{ company.get('company_city', '') }}
+    {{ company.get('company_state', '') }} {{ company.get('company_zip', '') }}<br>
+    {{ company.get('company_phone', '') }} | {{ company.get('company_email', '') }}</p>
+</div>
+</body>
+</html>

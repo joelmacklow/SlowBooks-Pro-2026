@@ -1,3 +1,6 @@
+from datetime import date, timedelta
+from calendar import monthrange
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -30,10 +33,27 @@ def get_dashboard(db: Session = Depends(get_db)):
 
     bank_balances = db.query(BankAccount).filter(BankAccount.is_active == True).all()
 
+    # Feature 1: Total payables (bills)
+    total_payables = 0.0
+    overdue_bills = 0
+    try:
+        from app.models.bills import Bill, BillStatus
+        total_payables = float(db.query(func.coalesce(func.sum(Bill.balance_due), 0)).filter(
+            Bill.status.in_([BillStatus.UNPAID, BillStatus.PARTIAL])
+        ).scalar())
+        overdue_bills = db.query(func.count(Bill.id)).filter(
+            Bill.status.in_([BillStatus.UNPAID, BillStatus.PARTIAL]),
+            Bill.due_date < func.current_date()
+        ).scalar()
+    except Exception:
+        pass
+
     return {
         "total_receivables": float(total_receivables),
         "overdue_count": overdue_count,
         "customer_count": customer_count,
+        "total_payables": total_payables,
+        "overdue_bills": overdue_bills,
         "recent_invoices": [
             {
                 "id": inv.id,
@@ -60,4 +80,64 @@ def get_dashboard(db: Session = Depends(get_db)):
             {"id": ba.id, "name": ba.name, "balance": float(ba.balance)}
             for ba in bank_balances
         ],
+    }
+
+
+@router.get("/charts")
+def get_dashboard_charts(db: Session = Depends(get_db)):
+    """Feature 3: Dashboard Charts — AR aging buckets + monthly revenue trend."""
+    today = date.today()
+
+    # AR Aging buckets
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]))
+        .filter(Invoice.balance_due > 0)
+        .all()
+    )
+
+    aging_current = Decimal(0)
+    aging_30 = Decimal(0)
+    aging_60 = Decimal(0)
+    aging_90 = Decimal(0)
+
+    for inv in invoices:
+        days = (today - inv.due_date).days if inv.due_date else 0
+        if days <= 0:
+            aging_current += inv.balance_due
+        elif days <= 30:
+            aging_30 += inv.balance_due
+        elif days <= 60:
+            aging_60 += inv.balance_due
+        else:
+            aging_90 += inv.balance_due
+
+    # Monthly revenue — last 12 months
+    monthly_revenue = []
+    for i in range(11, -1, -1):
+        year = today.year
+        month = today.month - i
+        while month <= 0:
+            month += 12
+            year -= 1
+        _, last_day = monthrange(year, month)
+        start = date(year, month, 1)
+        end = date(year, month, last_day)
+
+        total = db.query(func.coalesce(func.sum(Invoice.total), 0)).filter(
+            Invoice.date >= start, Invoice.date <= end,
+            Invoice.status != InvoiceStatus.VOID,
+        ).scalar()
+
+        monthly_revenue.append({
+            "month": start.strftime("%b"),
+            "amount": float(total),
+        })
+
+    return {
+        "aging_current": float(aging_current),
+        "aging_30": float(aging_30),
+        "aging_60": float(aging_60),
+        "aging_90": float(aging_90),
+        "monthly_revenue": monthly_revenue,
     }

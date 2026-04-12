@@ -19,6 +19,7 @@ from app.schemas.banking import (
     BankTransactionCreate, BankTransactionResponse,
     ReconciliationCreate, ReconciliationResponse,
 )
+from app.services.closing_date import check_closing_date
 
 router = APIRouter(prefix="/api/banking", tags=["banking"])
 
@@ -69,6 +70,7 @@ def list_bank_transactions(bank_account_id: int = None, db: Session = Depends(ge
 
 @router.post("/transactions", response_model=BankTransactionResponse, status_code=201)
 def create_bank_transaction(data: BankTransactionCreate, db: Session = Depends(get_db)):
+    check_closing_date(db, data.date)
     ba = db.query(BankAccount).filter(BankAccount.id == data.bank_account_id).first()
     if not ba:
         raise HTTPException(status_code=404, detail="Bank account not found")

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Slowbooks Pro 2026</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/dark.css">
 </head>
 <body>
     <!-- ================================================================
@@ -50,6 +51,7 @@
                    oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape')this.value='';App.globalSearch('');">
             <div id="search-results" class="search-dropdown hidden"></div>
             <div class="topbar-right">
+                <button class="tb-btn" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle Dark Mode">&#9788;</button>
                 <div class="topbar-clock" id="topbar-clock"></div>
                 <button class="tb-btn" onclick="App.showAbout()">About</button>
             </div>
@@ -75,12 +77,28 @@
                         <span class="nav-icon">&#9826;</span> Estimates</a></li>
                     <li><a href="#/payments" class="nav-link" data-page="payments">
                         <span class="nav-icon">&#9733;</span> Payments</a></li>
+                    <li><a href="#/recurring" class="nav-link" data-page="recurring">
+                        <span class="nav-icon">&#8634;</span> Recurring Invoices</a></li>
+                    <li><a href="#/credit-memos" class="nav-link" data-page="credit-memos">
+                        <span class="nav-icon">&#8722;</span> Credit Memos</a></li>
+                    <li><a href="#/batch-payments" class="nav-link" data-page="batch-payments">
+                        <span class="nav-icon">&#10003;</span> Batch Payments</a></li>
 
-                    <li class="nav-section">Manage</li>
+                    <li class="nav-section">Vendors & Payables</li>
                     <li><a href="#/vendors" class="nav-link" data-page="vendors">
                         <span class="nav-icon">&#9670;</span> Vendors</a></li>
+                    <li><a href="#/purchase-orders" class="nav-link" data-page="purchase-orders">
+                        <span class="nav-icon">&#9997;</span> Purchase Orders</a></li>
+                    <li><a href="#/bills" class="nav-link" data-page="bills">
+                        <span class="nav-icon">&#9830;</span> Bills</a></li>
+
+                    <li class="nav-section">Manage</li>
                     <li><a href="#/items" class="nav-link" data-page="items">
                         <span class="nav-icon">&#9642;</span> Items & Services</a></li>
+                    <li><a href="#/employees" class="nav-link" data-page="employees">
+                        <span class="nav-icon">&#9786;</span> Employees</a></li>
+                    <li><a href="#/payroll" class="nav-link" data-page="payroll">
+                        <span class="nav-icon">&#9733;</span> Payroll</a></li>
 
                     <li class="nav-section">Banking</li>
                     <li><a href="#/banking" class="nav-link" data-page="banking">
@@ -91,14 +109,22 @@
                         <span class="nav-icon">&#9776;</span> Chart of Accounts</a></li>
                     <li><a href="#/reports" class="nav-link" data-page="reports">
                         <span class="nav-icon">&#9783;</span> Reports</a></li>
+                    <li><a href="#/tax" class="nav-link" data-page="tax">
+                        <span class="nav-icon">&#9783;</span> Tax Reports</a></li>
 
                     <li class="nav-section">Interop</li>
                     <li><a href="#/iif" class="nav-link" data-page="iif">
                         <span class="nav-icon">&#8644;</span> QuickBooks Interop</a></li>
+                    <li><a href="#/csv" class="nav-link" data-page="csv">
+                        <span class="nav-icon">&#8644;</span> CSV Import/Export</a></li>
 
                     <li class="nav-section">System</li>
                     <li><a href="#/settings" class="nav-link" data-page="settings">
                         <span class="nav-icon">&#9881;</span> Settings</a></li>
+                    <li><a href="#/audit" class="nav-link" data-page="audit">
+                        <span class="nav-icon">&#9783;</span> Audit Log</a></li>
+                    <li><a href="#/companies" class="nav-link" data-page="companies">
+                        <span class="nav-icon">&#9632;</span> Companies</a></li>
                 </ul>
                 <div class="sidebar-footer">
                     Build 12.0.3190-R<br>
@@ -145,6 +171,22 @@
     <script src="/static/js/reports.js"></script>
     <script src="/static/js/settings.js"></script>
     <script src="/static/js/iif.js"></script>
+    <!-- Phase 1: Foundation -->
+    <script src="/static/js/audit.js"></script>
+    <!-- Phase 2: Accounts Payable -->
+    <script src="/static/js/purchase_orders.js"></script>
+    <script src="/static/js/bills.js"></script>
+    <script src="/static/js/credit_memos.js"></script>
+    <!-- Phase 3: Productivity -->
+    <script src="/static/js/recurring.js"></script>
+    <script src="/static/js/batch_payments.js"></script>
+    <!-- Phase 5: Advanced Integration -->
+    <script src="/static/js/tax.js"></script>
+    <!-- Phase 6: Ambitious -->
+    <script src="/static/js/companies.js"></script>
+    <script src="/static/js/employees.js"></script>
+    <script src="/static/js/payroll.js"></script>
+    <!-- App must be last -->
     <script src="/static/js/app.js"></script>
 </body>
 </html>

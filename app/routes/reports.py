@@ -330,6 +330,69 @@ def income_by_customer(
     }
 
 
+@router.get("/ap-aging")
+def ap_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+    """AP Aging report — mirrors AR aging but for bills."""
+    if not as_of_date:
+        as_of_date = date.today()
+
+    try:
+        from app.models.bills import Bill, BillStatus
+        from app.models.contacts import Vendor
+
+        bills = (
+            db.query(Bill)
+            .filter(Bill.status.in_([BillStatus.UNPAID, BillStatus.PARTIAL]))
+            .filter(Bill.balance_due > 0)
+            .all()
+        )
+
+        aging = {}
+        for bill in bills:
+            vid = bill.vendor_id
+            if vid not in aging:
+                vname = db.query(Vendor.name).filter(Vendor.id == vid).scalar() or "Unknown"
+                aging[vid] = {
+                    "vendor_name": vname, "vendor_id": vid,
+                    "current": Decimal(0), "over_30": Decimal(0),
+                    "over_60": Decimal(0), "over_90": Decimal(0), "total": Decimal(0),
+                }
+
+            days = (as_of_date - bill.due_date).days if bill.due_date else 0
+            bal = bill.balance_due
+            if days <= 0:
+                aging[vid]["current"] += bal
+            elif days <= 30:
+                aging[vid]["over_30"] += bal
+            elif days <= 60:
+                aging[vid]["over_60"] += bal
+            else:
+                aging[vid]["over_90"] += bal
+            aging[vid]["total"] += bal
+
+        items = list(aging.values())
+        totals = {
+            "vendor_name": "TOTAL", "vendor_id": 0,
+            "current": sum(i["current"] for i in items),
+            "over_30": sum(i["over_30"] for i in items),
+            "over_60": sum(i["over_60"] for i in items),
+            "over_90": sum(i["over_90"] for i in items),
+            "total": sum(i["total"] for i in items),
+        }
+        for item in items:
+            for k in ("current", "over_30", "over_60", "over_90", "total"):
+                item[k] = float(item[k])
+        for k in ("current", "over_30", "over_60", "over_90", "total"):
+            totals[k] = float(totals[k])
+
+        return {"as_of_date": as_of_date.isoformat(), "items": items, "totals": totals}
+    except ImportError:
+        return {"as_of_date": as_of_date.isoformat(), "items": [], "totals": {
+            "vendor_name": "TOTAL", "vendor_id": 0,
+            "current": 0, "over_30": 0, "over_60": 0, "over_90": 0, "total": 0,
+        }}
+
+
 @router.get("/customer-statement/{customer_id}/pdf")
 def customer_statement_pdf(
     customer_id: int,

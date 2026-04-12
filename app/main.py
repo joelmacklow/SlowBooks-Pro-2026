@@ -25,8 +25,24 @@ from app.routes import (
     dashboard, accounts, customers, vendors, items,
     invoices, estimates, payments, banking, reports, settings, iif,
 )
+# Phase 1: Foundation
+from app.routes import audit, search
+# Phase 2: Accounts Payable
+from app.routes import purchase_orders, bills, bill_payments, credit_memos
+# Phase 3: Productivity
+from app.routes import recurring, batch_payments
+# Phase 4: Communication & Export
+from app.routes import csv as csv_routes
+from app.routes import uploads
+# Phase 5: Advanced Integration
+from app.routes import bank_import, tax, backups
+# Phase 6: Ambitious
+from app.routes import companies, employees, payroll
 
-app = FastAPI(title="Slowbooks Pro 2026", version="1.0.0")
+from app.database import SessionLocal
+from app.services.audit import register_audit_hooks
+
+app = FastAPI(title="Slowbooks Pro 2026", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,7 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API routes
+# Original API routes
 app.include_router(dashboard.router)
 app.include_router(accounts.router)
 app.include_router(customers.router)
@@ -50,9 +66,39 @@ app.include_router(reports.router)
 app.include_router(settings.router)
 app.include_router(iif.router)
 
+# Phase 1: Foundation
+app.include_router(audit.router)
+app.include_router(search.router)
+# Phase 2: Accounts Payable
+app.include_router(purchase_orders.router)
+app.include_router(bills.router)
+app.include_router(bill_payments.router)
+app.include_router(credit_memos.router)
+# Phase 3: Productivity
+app.include_router(recurring.router)
+app.include_router(batch_payments.router)
+# Phase 4: Communication & Export
+app.include_router(csv_routes.router)
+app.include_router(uploads.router)
+# Phase 5: Advanced Integration
+app.include_router(bank_import.router)
+app.include_router(tax.router)
+app.include_router(backups.router)
+# Phase 6: Ambitious
+app.include_router(companies.router)
+app.include_router(employees.router)
+app.include_router(payroll.router)
+
+# Register audit log hooks
+register_audit_hooks(SessionLocal)
+
 # Static files
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Ensure uploads directory exists
+uploads_dir = static_dir / "uploads"
+uploads_dir.mkdir(exist_ok=True)
 
 # SPA entry point
 index_path = Path(__file__).parent.parent / "index.html"
