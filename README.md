@@ -254,6 +254,90 @@ All endpoints under `/api/`. Swagger docs at `/docs`.
 
 ---
 
+## QuickBooks 2003 Pro — IIF Interoperability
+
+Slowbooks can exchange data with QuickBooks 2003 Pro via **Intuit Interchange Format (IIF)** — a tab-delimited text format that QB2003 uses for file-based import/export.
+
+![QuickBooks Interop Page](screenshots/iif-interop.png)
+
+### Exporting from Slowbooks to QB2003
+
+1. Navigate to **QuickBooks Interop** in the sidebar
+2. Click **Export All Data** (or export individual sections)
+3. For invoices/payments, optionally set a date range
+4. Save the `.iif` file
+5. In QuickBooks 2003: **File > Utilities > Import > IIF Files** and select the file
+
+**What gets exported:**
+
+| Section | IIF Header | Fields |
+|---------|-----------|--------|
+| Chart of Accounts | `!ACCNT` | Name, type (BANK/AR/AP/INC/EXP/EQUITY/COGS/etc.), number, description |
+| Customers | `!CUST` | Name, company, address, phone, email, terms, tax ID |
+| Vendors | `!VEND` | Name, address, phone, email, terms, tax ID |
+| Items | `!INVITEM` | Name, type (SERV/PART/OTHC), description, rate, income account |
+| Invoices | `!TRNS/!SPL` | Customer, date, line items, amounts, tax, terms |
+| Payments | `!TRNS/!SPL` | Customer, date, amount, deposit account, invoice allocation |
+| Estimates | `!TRNS/!SPL` | Customer, date, line items (non-posting) |
+
+### Importing from QB2003 to Slowbooks
+
+1. In QuickBooks 2003: **File > Utilities > Export > Lists to IIF Files**
+2. In Slowbooks: navigate to **QuickBooks Interop**
+3. Drag and drop the `.iif` file (or click to browse)
+4. Click **Validate** — checks structure, account types, and balanced transactions
+5. If validation passes, click **Import**
+
+The importer handles:
+- Automatic account type mapping (QB's 14 types → Slowbooks' 6 types)
+- Parent:Child colon-separated account names
+- Duplicate detection (skips records that already exist by name or document number)
+- Per-row error collection (a bad row won't abort the entire import)
+- Windows-1252 and UTF-8 encoded files
+
+### IIF Format Reference
+
+IIF is tab-delimited with `\r\n` line endings. Header rows start with `!`. Transaction blocks use `TRNS`/`SPL`/`ENDTRNS` grouping. Sign convention: TRNS amount is positive (debit), SPL amounts are negative (credits), and they must sum to zero.
+
+```
+!TRNS	TRNSTYPE	DATE	ACCNT	NAME	AMOUNT	DOCNUM
+!SPL	TRNSTYPE	DATE	ACCNT	NAME	AMOUNT	DOCNUM
+!ENDTRNS
+TRNS	INVOICE	01/15/2026	Accounts Receivable	John E. Marks	444.96	2001
+SPL	INVOICE	01/15/2026	Service Income	John E. Marks	-438.00	2001
+SPL	INVOICE	01/15/2026	Sales Tax Payable	John E. Marks	-6.96	2001
+ENDTRNS
+```
+
+### Account Type Mapping
+
+| Slowbooks Type | IIF Types (by account number range) |
+|---------------|--------------------------------------|
+| Asset | `BANK` (1000-1099), `AR` (1100), `OCASSET` (1101-1499), `FIXASSET` (1500-1999) |
+| Liability | `AP` (2000), `OCLIAB` (2001-2499), `LTLIAB` (2500+) |
+| Equity | `EQUITY` |
+| Income | `INC` |
+| Expense | `EXP` |
+| COGS | `COGS` |
+
+### Sample Data
+
+The `scripts/seed_irs_mock_data.py` script populates Slowbooks with test data from **IRS Publication 583** (Rev. December 2024) — "Starting a Business and Keeping Records." The sample business is **Henry Brown's Auto Body Shop**, a sole proprietorship with:
+
+- 8 customers (John E. Marks, Patricia Davis, Robert Garcia, Thompson & Sons, etc.)
+- 13 vendors from the IRS check disbursements journal (Auto Parts Inc., ABC Auto Paint, Baker's Fender Co., etc.)
+- 8 service/material items (Body Repair, Paint & Finish, Dent Removal, Frame Alignment, etc.)
+- 10 invoices totaling $3,631.31 with 1.59% sales tax
+- 5 payments totaling $1,498.00
+- 3 pending estimates
+- All with proper double-entry journal entries
+
+```bash
+python3 scripts/seed_irs_mock_data.py
+```
+
+---
+
 ## License
 
 **Source Available — Free for personal and enterprise use. No commercial resale.**
