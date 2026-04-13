@@ -7,6 +7,7 @@ from app.models.estimates import Estimate, EstimateLine
 from app.models.payments import Payment, PaymentAllocation
 from app.models.banking import BankAccount, BankTransaction, Reconciliation
 from app.models.settings import Settings
+from app.models.gst import GstCode
 
 # Phase 1: Foundation
 from app.models.audit import AuditLog
@@ -37,7 +38,7 @@ __all__ = [
     "Estimate", "EstimateLine",
     "Payment", "PaymentAllocation",
     "BankAccount", "BankTransaction", "Reconciliation",
-    "Settings",
+    "Settings", "GstCode",
     # Phase 1
     "AuditLog",
     # Phase 2

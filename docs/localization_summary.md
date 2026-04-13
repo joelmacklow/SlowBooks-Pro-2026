@@ -175,7 +175,7 @@ Relevant files:
    Label/default remapping is in place for company, customer, vendor, PDF/email, CSV, and IIF surfaces while preserving existing database/API field names. Payroll employee address fields and any future schema renames remain separate work.
 
 5. Create a GST domain model:
-   Add GST codes/rates such as `GST15`, `ZERO`, `EXEMPT`, and `NO_GST`. Consider `IMPORT` or `REVERSE_CHARGE` later if needed.
+   GST code reference data is now modeled and seeded with `GST15`, `ZERO`, `EXEMPT`, and `NO_GST`, with a read-only API for downstream line-level GST work. Consider `IMPORT` or `REVERSE_CHARGE` later if needed.
 
 6. Store GST per line:
    Add GST code/rate to invoice lines, estimate lines, credit memo lines, bill lines, purchase order lines, and recurring invoice lines.

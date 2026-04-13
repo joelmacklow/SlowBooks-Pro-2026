@@ -35,7 +35,7 @@ from app.routes import recurring, batch_payments
 from app.routes import csv as csv_routes
 from app.routes import uploads
 # Phase 5: Advanced Integration
-from app.routes import bank_import, tax, backups
+from app.routes import bank_import, tax, backups, gst
 # Phase 6: Ambitious
 from app.routes import companies, employees, payroll
 
@@ -84,6 +84,7 @@ app.include_router(uploads.router)
 app.include_router(bank_import.router)
 app.include_router(tax.router)
 app.include_router(backups.router)
+app.include_router(gst.router)
 # Phase 6: Ambitious
 app.include_router(companies.router)
 app.include_router(employees.router)
