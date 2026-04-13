@@ -80,6 +80,52 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
+                    <h3>Localization</h3>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Country</label>
+                            <select name="country">
+                                <option value="NZ" ${s.country === 'NZ' ? 'selected' : ''}>New Zealand</option>
+                            </select></div>
+                        <div class="form-group"><label>Tax Regime</label>
+                            <select name="tax_regime">
+                                <option value="NZ" ${s.tax_regime === 'NZ' ? 'selected' : ''}>New Zealand GST</option>
+                            </select></div>
+                        <div class="form-group"><label>Currency</label>
+                            <select name="currency">
+                                <option value="NZD" ${s.currency === 'NZD' ? 'selected' : ''}>NZD</option>
+                            </select></div>
+                        <div class="form-group"><label>Locale</label>
+                            <input name="locale" value="${escapeHtml(s.locale || 'en-NZ')}"></div>
+                        <div class="form-group"><label>Timezone</label>
+                            <input name="timezone" value="${escapeHtml(s.timezone || 'Pacific/Auckland')}"></div>
+                        <div class="form-group"><label>IRD Number</label>
+                            <input name="ird_number" value="${escapeHtml(s.ird_number || '')}"></div>
+                        <div class="form-group"><label>GST Number</label>
+                            <input name="gst_number" value="${escapeHtml(s.gst_number || '')}"></div>
+                        <div class="form-group"><label>GST Registered</label>
+                            <select name="gst_registered">
+                                <option value="false" ${s.gst_registered !== 'true' ? 'selected' : ''}>No</option>
+                                <option value="true" ${s.gst_registered === 'true' ? 'selected' : ''}>Yes</option>
+                            </select></div>
+                        <div class="form-group"><label>GST Basis</label>
+                            <select name="gst_basis">
+                                <option value="invoice" ${s.gst_basis !== 'payments' ? 'selected' : ''}>Invoice</option>
+                                <option value="payments" ${s.gst_basis === 'payments' ? 'selected' : ''}>Payments</option>
+                            </select></div>
+                        <div class="form-group"><label>GST Period</label>
+                            <select name="gst_period">
+                                ${['monthly','two-monthly','six-monthly'].map(period =>
+                                    `<option value="${period}" ${s.gst_period===period?'selected':''}>${period}</option>`).join('')}
+                            </select></div>
+                        <div class="form-group"><label>Prices Include GST</label>
+                            <select name="prices_include_gst">
+                                <option value="false" ${s.prices_include_gst !== 'true' ? 'selected' : ''}>No</option>
+                                <option value="true" ${s.prices_include_gst === 'true' ? 'selected' : ''}>Yes</option>
+                            </select></div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Closing Date</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
                         Prevent modifications to transactions before this date.

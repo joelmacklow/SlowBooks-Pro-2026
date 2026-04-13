@@ -53,4 +53,16 @@ DEFAULT_SETTINGS = {
     "smtp_use_tls": "true",
     # Feature 15: Company Logo
     "company_logo_path": "",
+    # NZ localization foundation
+    "country": "NZ",
+    "tax_regime": "NZ",
+    "currency": "NZD",
+    "locale": "en-NZ",
+    "timezone": "Pacific/Auckland",
+    "ird_number": "",
+    "gst_number": "",
+    "gst_registered": "false",
+    "gst_basis": "invoice",
+    "gst_period": "two-monthly",
+    "prices_include_gst": "false",
 }
