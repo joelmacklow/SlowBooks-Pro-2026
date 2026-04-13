@@ -54,7 +54,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 
 ### Payroll
 - **Employees** — NZ payroll employee setup with IRD number, tax code, KiwiSaver, student loan, child support, ESCT, and pay frequency
-- **Payroll** — NZ payroll page placeholder while PAYE calculations and payslips are implemented in later slices
+- **Payroll** — NZ draft pay runs with versioned PAYE calculations, KiwiSaver/student loan/child support deductions, ESCT, and journal posting to payroll liability accounts
 - Tax calculations are approximate — disclaimer included. Verify with a tax professional
 
 ### Banking
@@ -211,7 +211,7 @@ SlowBooks-Pro-2026/
 │   │   ├── accounting.py     # Double-entry journal entry engine
 │   │   ├── audit.py          # SQLAlchemy after_flush audit hooks
 │   │   ├── closing_date.py   # Closing date enforcement guard
-│   │   ├── payroll_service.py # Withholding calculations
+│   │   ├── nz_payroll.py      # NZ PAYE / deduction calculations
 │   │   ├── recurring_service.py # Recurring invoice generation
 │   │   ├── email_service.py  # SMTP email delivery
 │   │   ├── csv_export.py     # CSV export (5 entity types)

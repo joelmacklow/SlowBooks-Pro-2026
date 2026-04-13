@@ -32,9 +32,10 @@ class NzPayrollDataModelTests(unittest.TestCase):
                 pay_rate=85000,
                 tax_code="M",
                 kiwisaver_enrolled=True,
-                kiwisaver_rate="0.0300",
+                kiwisaver_rate="0.0350",
                 student_loan=True,
-                child_support=False,
+                child_support=True,
+                child_support_amount="125.00",
                 esct_rate="0.3000",
                 pay_frequency="fortnightly",
                 start_date=date(2026, 4, 1),
@@ -44,6 +45,9 @@ class NzPayrollDataModelTests(unittest.TestCase):
         self.assertEqual(response["ird_number"], "123-456-789")
         self.assertEqual(response["tax_code"], "M")
         self.assertTrue(response["kiwisaver_enrolled"])
+        self.assertEqual(str(response["kiwisaver_rate"]), "0.0350")
+        self.assertTrue(response["child_support"])
+        self.assertEqual(str(response["child_support_amount"]), "125.00")
         self.assertEqual(response["pay_frequency"], "fortnightly")
         self.assertNotIn("ssn_last_four", response)
         self.assertNotIn("filing_status", response)
@@ -64,32 +68,64 @@ class NzPayrollDataModelTests(unittest.TestCase):
                 tax_code="ME",
                 kiwisaver_enrolled=True,
                 kiwisaver_rate="0.0400",
+                child_support=True,
+                child_support_amount="80.00",
                 end_date=date(2026, 12, 31),
             ), db=db)
 
         self.assertEqual(updated.tax_code, "ME")
         self.assertTrue(updated.kiwisaver_enrolled)
         self.assertEqual(str(updated.kiwisaver_rate), "0.0400")
+        self.assertTrue(updated.child_support)
+        self.assertEqual(str(updated.child_support_amount), "80.00")
         self.assertEqual(updated.end_date, date(2026, 12, 31))
 
-    def test_payroll_endpoints_are_disabled_until_paye_slice(self):
-        from app.routes.payroll import PAYROLL_NZ_PLACEHOLDER_DETAIL, create_pay_run, process_pay_run
-        from app.schemas.payroll import PayRunCreate
+    def test_pay_stub_model_uses_nz_deduction_fields(self):
+        from app.models.payroll import PayStub
 
-        with self.assertRaises(HTTPException) as create_ctx:
-            create_pay_run(PayRunCreate(
+        columns = set(PayStub.__table__.columns.keys())
+
+        self.assertIn("paye", columns)
+        self.assertIn("acc_earners_levy", columns)
+        self.assertIn("student_loan_deduction", columns)
+        self.assertIn("kiwisaver_employee_deduction", columns)
+        self.assertIn("employer_kiwisaver_contribution", columns)
+        self.assertIn("esct", columns)
+        self.assertIn("child_support_deduction", columns)
+        self.assertNotIn("federal_tax", columns)
+        self.assertNotIn("state_tax", columns)
+        self.assertNotIn("ss_tax", columns)
+        self.assertNotIn("medicare_tax", columns)
+
+    def test_payroll_routes_create_draft_and_process_run(self):
+        from app.routes.employees import create_employee
+        from app.routes.payroll import create_pay_run, process_pay_run
+        from app.schemas.payroll import PayRunCreate
+        from app.schemas.payroll import EmployeeCreate, PayStubInput
+
+        with self.Session() as db:
+            employee = create_employee(EmployeeCreate(
+                first_name="Aroha",
+                last_name="Ngata",
+                pay_type="salary",
+                pay_rate=78000,
+                tax_code="M",
+                kiwisaver_enrolled=True,
+                kiwisaver_rate="0.0350",
+                pay_frequency="fortnightly",
+            ), db=db)
+            draft = create_pay_run(PayRunCreate(
                 period_start=date(2026, 4, 1),
                 period_end=date(2026, 4, 14),
                 pay_date=date(2026, 4, 15),
-                stubs=[],
-            ))
-        self.assertEqual(create_ctx.exception.status_code, 410)
-        self.assertEqual(create_ctx.exception.detail, PAYROLL_NZ_PLACEHOLDER_DETAIL)
+                stubs=[PayStubInput(employee_id=employee.id)],
+            ), db=db)
+            processed = process_pay_run(draft.id, db=db)
 
-        with self.assertRaises(HTTPException) as process_ctx:
-            process_pay_run(1)
-        self.assertEqual(process_ctx.exception.status_code, 410)
-        self.assertEqual(process_ctx.exception.detail, PAYROLL_NZ_PLACEHOLDER_DETAIL)
+        self.assertEqual(draft.status, "draft")
+        self.assertEqual(processed.status, "processed")
+        self.assertGreater(processed.total_gross, 0)
+        self.assertGreater(processed.total_net, 0)
 
 
 if __name__ == "__main__":

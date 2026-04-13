@@ -16,6 +16,33 @@ from app.models.transactions import Transaction, TransactionLine
 from app.models.accounts import Account, AccountType
 
 
+def get_or_create_system_account(
+    db: Session,
+    account_number: str,
+    name: str,
+    account_type: AccountType,
+) -> int | None:
+    acct = db.query(Account).filter(Account.account_number == account_number).first()
+    if acct:
+        acct.name = name
+        acct.account_type = account_type
+        acct.is_system = True
+        acct.is_active = True
+        db.flush()
+        return acct.id
+
+    acct = Account(
+        name=name,
+        account_number=account_number,
+        account_type=account_type,
+        is_system=True,
+        is_active=True,
+    )
+    db.add(acct)
+    db.flush()
+    return acct.id if acct else None
+
+
 def create_journal_entry(
     db: Session,
     txn_date: date,
@@ -124,25 +151,7 @@ def get_default_income_account_id(db: Session) -> int:
 
 def get_gst_account_id(db: Session) -> int:
     """Get or create the NZ GST control account (2200)."""
-    acct = db.query(Account).filter(Account.account_number == "2200").first()
-    if acct:
-        if acct.name == "Sales Tax Payable":
-            acct.name = "GST"
-        acct.account_type = AccountType.LIABILITY
-        acct.is_system = True
-        db.flush()
-        return acct.id
-
-    acct = Account(
-        name="GST",
-        account_number="2200",
-        account_type=AccountType.LIABILITY,
-        is_system=True,
-        is_active=True,
-    )
-    db.add(acct)
-    db.flush()
-    return acct.id if acct else None
+    return get_or_create_system_account(db, "2200", "GST", AccountType.LIABILITY)
 
 
 def get_sales_tax_account_id(db: Session) -> int:
@@ -160,3 +169,31 @@ def get_ap_account_id(db: Session) -> int:
     """Get Accounts Payable account ID (2000)."""
     acct = db.query(Account).filter(Account.account_number == "2000").first()
     return acct.id if acct else None
+
+
+def get_wages_expense_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "7000", "Wages & Salaries Expense", AccountType.EXPENSE)
+
+
+def get_employer_kiwisaver_expense_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "7010", "Employer KiwiSaver Expense", AccountType.EXPENSE)
+
+
+def get_paye_payable_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "2310", "PAYE Payable", AccountType.LIABILITY)
+
+
+def get_kiwisaver_payable_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "2315", "KiwiSaver Payable", AccountType.LIABILITY)
+
+
+def get_esct_payable_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "2320", "ESCT Payable", AccountType.LIABILITY)
+
+
+def get_child_support_payable_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "2325", "Child Support Payable", AccountType.LIABILITY)
+
+
+def get_payroll_clearing_account_id(db: Session) -> int | None:
+    return get_or_create_system_account(db, "2330", "Payroll Clearing", AccountType.LIABILITY)

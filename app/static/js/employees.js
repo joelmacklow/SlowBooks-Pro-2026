@@ -35,8 +35,8 @@ const EmployeesPage = {
     async showForm(id = null) {
         let emp = {
             first_name: '', last_name: '', ird_number: '', pay_type: 'hourly', pay_rate: 0,
-            tax_code: 'M', kiwisaver_enrolled: false, kiwisaver_rate: '0.0300',
-            student_loan: false, child_support: false, esct_rate: '0.0000',
+            tax_code: 'M', kiwisaver_enrolled: false, kiwisaver_rate: '0.0350',
+            student_loan: false, child_support: false, child_support_amount: '0.00', esct_rate: '0.0000',
             pay_frequency: 'fortnightly', start_date: todayISO(), end_date: ''
         };
         if (id) emp = await API.get(`/employees/${id}`);
@@ -65,7 +65,7 @@ const EmployeesPage = {
                             <option value="true" ${emp.kiwisaver_enrolled?'selected':''}>Yes</option>
                         </select></div>
                     <div class="form-group"><label>KiwiSaver Rate</label>
-                        <input name="kiwisaver_rate" type="number" step="0.0001" value="${emp.kiwisaver_rate || '0.0300'}"></div>
+                        <input name="kiwisaver_rate" type="number" step="0.0001" value="${emp.kiwisaver_rate || '0.0350'}"></div>
                     <div class="form-group"><label>Student Loan</label>
                         <select name="student_loan">
                             <option value="false" ${!emp.student_loan?'selected':''}>No</option>
@@ -76,6 +76,8 @@ const EmployeesPage = {
                             <option value="false" ${!emp.child_support?'selected':''}>No</option>
                             <option value="true" ${emp.child_support?'selected':''}>Yes</option>
                         </select></div>
+                    <div class="form-group"><label>Child Support Amount</label>
+                        <input name="child_support_amount" type="number" step="0.01" min="0" value="${emp.child_support_amount || '0.00'}"></div>
                     <div class="form-group"><label>ESCT Rate</label>
                         <input name="esct_rate" type="number" step="0.0001" value="${emp.esct_rate || '0.0000'}"></div>
                     <div class="form-group"><label>Pay Frequency</label>

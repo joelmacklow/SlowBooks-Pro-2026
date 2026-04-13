@@ -101,7 +101,7 @@ Relevant files:
 
 ### Payroll
 
-Payroll employee setup now uses an NZ-focused field set for IRD number, tax code, KiwiSaver, student loan, child support, ESCT, pay frequency, and start/end dates. PAYE calculations, deductions, payslips, and payday filing outputs remain later slices, and the Payroll page now stays visible as an NZ placeholder rather than serving US withholding behavior.
+Payroll employee setup now uses an NZ-focused field set for IRD number, tax code, KiwiSaver, student loan, child support, ESCT, pay frequency, start/end dates, and a per-pay child support amount. The Payroll page now supports draft pay runs using versioned NZ PAYE rules, calculates PAYE/ACC/student loan/KiwiSaver/ESCT/child support values, and posts processed runs into NZ payroll liability accounts. Payslips and payday filing outputs remain later slices.
 
 Relevant files:
 
@@ -109,7 +109,7 @@ Relevant files:
 - `app/schemas/payroll.py`
 - `app/routes/payroll.py`
 - `app/routes/employees.py`
-- `app/services/payroll_service.py`
+- `app/services/nz_payroll.py`
 - `app/static/js/payroll.js`
 - `app/static/js/employees.js`
 
@@ -194,10 +194,10 @@ Relevant files:
     Schedule C routes/UI are now hidden or disabled for SlowBooks NZ. Future work should replace them with NZ income-tax outputs only after deciding whether the target is IR3 business summary, IR10-style financial statements, or accountant export.
 
 12. Rebuild payroll around NZ:
-    Employee payroll setup now uses NZ fields instead of SSN/filing status/allowances. Payroll processing endpoints and UI are disabled behind an NZ placeholder until the PAYE slice is implemented.
+    Employee payroll setup now uses NZ fields instead of SSN/filing status/allowances, including child support amount capture. Payroll processing now works through draft pay runs rather than the old US placeholder flow.
 
 13. Implement PAYE using versioned official tables:
-    Use IRD PAYE tables/specs by tax year instead of hardcoded constants. Model PAYE, student loan, KiwiSaver employee deduction, employer KiwiSaver, ESCT, child support, and payday filing fields.
+    Draft NZ pay runs now use versioned IRD-driven PAYE logic by tax year and model PAYE, ACC earners’ levy, student loan, KiwiSaver employee deduction, employer KiwiSaver, ESCT, and child support deductions. Payday filing fields and exports remain future work.
 
 14. Replace payroll outputs:
     Add NZ payslip labels and Employment Information / payday filing export. Avoid naming this "IRFile/EMS" until confirmed by current IRD requirements.

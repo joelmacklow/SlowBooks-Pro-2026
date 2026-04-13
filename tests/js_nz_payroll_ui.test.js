@@ -24,8 +24,35 @@ async function runEmployeesPage() {
 
 async function runPayrollPage() {
     const code = `${fs.readFileSync('app/static/js/payroll.js', 'utf8')}\nthis.PayrollPage = PayrollPage;`;
+    const calls = [];
     const context = {
-        API: { get: async () => [] },
+        API: {
+            get: async (path) => {
+                calls.push(path);
+                if (path === '/payroll') {
+                    return [{
+                        id: 1,
+                        status: 'draft',
+                        tax_year: 2027,
+                        pay_date: '2026-04-15',
+                        total_gross: 4200,
+                        total_net: 2922.13,
+                        total_taxes: 1277.87,
+                        stubs: [],
+                    }];
+                }
+                if (path === '/employees?active_only=true') {
+                    return [{
+                        id: 1,
+                        first_name: 'Aroha',
+                        last_name: 'Ngata',
+                        pay_type: 'salary',
+                        pay_frequency: 'fortnightly',
+                    }];
+                }
+                throw new Error(`unexpected path ${path}`);
+            },
+        },
         formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
         formatDate: value => String(value || ''),
         statusBadge: value => value,
@@ -42,7 +69,7 @@ async function runPayrollPage() {
     };
     vm.createContext(context);
     vm.runInContext(code, context);
-    return context.PayrollPage.render();
+    return { html: await context.PayrollPage.render(), calls };
 }
 
 (async () => {
@@ -50,18 +77,24 @@ async function runPayrollPage() {
     assert.ok(employeeHtml.includes('IRD Number'));
     assert.ok(employeeHtml.includes('Tax Code'));
     assert.ok(employeeHtml.includes('KiwiSaver'));
+    assert.ok(employeeHtml.includes('Child Support Amount'));
     assert.ok(employeeHtml.includes('Pay Frequency'));
     assert.ok(!employeeHtml.includes('SSN Last 4'));
     assert.ok(!employeeHtml.includes('Filing Status'));
     assert.ok(!employeeHtml.includes('Allowances'));
 
-    const payrollHtml = await runPayrollPage();
+    const { html: payrollHtml, calls } = await runPayrollPage();
+    assert.ok(calls.includes('/payroll'));
+    assert.ok(calls.includes('/employees?active_only=true'));
+    assert.ok(payrollHtml.includes('New Pay Run'));
+    assert.ok(payrollHtml.includes('Tax Year'));
+    assert.ok(payrollHtml.includes('Process'));
+    assert.ok(payrollHtml.includes('Draft'));
     assert.ok(payrollHtml.includes('NZ payroll setup is ready'));
-    assert.ok(payrollHtml.includes('PAYE calculations'));
+    assert.ok(payrollHtml.includes('PAYE'));
     assert.ok(!payrollHtml.includes('Federal'));
     assert.ok(!payrollHtml.includes('Medicare'));
     assert.ok(!payrollHtml.includes('Social Security'));
-    assert.ok(!payrollHtml.includes('New Pay Run'));
 })().catch(err => {
     console.error(err);
     process.exit(1);

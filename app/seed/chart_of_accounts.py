@@ -24,6 +24,11 @@ CHART_OF_ACCOUNTS = [
     {"account_number": "2100", "name": "Credit Card", "account_type": "liability"},
     {"account_number": "2200", "name": "GST", "account_type": "liability"},
     {"account_number": "2300", "name": "Payroll Liabilities", "account_type": "liability"},
+    {"account_number": "2310", "name": "PAYE Payable", "account_type": "liability"},
+    {"account_number": "2315", "name": "KiwiSaver Payable", "account_type": "liability"},
+    {"account_number": "2320", "name": "ESCT Payable", "account_type": "liability"},
+    {"account_number": "2325", "name": "Child Support Payable", "account_type": "liability"},
+    {"account_number": "2330", "name": "Payroll Clearing", "account_type": "liability"},
     {"account_number": "2400", "name": "Loan Payable", "account_type": "liability"},
     {"account_number": "2500", "name": "Other Current Liabilities", "account_type": "liability"},
 
@@ -57,4 +62,6 @@ CHART_OF_ACCOUNTS = [
     {"account_number": "6800", "name": "Tools & Equipment", "account_type": "expense"},
     {"account_number": "6900", "name": "Utilities", "account_type": "expense"},
     {"account_number": "6950", "name": "Miscellaneous Expense", "account_type": "expense"},
+    {"account_number": "7000", "name": "Wages & Salaries Expense", "account_type": "expense"},
+    {"account_number": "7010", "name": "Employer KiwiSaver Expense", "account_type": "expense"},
 ]
