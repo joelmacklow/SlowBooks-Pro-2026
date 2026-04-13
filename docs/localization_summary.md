@@ -210,17 +210,20 @@ Relevant files:
 16. Add RBAC-linked filing audit model later:
     Once multiuser/RBAC work begins, add a dedicated filing-status/audit model for payroll employee filing so the app can track generated, filed, amended, and changed-since-filed employee records separately from employee start/end dates.
 
-17. Expand SMTP document delivery beyond invoices:
+17. Add system-account role mapping admin workflow:
+    The Chart of Accounts admin already exists, but the new system-account role mappings currently rely on generic settings pathways and fallback logic. Add a dedicated admin workflow for viewing, assigning, validating, and updating runtime system-account roles before or alongside the later default-chart replacement/import UX improvements.
+
+18. Expand SMTP document delivery beyond invoices:
     Add shared email/send flows for externally delivered documents that already have PDF output or clear outbound use-cases. Prioritise customer statements, estimates, credit memos / credit notes, payroll payslips, and purchase orders. Keep the SMTP/logging/template approach shared so future outbound document types do not each invent their own email path.
 
-18. Add Alembic migrations:
+19. Add Alembic migrations:
     Any model/schema changes need migrations under `alembic/versions`. Also ensure multi-company creation and seed flows use the NZ defaults and chart.
 
-19. Update UI copy everywhere:
+20. Update UI copy everywhere:
     Replace Sales Tax, Federal Tax, State Tax, SS, Medicare, EIN, ZIP, State, IRS, and Schedule C. Update README and screenshots/docs.
 
-20. Add tests:
+21. Add tests:
     Add focused tests for settings consumption, GST inclusive/exclusive math, line GST codes, frontend/backend calculation agreement, document posting, credit memo reversals, bill input GST, report period handling, PAYE examples, and formatting.
 
-21. Decide multi-currency scope:
+22. Decide multi-currency scope:
     For a pure NZ fork, start with single-currency `NZD` formatting. Full multi-currency is a separate accounting feature involving exchange rates, realized gains/losses, bank-account currencies, and reporting currency.
