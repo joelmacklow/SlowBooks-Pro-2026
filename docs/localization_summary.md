@@ -200,22 +200,25 @@ Relevant files:
     Draft NZ pay runs now use versioned IRD-driven PAYE logic by tax year and model PAYE, ACC earners’ levy, student loan, KiwiSaver employee deduction, employer KiwiSaver, ESCT, and child support deductions. Payday filing fields and exports remain future work.
 
 14. Replace payroll outputs:
-    NZ payslip PDF output now exists for processed pay runs, and per-run Employment Information CSV export now exists for processed runs. New/departing employee filing remains a later payroll-filing slice. Avoid naming this "IRFile/EMS" until confirmed by current IRD requirements.
+    NZ payslip PDF output now exists for processed pay runs, per-run Employment Information CSV export now exists for processed runs, and first-pass starter/leaver employee filing now exists using the current employee start/end dates as the source of truth. A dedicated filing-status/audit model remains a later RBAC/multiuser slice. Avoid naming this "IRFile/EMS" until confirmed by current IRD requirements.
 
 15. Seed NZ chart and demo data:
     Create NZ chart accounts for GST, PAYE, KiwiSaver, ESCT, wages, and any ACC-related expenses/liabilities as appropriate. Replace IRS Pub 583 seed/demo data with NZ examples.
 
-16. Expand SMTP document delivery beyond invoices:
+16. Add RBAC-linked filing audit model later:
+    Once multiuser/RBAC work begins, add a dedicated filing-status/audit model for payroll employee filing so the app can track generated, filed, amended, and changed-since-filed employee records separately from employee start/end dates.
+
+17. Expand SMTP document delivery beyond invoices:
     Add shared email/send flows for externally delivered documents that already have PDF output or clear outbound use-cases. Prioritise customer statements, estimates, credit memos / credit notes, payroll payslips, and purchase orders. Keep the SMTP/logging/template approach shared so future outbound document types do not each invent their own email path.
 
-17. Add Alembic migrations:
+18. Add Alembic migrations:
     Any model/schema changes need migrations under `alembic/versions`. Also ensure multi-company creation and seed flows use the NZ defaults and chart.
 
-18. Update UI copy everywhere:
+19. Update UI copy everywhere:
     Replace Sales Tax, Federal Tax, State Tax, SS, Medicare, EIN, ZIP, State, IRS, and Schedule C. Update README and screenshots/docs.
 
-19. Add tests:
+20. Add tests:
     Add focused tests for settings consumption, GST inclusive/exclusive math, line GST codes, frontend/backend calculation agreement, document posting, credit memo reversals, bill input GST, report period handling, PAYE examples, and formatting.
 
-20. Decide multi-currency scope:
+21. Decide multi-currency scope:
     For a pure NZ fork, start with single-currency `NZD` formatting. Full multi-currency is a separate accounting feature involving exchange rates, realized gains/losses, bank-account currencies, and reporting currency.

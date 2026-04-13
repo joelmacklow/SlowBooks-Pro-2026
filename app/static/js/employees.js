@@ -24,6 +24,8 @@ const EmployeesPage = {
                     <td>${e.is_active ? '<span class="badge badge-paid">Active</span>' : '<span class="badge badge-draft">Inactive</span>'}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="EmployeesPage.showForm(${e.id})">Edit</button>
+                        ${e.start_date ? `<button class="btn btn-sm btn-secondary" onclick="EmployeesPage.exportStarterFiling(${e.id})">Starter Filing</button>` : ''}
+                        ${e.end_date ? `<button class="btn btn-sm btn-secondary" onclick="EmployeesPage.exportLeaverFiling(${e.id})">Leaver Filing</button>` : ''}
                     </td>
                 </tr>`;
             }
@@ -113,5 +115,13 @@ const EmployeesPage = {
             closeModal();
             App.navigate('#/employees');
         } catch (err) { toast(err.message, 'error'); }
+    },
+
+    exportStarterFiling(id) {
+        window.open(`/api/employees/${id}/filing/starter/export`, '_blank');
+    },
+
+    exportLeaverFiling(id) {
+        window.open(`/api/employees/${id}/filing/leaver/export`, '_blank');
     },
 };

@@ -6,11 +6,28 @@ async function runEmployeesPage() {
     const code = `${fs.readFileSync('app/static/js/employees.js', 'utf8')}\nthis.EmployeesPage = EmployeesPage;`;
     let modalHtml = '';
     const context = {
-        API: { get: async () => { throw new Error('new employee form should not load existing employee'); } },
+        API: { get: async (path) => {
+            if (path === '/employees') {
+                return [{
+                    id: 1,
+                    first_name: 'Aroha',
+                    last_name: 'Ngata',
+                    tax_code: 'M',
+                    pay_frequency: 'fortnightly',
+                    pay_rate: 85000,
+                    pay_type: 'salary',
+                    is_active: true,
+                    start_date: '2026-04-01',
+                    end_date: '2026-04-30',
+                }];
+            }
+            throw new Error('new employee form should not load existing employee');
+        } },
         App: { navigate() {} },
         FormData,
         closeModal() {},
         escapeHtml: value => String(value || ''),
+        formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
         openModal: (_title, html) => { modalHtml = html; },
         todayISO: () => '2026-04-01',
         toast() {},
@@ -18,8 +35,9 @@ async function runEmployeesPage() {
     };
     vm.createContext(context);
     vm.runInContext(code, context);
+    const listHtml = await context.EmployeesPage.render();
     await context.EmployeesPage.showForm();
-    return modalHtml;
+    return { listHtml, modalHtml };
 }
 
 async function runPayrollPage() {
@@ -85,12 +103,14 @@ async function runPayrollPage() {
 }
 
 (async () => {
-    const employeeHtml = await runEmployeesPage();
+    const { listHtml: employeeListHtml, modalHtml: employeeHtml } = await runEmployeesPage();
     assert.ok(employeeHtml.includes('IRD Number'));
     assert.ok(employeeHtml.includes('Tax Code'));
     assert.ok(employeeHtml.includes('KiwiSaver'));
     assert.ok(employeeHtml.includes('Child Support Amount'));
     assert.ok(employeeHtml.includes('Pay Frequency'));
+    assert.ok(employeeListHtml.includes('Starter Filing'));
+    assert.ok(employeeListHtml.includes('Leaver Filing'));
     assert.ok(!employeeHtml.includes('SSN Last 4'));
     assert.ok(!employeeHtml.includes('Filing Status'));
     assert.ok(!employeeHtml.includes('Allowances'));
