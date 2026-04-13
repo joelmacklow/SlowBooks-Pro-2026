@@ -39,7 +39,10 @@ const PayrollPage = {
                 <td class="amount">${formatCurrency(run.total_taxes)}</td>
                 <td class="actions">
                     <button class="btn btn-sm btn-secondary" onclick="PayrollPage.viewRun(${run.id})">View</button>
-                    ${status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>` : `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Payslips</button>`}
+                    ${status === 'draft'
+                        ? `<button class="btn btn-sm btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>`
+                        : `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Payslips</button>
+                           <button class="btn btn-sm btn-secondary" onclick="PayrollPage.exportEmploymentInformation(${run.id})">Employment Information</button>`}
                 </td>
             </tr>`;
         }
@@ -175,5 +178,9 @@ const PayrollPage = {
 
     openPayslip(runId, employeeId) {
         window.open(`/api/payroll/${runId}/payslips/${employeeId}/pdf`, '_blank');
+    },
+
+    exportEmploymentInformation(runId) {
+        window.open(`/api/payroll/${runId}/employment-information/export`, '_blank');
     },
 };

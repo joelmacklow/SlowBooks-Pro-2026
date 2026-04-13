@@ -65,4 +65,7 @@ DEFAULT_SETTINGS = {
     "gst_basis": "invoice",
     "gst_period": "two-monthly",
     "prices_include_gst": "false",
+    "payroll_contact_name": "",
+    "payroll_contact_phone": "",
+    "payroll_contact_email": "",
 }

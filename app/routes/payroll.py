@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.payroll import Employee, PayRun, PayRunStatus, PayStub
 from app.schemas.payroll import PayRunCreate, PayRunResponse, PayStubResponse
 from app.services.pdf_service import generate_payroll_payslip_pdf
+from app.services.payday_filing import generate_employment_information_csv
 from app.services.accounting import (
     create_journal_entry,
     get_child_support_payable_account_id,
@@ -292,4 +293,22 @@ def payroll_payslip_pdf(run_id: int, employee_id: int, db: Session = Depends(get
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"inline; filename=PaySlip_{run_id}_{employee_id}.pdf"},
+    )
+
+
+@router.get("/{run_id}/employment-information/export")
+def export_employment_information(run_id: int, db: Session = Depends(get_db)):
+    pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
+    if not pay_run:
+        raise HTTPException(status_code=404, detail="Pay run not found")
+
+    try:
+        csv_content = generate_employment_information_csv(pay_run, get_settings(db))
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="EmploymentInformation_{pay_run.pay_date.isoformat()}_run-{pay_run.id}.csv"'},
     )

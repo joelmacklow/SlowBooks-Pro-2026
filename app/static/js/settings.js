@@ -127,6 +127,21 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
+                    <h3>Payroll Filing Contact</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Used for Employment Information / payday filing exports. Falls back to company details if left blank.
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Contact Name</label>
+                            <input name="payroll_contact_name" value="${escapeHtml(s.payroll_contact_name || '')}"></div>
+                        <div class="form-group"><label>Contact Phone</label>
+                            <input name="payroll_contact_phone" value="${escapeHtml(s.payroll_contact_phone || '')}"></div>
+                        <div class="form-group"><label>Contact Email</label>
+                            <input name="payroll_contact_email" type="email" value="${escapeHtml(s.payroll_contact_email || '')}"></div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Closing Date</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
                         Prevent modifications to transactions before this date.

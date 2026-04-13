@@ -103,6 +103,7 @@ async function runPayrollPage() {
     assert.ok(payrollHtml.includes('Process'));
     assert.ok(payrollHtml.includes('Draft'));
     assert.ok(payrollHtml.includes('Payslip'));
+    assert.ok(payrollHtml.includes('Employment Information'));
     assert.ok(payrollHtml.includes('NZ payroll setup is ready'));
     assert.ok(payrollHtml.includes('PAYE'));
     assert.ok(!payrollHtml.includes('Federal'));
