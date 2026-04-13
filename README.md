@@ -4,6 +4,8 @@
 
 Free and open source. Runs on Linux and Windows. No Intuit activation servers required.
 
+For detailed setup and environment instructions, see **INSTALL.md**.
+
 ![Slowbooks Pro 2026 — Splash Screen](screenshots/splash.png)
 
 ![Slowbooks Pro 2026 — Dashboard (Light Mode)](screenshots/dashboard-light.png)
