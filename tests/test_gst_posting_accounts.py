@@ -47,10 +47,10 @@ class GstPostingAccountTests(unittest.TestCase):
         self.assertEqual(account.account_type, AccountType.LIABILITY)
         self.assertTrue(account.is_system)
 
-    def test_seed_chart_names_account_2200_gst(self):
+    def test_seed_chart_names_account_820_gst(self):
         from app.seed.chart_of_accounts import CHART_OF_ACCOUNTS
 
-        gst_account = next(row for row in CHART_OF_ACCOUNTS if row["account_number"] == "2200")
+        gst_account = next(row for row in CHART_OF_ACCOUNTS if row["account_number"] == "820")
         self.assertEqual(gst_account["name"], "GST")
         self.assertEqual(gst_account["account_type"], "liability")
 

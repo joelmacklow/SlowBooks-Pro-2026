@@ -45,16 +45,24 @@ def _iif_line(fields: list) -> str:
 
 
 def _map_account_type(acct: Account) -> str:
-    """Map Slowbooks AccountType + account_number to IIF ACCNTTYPE.
+    """Map Slowbooks accounts to IIF ACCNTTYPE.
 
-    QB2003 has finer-grained account types than our 6 enums.
-    We use account_number ranges to distinguish sub-types within
-    each Slowbooks category.
+    QB2003 has finer-grained account types than our 6 enums. Prefer name-based
+    semantic mapping first so alternate charts (NZ/Xero/MAS-style) do not depend
+    on one hardcoded numbering scheme. Fall back to the old number-range logic
+    for legacy compatibility.
     """
+    name = (acct.name or "").lower()
     num = int(acct.account_number or "0")
     atype = acct.account_type.value
 
     if atype == "asset":
+        if any(token in name for token in ("bank", "checking", "savings")):
+            return "BANK"
+        if "accounts receivable" in name or "trade debtors" in name:
+            return "AR"
+        if any(token in name for token in ("equipment", "depreciation")):
+            return "FIXASSET"
         if 1000 <= num <= 1099:
             return "BANK"
         if num == 1100:
@@ -66,6 +74,10 @@ def _map_account_type(acct: Account) -> str:
         return "OASSET"
 
     if atype == "liability":
+        if "accounts payable" in name or "trade creditors" in name:
+            return "AP"
+        if "loan" in name:
+            return "LTLIAB"
         if num == 2000:
             return "AP"
         if num < 2500:

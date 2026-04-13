@@ -49,7 +49,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 
 ### Double-Entry Accounting
 - **Journal Entries** — Every invoice, payment, bill, and payroll run automatically creates balanced journal entries. Void creates reversing entries
-- **Chart of Accounts** — 39+ seeded accounts (Contractor template), 6 account types (asset, liability, equity, income, COGS, expense)
+- **Chart of Accounts** — NZ-oriented default chart seed with system-account role mappings for runtime posting/default selection
 - **Closing Date Enforcement** — Prevent modifications to transactions before a configurable closing date with optional password protection
 - **Audit Log** — Automatic logging of all create/update/delete operations with old/new value tracking via SQLAlchemy event hooks
 - **Account Balances** — Updated in real-time as transactions post
@@ -484,7 +484,7 @@ ENDTRNS
 
 ### Sample Data
 
-The `scripts/seed_irs_mock_data.py` script populates Slowbooks with test data from **IRS Publication 583** (Rev. December 2024) — "Starting a Business and Keeping Records." The sample business is **Henry Brown's Auto Body Shop**, a sole proprietorship with:
+The `scripts/seed_irs_mock_data.py` script currently populates Slowbooks with test data from **IRS Publication 583** (Rev. December 2024) — "Starting a Business and Keeping Records." The sample business is **Henry Brown's Auto Body Shop**, a sole proprietorship with:
 
 - 8 customers (John E. Marks, Patricia Davis, Robert Garcia, Thompson & Sons, etc.)
 - 13 vendors from the IRS check disbursements journal (Auto Parts Inc., ABC Auto Paint, Baker's Fender Co., etc.)
