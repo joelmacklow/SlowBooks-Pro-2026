@@ -10,6 +10,7 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 - Wire PDF Jinja filters to use company settings from the render context.
 - Wire invoice email rendering to use the same currency/date filters.
 - Add a global frontend settings cache so existing UI formatting calls can use localization settings without threading settings through every page renderer.
+- Route company list `last_accessed` dates through the shared frontend date helper.
 - Keep explicit helper arguments available for tests and future special cases.
 - Update the localization plan document to reflect the synced upstream branch and the current formatting design.
 
@@ -31,6 +32,7 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 - Frontend `formatCurrency()` and `formatDate()` use `App.settings` by default.
 - `App.init()` loads `/settings` before first route render so existing UI calls use the cached settings.
 - Saving settings updates the global cache immediately.
+- Company list `last_accessed` dates use the same localized frontend formatting path.
 - Existing callers remain compatible when no settings are loaded, falling back to the previous US defaults.
 
 ## Affected Files And Modules
@@ -40,6 +42,7 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 - `app/services/email_service.py`
 - `app/templates/invoice_email.html`
 - `app/static/js/app.js`
+- `app/static/js/companies.js`
 - `app/static/js/settings.js`
 - `app/static/js/utils.js`
 - `docs/localization_summary.md`
@@ -49,6 +52,7 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 - `tests/js_formatting.test.js`
 - `tests/js_settings_cache.test.js`
 - `tests/js_app_init_settings.test.js`
+- `tests/js_companies_formatting.test.js`
 
 ## Test Plan
 
@@ -58,6 +62,7 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 - Add failing Node tests proving frontend helpers use explicit settings and the global `App.settings` cache.
 - Add failing Node tests proving `SettingsPage.save()` refreshes `App.settings` from the API response.
 - Add failing Node tests proving `App.init()` waits for settings before first navigation and tolerates invalid locale input.
+- Add failing Node tests proving company list `last_accessed` dates use the global settings cache.
 - Verify all Python tests with:
 
 ```bash
@@ -70,12 +75,14 @@ SlowBooks Pro 2026 still displays user-facing currency and dates with US default
 node tests/js_formatting.test.js
 node tests/js_settings_cache.test.js
 node tests/js_app_init_settings.test.js
+node tests/js_companies_formatting.test.js
 ```
 
 - Verify JavaScript syntax with:
 
 ```bash
 node --check app/static/js/app.js
+node --check app/static/js/companies.js
 node --check app/static/js/settings.js
 node --check app/static/js/utils.js
 ```

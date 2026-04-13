@@ -23,7 +23,7 @@ const CompaniesPage = {
                     <div class="card-header">${escapeHtml(c.name)}</div>
                     <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.database_name)}</div>
                     ${c.description ? `<div style="font-size:11px;margin-top:4px;">${escapeHtml(c.description)}</div>` : ''}
-                    <div style="font-size:9px;color:var(--text-light);margin-top:4px;">Last accessed: ${c.last_accessed ? new Date(c.last_accessed).toLocaleDateString() : 'Never'}</div>
+                    <div style="font-size:9px;color:var(--text-light);margin-top:4px;">Last accessed: ${c.last_accessed ? formatDate(c.last_accessed) : 'Never'}</div>
                 </div>`;
             }
             html += '</div>';

@@ -56,10 +56,12 @@ NZ fields have been added to defaults and surfaced in the settings UI. Keep expa
 
 ### Currency And Dates
 
-Currency and date formatting are hardcoded for the US:
+Currency and date formatting now has a shared foundation:
 
-- `app/static/js/utils.js` uses `Intl.NumberFormat('en-US', { currency: 'USD' })`.
-- `app/services/pdf_service.py` formats currency with `$` and dates with US-style month/day/year strings.
+- `app/services/formatting.py` provides Python currency and date helpers driven by company settings.
+- PDF invoice, estimate, statement, and invoice email rendering use the shared Python formatting path.
+- `app/static/js/utils.js` provides frontend currency and date helpers driven by `App.settings`.
+- Existing report, transaction, dashboard, settings, and company-list UI callers use the shared frontend helper path for known currency/date display.
 
 ### GST Calculation
 
@@ -165,7 +167,7 @@ Relevant files:
    Settings for `country=NZ`, `tax_regime=NZ`, `currency=NZD`, `locale=en-NZ`, `timezone=Pacific/Auckland`, `ird_number`, `gst_number`, `gst_registered`, `gst_basis`, `gst_period`, and `prices_include_gst` now exist. Add tests when consuming these settings from formatting, GST, reports, imports, or payroll.
 
 3. Centralize formatting:
-   Replace hardcoded `en-US`, `USD`, `$`, and US date strings with locale-aware frontend and PDF helpers. Include report period display, invoice/estimate/PO/recurring totals, customer statements, and PDF templates.
+   Shared Python and frontend formatting helpers are in place and wired into known PDF, email, report, transaction, dashboard, settings, and company-list date/currency surfaces. Keep using these helpers for new GST, payroll, address, CSV, IIF, and reporting work.
 
 4. Refactor address fields without breaking data:
    Prefer label/remap first (`Region`, `Postcode`, `Country=NZ`), then consider schema migrations later. Update settings, customers, vendors, employees, PDFs, CSV, and IIF.
