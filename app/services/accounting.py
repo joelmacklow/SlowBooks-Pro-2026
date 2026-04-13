@@ -73,6 +73,43 @@ def create_journal_entry(
     return txn
 
 
+def reverse_journal_entry(
+    db: Session,
+    transaction_id: int,
+    reversal_date: date,
+    description: str,
+    source_type: str = None,
+    source_id: int = None,
+    reference: str = None,
+) -> Transaction | None:
+    """Create a reversing entry for an existing journal transaction."""
+    original = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if not original:
+        return None
+
+    reverse_lines = [
+        {
+            "account_id": line.account_id,
+            "debit": line.credit,
+            "credit": line.debit,
+            "description": f"REVERSAL: {line.description or ''}",
+        }
+        for line in original.lines
+    ]
+    if not reverse_lines:
+        return None
+
+    return create_journal_entry(
+        db,
+        reversal_date,
+        description,
+        reverse_lines,
+        source_type=source_type,
+        source_id=source_id,
+        reference=reference,
+    )
+
+
 def get_ar_account_id(db: Session) -> int:
     """Get Accounts Receivable account ID (1100)."""
     acct = db.query(Account).filter(Account.account_number == "1100").first()

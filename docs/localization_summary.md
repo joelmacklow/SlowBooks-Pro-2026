@@ -13,7 +13,7 @@ The app is strongly US-shaped in tax, payroll, addresses, reports, PDF/UI copy, 
 - GST calculation is now centralized for invoices, bills, credit memos, purchase orders, estimates, and generated recurring invoices.
 - Document forms now use line-level GST codes for GST calculation. The legacy `default_tax_rate` setting still exists for compatibility, but it is no longer the GST design for NZ documents.
 - Upstream added shared report period UI for several reports. Reuse that flow for GST returns instead of building a separate date picker.
-- Document updates recalculate totals but do not consistently rebuild/reverse journal entries, which becomes riskier once GST posting rules are introduced.
+- Posted invoice updates now reverse the prior journal entry and post a replacement when lines are changed. Invoice duplication, estimate-to-invoice conversion, and purchase-order-to-bill conversion now route through the normal posting paths so converted/duplicated documents carry balanced journal entries.
 - A small `tests/` directory now exists for settings localization. GST, reporting, and payroll changes still need focused regression tests before implementation.
 - Schema changes need Alembic migrations under `alembic/versions`.
 
@@ -87,6 +87,8 @@ Document forms now load GST codes and use line-level GST logic for frontend prev
 ### GST Posting
 
 The app uses account `2200 GST` as the GST control account. Sales/output GST credits this account; purchase/input GST and credit memo reversals debit this account. Settlement/payment workflows remain separate work.
+
+Posted invoice line edits reverse the original journal and post a replacement journal so account balances track recalculated line-level GST. Invoice duplication, estimate conversion, and purchase order conversion reuse normal invoice/bill creation paths so their journals are posted consistently. Bill voids now share the generic reversal helper and closing-date guard.
 
 Relevant files:
 
@@ -187,7 +189,7 @@ Relevant files:
    Journal posting now uses a Xero-style single `2200 GST` control account. Seed and migration logic rename legacy `Sales Tax Payable` to `GST`, invoices and generated recurring invoices credit GST, bills debit input GST, and credit memos debit GST reversals. GST settlement/reporting splits remain separate work.
 
 9. Fix posting lifecycle behavior:
-   Ensure edits, voids, duplicates, and conversions either reverse/repost journal entries correctly or enforce immutable posted documents.
+   Posted invoice line edits now reverse/repost journal entries. Invoice duplicates, estimate-to-invoice conversions, and purchase-order-to-bill conversions now post through normal create paths, and bill voids use the shared reversal helper with closing-date protection. Remaining lifecycle hardening should cover any future edit routes for bills or credit memos and decide how much non-line invoice metadata may change after posting.
 
 10. Replace the sales tax report with a GST return report:
     Include sales/output GST, purchases/input GST, net GST payable/refundable, GST period/basis, zero-rated/exempt supplies, and drilldowns to source transactions. Reuse the existing reports period selector/custom date UI instead of adding a second date-range pattern.

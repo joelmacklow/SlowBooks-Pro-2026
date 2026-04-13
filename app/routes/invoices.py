@@ -18,10 +18,10 @@ from app.database import get_db
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
 from app.models.items import Item
 from app.models.contacts import Customer
-from app.schemas.invoices import InvoiceCreate, InvoiceUpdate, InvoiceResponse
+from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceUpdate, InvoiceResponse
 from app.services.pdf_service import generate_invoice_pdf
 from app.services.accounting import (
-    create_journal_entry, get_ar_account_id,
+    create_journal_entry, reverse_journal_entry, get_ar_account_id,
     get_default_income_account_id, get_gst_account_id,
 )
 from app.routes.settings import _get_all as get_settings
@@ -38,6 +38,60 @@ def _next_invoice_number(db: Session) -> str:
     if last and last.isdigit():
         return str(int(last) + 1).zfill(len(last))
     return "1001"
+
+
+def _post_invoice_journal(db: Session, invoice: Invoice, customer: Customer, lines, gst_totals):
+    # ================================================================
+    # Journal Entry — CInvoice::PostToJournal() @ 0x0015D800
+    # DR  Accounts Receivable (1100)     total
+    # CR  Income per line item           line amount
+    # CR  GST (2200)                     tax amount (if any)
+    # ================================================================
+    ar_id = get_ar_account_id(db)
+    default_income_id = get_default_income_account_id(db)
+    tax_account_id = get_gst_account_id(db)
+
+    if not (ar_id and default_income_id):
+        return None
+
+    journal_lines = [{
+        "account_id": ar_id,
+        "debit": Decimal(str(gst_totals.total)),
+        "credit": Decimal("0"),
+        "description": f"Invoice #{invoice.invoice_number}",
+    }]
+
+    for i, line_data in enumerate(lines):
+        line_amount = gst_totals.lines[i].net_amount
+        if line_amount == 0:
+            continue
+        income_id = default_income_id
+        if line_data.item_id:
+            item = db.query(Item).filter(Item.id == line_data.item_id).first()
+            if item and item.income_account_id:
+                income_id = item.income_account_id
+        journal_lines.append({
+            "account_id": income_id,
+            "debit": Decimal("0"),
+            "credit": line_amount,
+            "description": line_data.description or "",
+        })
+
+    if gst_totals.tax_amount > 0 and tax_account_id:
+        journal_lines.append({
+            "account_id": tax_account_id,
+            "debit": Decimal("0"),
+            "credit": Decimal(str(gst_totals.tax_amount)),
+            "description": "GST",
+        })
+
+    txn = create_journal_entry(
+        db, invoice.date, f"Invoice #{invoice.invoice_number} - {customer.name}",
+        journal_lines, source_type="invoice", source_id=invoice.id,
+        reference=invoice.invoice_number,
+    )
+    invoice.transaction_id = txn.id
+    return txn
 
 
 @router.get("", response_model=list[InvoiceResponse])
@@ -137,56 +191,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
         )
         db.add(line)
 
-    # ================================================================
-    # Journal Entry — CInvoice::PostToJournal() @ 0x0015D800
-    # DR  Accounts Receivable (1100)     total
-    # CR  Income per line item           line amount
-    # CR  GST (2200)                     tax amount (if any)
-    # ================================================================
-    ar_id = get_ar_account_id(db)
-    default_income_id = get_default_income_account_id(db)
-    tax_account_id = get_gst_account_id(db)
-
-    if ar_id and default_income_id:
-        journal_lines = []
-        # Debit A/R for total
-        journal_lines.append({
-            "account_id": ar_id,
-            "debit": Decimal(str(gst_totals.total)),
-            "credit": Decimal("0"),
-            "description": f"Invoice #{invoice_number}",
-        })
-        # Credit income for each line (use item's income account or default)
-        for i, line_data in enumerate(data.lines):
-            line_amount = gst_totals.lines[i].net_amount
-            if line_amount == 0:
-                continue
-            income_id = default_income_id
-            if line_data.item_id:
-                item = db.query(Item).filter(Item.id == line_data.item_id).first()
-                if item and item.income_account_id:
-                    income_id = item.income_account_id
-            journal_lines.append({
-                "account_id": income_id,
-                "debit": Decimal("0"),
-                "credit": line_amount,
-                "description": line_data.description or "",
-            })
-        # Credit GST if any
-        if gst_totals.tax_amount > 0 and tax_account_id:
-            journal_lines.append({
-                "account_id": tax_account_id,
-                "debit": Decimal("0"),
-                "credit": Decimal(str(gst_totals.tax_amount)),
-                "description": "GST",
-            })
-
-        txn = create_journal_entry(
-            db, data.date, f"Invoice #{invoice_number} - {customer.name}",
-            journal_lines, source_type="invoice", source_id=invoice.id,
-            reference=invoice_number,
-        )
-        invoice.transaction_id = txn.id
+    _post_invoice_journal(db, invoice, customer, data.lines, gst_totals)
 
     db.commit()
     db.refresh(invoice)
@@ -202,9 +207,20 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Cannot edit voided invoice")
-    check_closing_date(db, invoice.date)
+    old_transaction_id = invoice.transaction_id
+    old_date = invoice.date
+    update_values = data.model_dump(exclude_unset=True, exclude={"lines"})
+    new_date = update_values.get("date", old_date)
+    check_closing_date(db, old_date)
+    if new_date != old_date:
+        check_closing_date(db, new_date)
 
-    for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
+    if "customer_id" in update_values:
+        customer = db.query(Customer).filter(Customer.id == update_values["customer_id"]).first()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+    for key, val in update_values.items():
         setattr(invoice, key, val)
 
     if data.lines is not None:
@@ -238,6 +254,19 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         invoice.tax_amount = gst_totals.tax_amount
         invoice.total = gst_totals.total
         invoice.balance_due = gst_totals.total - invoice.amount_paid
+
+        if old_transaction_id:
+            reverse_journal_entry(
+                db,
+                old_transaction_id,
+                old_date,
+                f"Reversal Invoice #{invoice.invoice_number}",
+                source_type="invoice_reversal",
+                source_id=invoice.id,
+                reference=invoice.invoice_number,
+            )
+        posting_customer = db.query(Customer).filter(Customer.id == invoice.customer_id).first()
+        _post_invoice_journal(db, invoice, posting_customer, data.lines, gst_totals)
 
     db.commit()
     db.refresh(invoice)
@@ -274,25 +303,15 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
     # Create reversing journal entry if original had one
     if invoice.transaction_id:
-        from app.models.transactions import TransactionLine
-        original_lines = db.query(TransactionLine).filter(
-            TransactionLine.transaction_id == invoice.transaction_id
-        ).all()
-        reverse_lines = []
-        for ol in original_lines:
-            reverse_lines.append({
-                "account_id": ol.account_id,
-                "debit": ol.credit,    # swap debit/credit
-                "credit": ol.debit,
-                "description": f"VOID: {ol.description or ''}",
-            })
-        if reverse_lines:
-            create_journal_entry(
-                db, invoice.date,
-                f"VOID Invoice #{invoice.invoice_number}",
-                reverse_lines, source_type="invoice_void", source_id=invoice.id,
-                reference=invoice.invoice_number,
-            )
+        reverse_journal_entry(
+            db,
+            invoice.transaction_id,
+            invoice.date,
+            f"VOID Invoice #{invoice.invoice_number}",
+            source_type="invoice_void",
+            source_id=invoice.id,
+            reference=invoice.invoice_number,
+        )
 
     invoice.status = InvoiceStatus.VOID
     invoice.balance_due = Decimal("0")
@@ -375,7 +394,6 @@ def duplicate_invoice(invoice_id: int, db: Session = Depends(get_db)):
     if not original:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    new_number = _next_invoice_number(db)
     today = date.today()
 
     # Parse terms for due date
@@ -387,13 +405,12 @@ def duplicate_invoice(invoice_id: int, db: Session = Depends(get_db)):
         except ValueError:
             pass
 
-    new_invoice = Invoice(
-        invoice_number=new_number,
+    return create_invoice(InvoiceCreate(
         customer_id=original.customer_id,
-        status=InvoiceStatus.DRAFT,
         date=today,
         due_date=due_date,
         terms=original.terms,
+        po_number=original.po_number,
         bill_address1=original.bill_address1,
         bill_address2=original.bill_address2,
         bill_city=original.bill_city,
@@ -404,34 +421,19 @@ def duplicate_invoice(invoice_id: int, db: Session = Depends(get_db)):
         ship_city=original.ship_city,
         ship_state=original.ship_state,
         ship_zip=original.ship_zip,
-        subtotal=original.subtotal,
         tax_rate=original.tax_rate,
-        tax_amount=original.tax_amount,
-        total=original.total,
-        balance_due=original.total,
         notes=original.notes,
-    )
-    db.add(new_invoice)
-    db.flush()
-
-    for oline in original.lines:
-        new_line = InvoiceLine(
-            invoice_id=new_invoice.id,
-            item_id=oline.item_id,
-            description=oline.description,
-            quantity=oline.quantity,
-            rate=oline.rate,
-            amount=oline.amount,
-            gst_code=oline.gst_code,
-            gst_rate=oline.gst_rate,
-            class_name=oline.class_name,
-            line_order=oline.line_order,
-        )
-        db.add(new_line)
-
-    db.commit()
-    db.refresh(new_invoice)
-    resp = InvoiceResponse.model_validate(new_invoice)
-    if new_invoice.customer:
-        resp.customer_name = new_invoice.customer.name
-    return resp
+        lines=[
+            InvoiceLineCreate(
+                item_id=line.item_id,
+                description=line.description,
+                quantity=line.quantity,
+                rate=line.rate,
+                gst_code=line.gst_code,
+                gst_rate=line.gst_rate,
+                class_name=line.class_name,
+                line_order=line.line_order,
+            )
+            for line in original.lines
+        ],
+    ), db=db)

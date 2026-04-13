@@ -14,8 +14,8 @@ from app.models.bills import Bill, BillLine, BillStatus
 from app.models.contacts import Vendor
 from app.models.items import Item
 from app.models.accounts import Account
-from app.schemas.bills import BillCreate, BillUpdate, BillResponse
-from app.services.accounting import create_journal_entry, get_gst_account_id
+from app.schemas.bills import BillCreate, BillResponse
+from app.services.accounting import create_journal_entry, reverse_journal_entry, get_gst_account_id
 from app.services.closing_date import check_closing_date
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
@@ -156,20 +156,17 @@ def void_bill(bill_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Bill not found")
     if bill.status == BillStatus.VOID:
         raise HTTPException(status_code=400, detail="Bill already voided")
+    check_closing_date(db, bill.date)
 
     if bill.transaction_id:
-        from app.models.transactions import TransactionLine
-        original_lines = db.query(TransactionLine).filter(
-            TransactionLine.transaction_id == bill.transaction_id
-        ).all()
-        reverse_lines = [
-            {"account_id": ol.account_id, "debit": ol.credit, "credit": ol.debit,
-             "description": f"VOID: {ol.description or ''}"}
-            for ol in original_lines
-        ]
-        if reverse_lines:
-            create_journal_entry(db, bill.date, f"VOID Bill {bill.bill_number}",
-                                 reverse_lines, source_type="bill_void", source_id=bill.id)
+        reverse_journal_entry(
+            db,
+            bill.transaction_id,
+            bill.date,
+            f"VOID Bill {bill.bill_number}",
+            source_type="bill_void",
+            source_id=bill.id,
+        )
 
     bill.status = BillStatus.VOID
     bill.balance_due = Decimal("0")

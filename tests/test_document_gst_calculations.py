@@ -38,7 +38,7 @@ from app.models.bills import Bill
 from app.models.credit_memos import CreditMemo
 from app.models.invoices import Invoice
 from app.models.settings import Settings
-from app.models.transactions import TransactionLine
+from app.models.transactions import Transaction, TransactionLine
 
 
 class DocumentGstCalculationTests(unittest.TestCase):
@@ -253,6 +253,103 @@ class DocumentGstCalculationTests(unittest.TestCase):
         self.assertEqual(gst_account_number, "2200")
         self.assertEqual(gst_account_name, "GST")
         self.assertEqual(gst_description, "GST")
+
+    def test_invoice_line_update_reverses_old_journal_and_posts_replacement(self):
+        from app.routes.invoices import create_invoice, update_invoice
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceUpdate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed_parties_and_accounts(db)
+            created = create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[InvoiceLineCreate(description="Original", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            original_transaction_id = db.query(Invoice).filter(Invoice.id == created.id).one().transaction_id
+
+            updated = update_invoice(created.id, InvoiceUpdate(
+                lines=[InvoiceLineCreate(description="Replacement", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+            ), db=db)
+            stored_invoice = db.query(Invoice).filter(Invoice.id == created.id).one()
+            ar_account = db.query(Account).filter(Account.account_number == "1100").one()
+            gst_account = db.query(Account).filter(Account.account_number == "2200").one()
+            income_account = db.query(Account).filter(Account.account_number == "4000").one()
+            transactions = db.query(Transaction).filter(Transaction.source_id == created.id).order_by(Transaction.id).all()
+
+        self.assertEqual(updated.subtotal, Decimal("200.00"))
+        self.assertEqual(updated.tax_amount, Decimal("30.00"))
+        self.assertEqual(updated.total, Decimal("230.00"))
+        self.assertNotEqual(stored_invoice.transaction_id, original_transaction_id)
+        self.assertEqual(
+            [txn.source_type for txn in transactions],
+            ["invoice", "invoice_reversal", "invoice"],
+        )
+        self.assertEqual(ar_account.balance, Decimal("230.00"))
+        self.assertEqual(gst_account.balance, Decimal("30.00"))
+        self.assertEqual(income_account.balance, Decimal("200.00"))
+
+    def test_duplicate_invoice_posts_a_new_journal_entry(self):
+        from app.routes.invoices import create_invoice, duplicate_invoice
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed_parties_and_accounts(db)
+            created = create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[InvoiceLineCreate(description="Duplicated", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            duplicated = duplicate_invoice(created.id, db=db)
+            stored_duplicate = db.query(Invoice).filter(Invoice.id == duplicated.id).one()
+            posted_lines = db.query(TransactionLine).filter(
+                TransactionLine.transaction_id == stored_duplicate.transaction_id
+            ).all()
+
+        self.assertIsNotNone(stored_duplicate.transaction_id)
+        self.assertEqual(sum(line.debit for line in posted_lines), Decimal("115.00"))
+        self.assertEqual(sum(line.credit for line in posted_lines), Decimal("115.00"))
+
+    def test_estimate_conversion_posts_converted_invoice_journal_entry(self):
+        from app.routes.estimates import convert_to_invoice, create_estimate
+        from app.schemas.estimates import EstimateCreate, EstimateLineCreate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed_parties_and_accounts(db)
+            estimate = create_estimate(EstimateCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[EstimateLineCreate(description="Convert", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            converted = convert_to_invoice(estimate.id, db=db)
+            stored_invoice = db.query(Invoice).filter(Invoice.id == converted.id).one()
+            posted_lines = db.query(TransactionLine).filter(
+                TransactionLine.transaction_id == stored_invoice.transaction_id
+            ).all()
+
+        self.assertIsNotNone(stored_invoice.transaction_id)
+        self.assertEqual(sum(line.debit for line in posted_lines), Decimal("115.00"))
+        self.assertEqual(sum(line.credit for line in posted_lines), Decimal("115.00"))
+
+    def test_po_conversion_posts_converted_bill_journal_entry(self):
+        from app.routes.purchase_orders import convert_to_bill, create_po
+        from app.schemas.purchase_orders import POCreate, POLineCreate
+
+        with self.Session() as db:
+            _customer, vendor = self._seed_parties_and_accounts(db)
+            po = create_po(POCreate(
+                vendor_id=vendor.id,
+                date=date(2026, 4, 13),
+                lines=[POLineCreate(description="Convert", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            result = convert_to_bill(po.id, db=db)
+            stored_bill = db.query(Bill).filter(Bill.id == result["bill_id"]).one()
+            posted_lines = db.query(TransactionLine).filter(
+                TransactionLine.transaction_id == stored_bill.transaction_id
+            ).all()
+
+        self.assertIsNotNone(stored_bill.transaction_id)
+        self.assertEqual(sum(line.debit for line in posted_lines), Decimal("115.00"))
+        self.assertEqual(sum(line.credit for line in posted_lines), Decimal("115.00"))
 
 
 if __name__ == "__main__":

@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
-from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
+from app.models.invoices import Invoice
 from app.models.contacts import Customer
 from app.schemas.estimates import EstimateCreate, EstimateUpdate, EstimateResponse
-from app.schemas.invoices import InvoiceResponse
+from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceResponse
 from app.services.pdf_service import generate_estimate_pdf
 from app.routes.settings import _get_all as get_settings, _set as set_setting
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
@@ -198,10 +198,6 @@ def convert_to_invoice(estimate_id: int, db: Session = Depends(get_db)):
     if estimate.status == EstimateStatus.CONVERTED:
         raise HTTPException(status_code=400, detail="Estimate already converted")
 
-    # Get next invoice number
-    from app.routes.invoices import _next_invoice_number
-    invoice_number = _next_invoice_number(db)
-
     # Parse terms for due date
     settings = get_settings(db)
     terms = settings.get("default_terms", "Net 30")
@@ -211,10 +207,10 @@ def convert_to_invoice(estimate_id: int, db: Session = Depends(get_db)):
         days = 30
     due_date = estimate.date + timedelta(days=days)
 
-    invoice = Invoice(
-        invoice_number=invoice_number,
+    from app.routes.invoices import create_invoice
+
+    invoice = create_invoice(InvoiceCreate(
         customer_id=estimate.customer_id,
-        status=InvoiceStatus.DRAFT,
         date=estimate.date,
         due_date=due_date,
         terms=terms,
@@ -223,37 +219,29 @@ def convert_to_invoice(estimate_id: int, db: Session = Depends(get_db)):
         bill_city=estimate.bill_city,
         bill_state=estimate.bill_state,
         bill_zip=estimate.bill_zip,
-        subtotal=estimate.subtotal,
         tax_rate=estimate.tax_rate,
-        tax_amount=estimate.tax_amount,
-        total=estimate.total,
-        balance_due=estimate.total,
         notes=estimate.notes,
-    )
-    db.add(invoice)
-    db.flush()
-
-    for eline in estimate.lines:
-        iline = InvoiceLine(
-            invoice_id=invoice.id,
-            item_id=eline.item_id,
-            description=eline.description,
-            quantity=eline.quantity,
-            rate=eline.rate,
-            amount=eline.amount,
-            gst_code=eline.gst_code,
-            gst_rate=eline.gst_rate,
-            class_name=eline.class_name,
-            line_order=eline.line_order,
-        )
-        db.add(iline)
+        lines=[
+            InvoiceLineCreate(
+                item_id=line.item_id,
+                description=line.description,
+                quantity=line.quantity,
+                rate=line.rate,
+                gst_code=line.gst_code,
+                gst_rate=line.gst_rate,
+                class_name=line.class_name,
+                line_order=line.line_order,
+            )
+            for line in estimate.lines
+        ],
+    ), db=db)
 
     estimate.status = EstimateStatus.CONVERTED
     estimate.converted_invoice_id = invoice.id
 
     db.commit()
-    db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
+    stored_invoice = db.query(Invoice).filter(Invoice.id == invoice.id).one()
+    resp = InvoiceResponse.model_validate(stored_invoice)
+    if stored_invoice.customer:
+        resp.customer_name = stored_invoice.customer.name
     return resp

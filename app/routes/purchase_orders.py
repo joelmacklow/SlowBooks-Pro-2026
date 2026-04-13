@@ -3,8 +3,6 @@
 # Feature 6: Non-posting vendor documents
 # ============================================================================
 
-from decimal import Decimal
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
@@ -12,6 +10,7 @@ from sqlalchemy import func as sqlfunc
 from app.database import get_db
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine, POStatus
 from app.models.contacts import Vendor
+from app.schemas.bills import BillCreate, BillLineCreate
 from app.schemas.purchase_orders import POCreate, POUpdate, POResponse
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
@@ -142,7 +141,7 @@ def update_po(po_id: int, data: POUpdate, db: Session = Depends(get_db)):
 @router.post("/{po_id}/convert-to-bill")
 def convert_to_bill(po_id: int, db: Session = Depends(get_db)):
     """Convert a PO to a bill — creates bill with PO's line items."""
-    from app.models.bills import Bill, BillLine, BillStatus
+    from app.routes.bills import create_bill
 
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
@@ -150,22 +149,27 @@ def convert_to_bill(po_id: int, db: Session = Depends(get_db)):
     if po.status == POStatus.CLOSED:
         raise HTTPException(status_code=400, detail="PO already closed")
 
-    bill = Bill(
-        bill_number=f"BILL-{po.po_number}", vendor_id=po.vendor_id, status=BillStatus.UNPAID,
-        po_id=po.id, date=po.date, terms="Net 30",
-        subtotal=po.subtotal, tax_rate=po.tax_rate, tax_amount=po.tax_amount,
-        total=po.total, balance_due=po.total, notes=f"From {po.po_number}",
-    )
-    db.add(bill)
-    db.flush()
-
-    for poline in po.lines:
-        db.add(BillLine(
-            bill_id=bill.id, item_id=poline.item_id, description=poline.description,
-            quantity=poline.quantity, rate=poline.rate, amount=poline.amount,
-            gst_code=poline.gst_code, gst_rate=poline.gst_rate,
-            line_order=poline.line_order,
-        ))
+    bill = create_bill(BillCreate(
+        bill_number=f"BILL-{po.po_number}",
+        vendor_id=po.vendor_id,
+        po_id=po.id,
+        date=po.date,
+        terms="Net 30",
+        tax_rate=po.tax_rate,
+        notes=f"From {po.po_number}",
+        lines=[
+            BillLineCreate(
+                item_id=line.item_id,
+                description=line.description,
+                quantity=line.quantity,
+                rate=line.rate,
+                gst_code=line.gst_code,
+                gst_rate=line.gst_rate,
+                line_order=line.line_order,
+            )
+            for line in po.lines
+        ],
+    ), db=db)
 
     po.status = POStatus.CLOSED
     db.commit()
