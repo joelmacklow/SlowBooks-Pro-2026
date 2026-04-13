@@ -51,7 +51,7 @@ The app container will:
 
 ### Result
 - app: **http://localhost:3001**
-- database: bundled `postgres:latest`
+- database: bundled `postgres:18`
 
 ### Local bind mounts
 The default compose stack bind-mounts:

@@ -122,7 +122,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 | Component | Technology |
 |-----------|-----------|
 | Backend | Python 3.12 + FastAPI |
-| Database | PostgreSQL 16 + SQLAlchemy 2.0 |
+| Database | PostgreSQL (Docker default: 18) + SQLAlchemy 2.0 |
 | Migrations | Alembic |
 | Frontend | Vanilla HTML/CSS/JS (no framework) |
 | PDF | WeasyPrint 60.2 + Jinja2 |
@@ -146,7 +146,7 @@ docker compose up --build
 ```
 
 This starts:
-- `postgres:latest`
+- `postgres:18`
 - the Slowbooks app on **http://localhost:3001**
 
 Default compose behavior:

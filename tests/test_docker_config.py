@@ -58,6 +58,8 @@ class DockerConfigTests(unittest.TestCase):
         self.assertTrue((root / "docker-compose.yml").exists())
         self.assertTrue((root / ".dockerignore").exists())
         self.assertTrue((root / "scripts" / "docker-entrypoint.sh").exists())
+        compose_text = (root / "docker-compose.yml").read_text()
+        self.assertIn("image: postgres:18", compose_text)
 
         for key in (
             "DATABASE_URL=",

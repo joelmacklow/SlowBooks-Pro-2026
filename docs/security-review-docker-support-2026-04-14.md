@@ -31,7 +31,7 @@ Reviewed the Docker/runtime slice changes in:
    - The files were statically reviewed and syntax-checked where possible, but no live `docker compose up` validation could be run because Docker CLI is unavailable here.
 
 ### LOW
-1. **Default compose exposes Postgres port to the host**
+1. **Default compose exposes Postgres 18 to the host**
    - This is useful for local development, but operators who do not want host exposure should remove or override that mapping.
 2. **Default entrypoint auto-migrates and seeds on startup**
    - Appropriate for a self-contained dev stack, but should not be treated as a production deployment pattern.

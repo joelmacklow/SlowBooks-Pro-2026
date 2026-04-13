@@ -1,7 +1,7 @@
 # Docker Support
 
 ## Summary
-Add first-class Docker support with a self-contained default `docker-compose.yml` stack (app + latest Postgres) and env-driven support for external Postgres.
+Add first-class Docker support with a self-contained default `docker-compose.yml` stack (app + Postgres 18) and env-driven support for external Postgres.
 
 ## Key Changes
 - Add Dockerfile, docker-compose.yml, .dockerignore, and an app entrypoint script.

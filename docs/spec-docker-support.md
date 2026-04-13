@@ -9,7 +9,7 @@
 
 ## Runtime rules
 - Compose default services: `app`, `postgres`
-- Postgres image: `postgres:latest`
+- Postgres image: `postgres:18`
 - App startup sequence: wait for DB -> `alembic upgrade head` -> `python scripts/seed_database.py` -> start uvicorn
 - Use local bind mounts for repo source and Postgres data
 - App config precedence: `DATABASE_URL` if non-empty, else compose/build URL from `POSTGRES_*`
