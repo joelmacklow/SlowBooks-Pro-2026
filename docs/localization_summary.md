@@ -103,6 +103,8 @@ Relevant files:
 
 Payroll employee setup now uses an NZ-focused field set for IRD number, tax code, KiwiSaver, student loan, child support, ESCT, pay frequency, start/end dates, and a per-pay child support amount. The Payroll page now supports draft pay runs using versioned NZ PAYE rules, calculates PAYE/ACC/student loan/KiwiSaver/ESCT/child support values, posts processed runs into NZ payroll liability accounts, generates payslip PDFs for processed pay runs, and exports per-run Employment Information CSV files for IRD upload. New/departing employee filing remains a later slice.
 
+Runtime system-account selection now resolves from explicit settings-backed roles with legacy fallback for key posting/default-selection paths, so future chart replacement/import work no longer needs to preserve one hardcoded account-number scheme just to keep the app functioning.
+
 Relevant files:
 
 - `app/models/payroll.py`
@@ -203,7 +205,7 @@ Relevant files:
     NZ payslip PDF output now exists for processed pay runs, per-run Employment Information CSV export now exists for processed runs, and first-pass starter/leaver employee filing now exists using the current employee start/end dates as the source of truth. A dedicated filing-status/audit model remains a later RBAC/multiuser slice. Avoid naming this "IRFile/EMS" until confirmed by current IRD requirements.
 
 15. Seed NZ chart and demo data:
-    Create NZ chart accounts for GST, PAYE, KiwiSaver, ESCT, wages, and any ACC-related expenses/liabilities as appropriate. Replace IRS Pub 583 seed/demo data with NZ examples.
+    After runtime system-account selection is fully decoupled from fixed account numbers, replace the default chart seed with an NZ chart (for example Xero/MAS-aligned structures) and then replace IRS Pub 583 seed/demo data with NZ examples in a later follow-up slice.
 
 16. Add RBAC-linked filing audit model later:
     Once multiuser/RBAC work begins, add a dedicated filing-status/audit model for payroll employee filing so the app can track generated, filed, amended, and changed-since-filed employee records separately from employee start/end dates.

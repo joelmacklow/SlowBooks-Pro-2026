@@ -43,6 +43,9 @@ const PaymentsPage = {
     async view(id) {
         const p = await API.get(`/payments/${id}`);
         let allocHtml = '';
+        const checkHtml = p.check_number ? `<strong>Check #:</strong> ${escapeHtml(p.check_number)}<br>` : '';
+        const referenceHtml = p.reference ? `<strong>Reference:</strong> ${escapeHtml(p.reference)}<br>` : '';
+        const notesHtml = p.notes ? `<strong>Notes:</strong> ${escapeHtml(p.notes)}<br>` : '';
         if (p.allocations.length) {
             allocHtml = `<h4 style="margin:12px 0 8px;">Applied to Invoices</h4>
                 <div class="table-container"><table><thead><tr>
@@ -59,9 +62,9 @@ const PaymentsPage = {
                 <strong>Date:</strong> ${formatDate(p.date)}<br>
                 <strong>Amount:</strong> ${formatCurrency(p.amount)}<br>
                 <strong>Method:</strong> ${escapeHtml(p.method || 'N/A')}<br>
-                ${p.check_number ? `<strong>Check #:</strong> ${escapeHtml(p.check_number)}<br>` : ''}
-                ${p.reference ? `<strong>Reference:</strong> ${escapeHtml(p.reference)}<br>` : ''}
-                ${p.notes ? `<strong>Notes:</strong> ${escapeHtml(p.notes)}<br>` : ''}
+                ${checkHtml}
+                ${referenceHtml}
+                ${notesHtml}
             </div>
             ${allocHtml}
             <div class="form-actions">
@@ -76,7 +79,7 @@ const PaymentsPage = {
             API.get('/customers?active_only=true'),
             API.get('/accounts'),
         ]);
-        const bankAccts = accounts.filter(a => a.account_type === 'asset' && ['1000','1010','1200'].includes(a.account_number));
+        const bankAccts = accounts.filter(a => a.account_type === 'asset');
 
         const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
         const bankOpts = bankAccts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');

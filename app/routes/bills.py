@@ -15,18 +15,15 @@ from app.models.contacts import Vendor
 from app.models.items import Item
 from app.models.accounts import Account
 from app.schemas.bills import BillCreate, BillResponse
-from app.services.accounting import create_journal_entry, reverse_journal_entry, get_gst_account_id
+from app.services.accounting import (
+    create_journal_entry, reverse_journal_entry, get_gst_account_id,
+    get_ap_account_id, get_default_expense_account_id,
+)
 from app.services.closing_date import check_closing_date
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 
 router = APIRouter(prefix="/api/bills", tags=["bills"])
-
-
-def _get_ap_account_id(db):
-    acct = db.query(Account).filter(Account.account_number == "2000").first()
-    return acct.id if acct else None
-
 
 @router.get("", response_model=list[BillResponse])
 def list_bills(vendor_id: int = None, status: str = None, db: Session = Depends(get_db)):
@@ -89,8 +86,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db)):
     db.flush()
 
     # Default expense account for lines without explicit account
-    default_expense_id = db.query(Account).filter(Account.account_number == "6000").first()
-    default_expense_id = default_expense_id.id if default_expense_id else None
+    default_expense_id = get_default_expense_account_id(db)
 
     journal_lines = []
     for i, line_data in enumerate(data.lines):
@@ -129,7 +125,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db)):
             })
 
     # Credit AP
-    ap_id = _get_ap_account_id(db)
+    ap_id = get_ap_account_id(db)
     if ap_id and journal_lines:
         journal_lines.append({
             "account_id": ap_id,
