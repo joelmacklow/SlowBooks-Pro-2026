@@ -113,7 +113,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 ### Utilities
 - **Backup Script** — `scripts/backup.sh` — pg_dump with gzip compression, keeps last 30 backups
 - **Recurring Invoice Cron** — `scripts/run_recurring.py` — Standalone script for generating due recurring invoices
-- **NZ Demo Data** — `scripts/seed_irs_mock_data.py` — Seeds a cohesive NZ demo business with NZ/Xero-derived contacts, 8 items, 10 invoices, 5 payments, and 3 estimates
+- **NZ Demo Data** — `scripts/seed_nz_demo_data.py` — Seeds a cohesive NZ demo business with NZ/Xero-derived contacts, 8 items, 10 invoices, 5 payments, and 3 estimates
 
 ---
 
@@ -275,7 +275,7 @@ SlowBooks-Pro-2026/
 │       └── js/               # SPA router, API wrapper, 23 page modules
 ├── scripts/
 │   ├── seed_database.py      # Seed the Chart of Accounts
-│   ├── seed_irs_mock_data.py # IRS Pub 583 mock data
+│   ├── seed_nz_demo_data.py  # NZ demo business seed
 │   ├── run_recurring.py      # Cron script for recurring invoices
 │   └── backup.sh             # PostgreSQL backup with rotation
 ├── screenshots/              # README images
@@ -484,7 +484,7 @@ ENDTRNS
 
 ### Sample Data
 
-The `scripts/seed_irs_mock_data.py` script now seeds a **cohesive NZ demo business**.
+The `scripts/seed_nz_demo_data.py` script now seeds a **cohesive NZ demo business**.
 
 Current composition:
 - 8 NZ/Xero-derived demo customers (for example Basket Case, Bayside Club, DIISR - Small Business Services, Ridgeway University)
@@ -496,7 +496,7 @@ Current composition:
 - proper double-entry journal entries for the seeded transactions
 
 ```bash
-python3 scripts/seed_irs_mock_data.py
+python3 scripts/seed_nz_demo_data.py
 ```
 
 ---

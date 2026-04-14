@@ -2,7 +2,7 @@
 
 ## Scope
 Reviewed the NZ demo-business slice changes in:
-- `scripts/seed_irs_mock_data.py`
+- `scripts/seed_nz_demo_data.py`
 - `README.md`
 - `docs/localization_summary.md`
 
@@ -25,7 +25,7 @@ Reviewed the NZ demo-business slice changes in:
 
 ### LOW
 1. **The script filename still reflects its historical origin**
-   - `scripts/seed_irs_mock_data.py` now seeds an NZ demo business, but the filename remains unchanged for continuity.
+   - `scripts/seed_nz_demo_data.py` now seeds an NZ demo business, but the filename remains unchanged for continuity.
 
 ## Positive controls
 - The seeded business is no longer based on the old body-shop / Henry Brown scenario.

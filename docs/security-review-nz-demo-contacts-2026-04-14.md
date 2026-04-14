@@ -2,7 +2,7 @@
 
 ## Scope
 Reviewed the NZ demo-contacts slice changes in:
-- `scripts/seed_irs_mock_data.py`
+- `scripts/seed_nz_demo_data.py`
 - `README.md`
 - `docs/localization_summary.md`
 
