@@ -51,6 +51,9 @@
                    oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape')this.value='';App.globalSearch('');">
             <div id="search-results" class="search-dropdown hidden"></div>
             <div class="topbar-right">
+                <span id="auth-user" class="status-section" style="margin-right:8px; font-size:10px; color:var(--text-muted);">Not signed in</span>
+                <button class="tb-btn" id="auth-login" onclick="App.navigate('#/login')">Sign In</button>
+                <button class="tb-btn" id="auth-logout" onclick="AuthPage.logout()" style="display:none;">Log Out</button>
                 <button class="tb-btn" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle Dark Mode">&#9788;</button>
                 <div class="topbar-clock" id="topbar-clock"></div>
                 <button class="tb-btn" onclick="App.showAbout()">About</button>
@@ -123,6 +126,8 @@
                         <span class="nav-icon">&#9783;</span> Audit Log</a></li>
                     <li><a href="#/companies" class="nav-link" data-page="companies">
                         <span class="nav-icon">&#9632;</span> Companies</a></li>
+                    <li><a href="#/users-access" class="nav-link" data-page="users-access">
+                        <span class="nav-icon">&#9786;</span> Users &amp; Access</a></li>
                 </ul>
                 <div class="sidebar-footer">
                     Build 12.0.3190-R<br>
@@ -158,6 +163,7 @@
     <div id="toast-container"></div>
 
     <script src="/static/js/api.js"></script>
+    <script src="/static/js/auth.js"></script>
     <script src="/static/js/utils.js"></script>
     <script src="/static/js/customers.js"></script>
     <script src="/static/js/vendors.js"></script>

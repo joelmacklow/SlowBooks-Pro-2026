@@ -103,7 +103,7 @@ Relevant files:
 
 Payroll employee setup now uses an NZ-focused field set for IRD number, tax code, KiwiSaver, student loan, child support, ESCT, pay frequency, start/end dates, and a per-pay child support amount. The Payroll page now supports draft pay runs using versioned NZ PAYE rules, calculates PAYE/ACC/student loan/KiwiSaver/ESCT/child support values, posts processed runs into NZ payroll liability accounts, generates payslip PDFs for processed pay runs, exports per-run Employment Information CSV files for IRD upload, and supports first-pass starter/leaver employee filing. A dedicated filing-status/audit model remains a later RBAC/multiuser slice.
 
-The platform now also has a reusable authentication/RBAC foundation with session login, role-based memberships, permission overrides, and payroll/employee route protection. Payroll is the first enforced protected domain; broader module rollout and auth UX remain follow-up work.
+The platform now also has a reusable authentication/RBAC foundation with session login, bootstrap/login/logout/user-management UX, role-based memberships, permission overrides, and protected payroll/employee/admin routes. Payroll is the first enforced protected domain, and core admin surfaces now use the same RBAC model; broader rollout to the remaining business modules still remains follow-up work.
 
 Runtime system-account selection now resolves from explicit settings-backed roles with legacy fallback for key posting/default-selection paths, and fresh seed/bootstrap flows populate those role mappings automatically. This allows the branch default chart to move away from the old QB contractor numbering without breaking posting/default-account behavior.
 
@@ -179,8 +179,8 @@ Relevant files:
 5. Decide and implement the NZ income-tax replacement surface:
    Schedule C is retired on the NZ branch, but the replacement output still needs a product decision: IR3 business summary, IR10-style financial statements, accountant export, or another NZ-specific output.
 
-6. Roll platform RBAC/auth beyond the payroll foundation:
-   The platform now has a reusable auth/RBAC foundation and payroll/employee routes are the first protected domain. Remaining work is to add first-class auth/user-management UX and extend the same RBAC model across other sensitive/admin modules.
+6. Extend platform RBAC beyond the current payroll/admin rollout:
+   The platform now has reusable auth UX plus RBAC enforcement for payroll, employee, settings, accounts, backups, audit, and companies. Remaining work is to extend the same model across the rest of the business modules and any future multi-company context switching.
 
 7. Add the RBAC-linked filing audit model:
    Once multiuser/RBAC work begins, add a dedicated filing-status/audit model so payroll filing can track generated, filed, amended, and changed-since-filed states separately from employee start/end dates.

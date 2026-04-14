@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.auth import (
+    AuthMetaResponse,
     AuthSessionResponse,
     BootstrapAdminRequest,
     CurrentSessionResponse,
@@ -21,7 +22,10 @@ from app.services.auth import (
     login_user,
     require_permissions,
     revoke_session,
+    supported_permission_definitions,
+    supported_role_definitions,
     update_user_account,
+    users_exist,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -48,8 +52,20 @@ def logout(db: Session = Depends(get_db), auth=Depends(require_permissions())):
 @router.get("/me", response_model=CurrentSessionResponse)
 def me(db: Session = Depends(get_db), auth=Depends(get_optional_auth_context)):
     if not auth:
-        return CurrentSessionResponse(authenticated=False, user=None)
-    return CurrentSessionResponse(authenticated=True, user=build_user_response(auth.user, auth.membership))
+        return CurrentSessionResponse(authenticated=False, bootstrap_required=not users_exist(db), user=None)
+    return CurrentSessionResponse(
+        authenticated=True,
+        bootstrap_required=False,
+        user=build_user_response(auth.user, auth.membership),
+    )
+
+
+@router.get("/meta", response_model=AuthMetaResponse)
+def auth_meta(db: Session = Depends(get_db), auth=Depends(require_permissions("users.manage"))):
+    return AuthMetaResponse(
+        roles=supported_role_definitions(),
+        permissions=supported_permission_definitions(),
+    )
 
 
 @router.get("/users", response_model=list[UserResponse])

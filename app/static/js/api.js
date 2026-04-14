@@ -17,6 +17,9 @@ const API = {
         const res = await fetch(`/api${path}`, opts);
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: res.statusText }));
+            if (res.status === 401 && typeof App !== 'undefined' && typeof App.handleUnauthorized === 'function') {
+                App.handleUnauthorized(path, err.detail || 'Authentication required');
+            }
             throw new Error(err.detail || 'Request failed');
         }
         return res.json();

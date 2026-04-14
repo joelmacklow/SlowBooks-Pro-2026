@@ -15,12 +15,18 @@ from app.services.accounting import (
     list_system_account_role_statuses,
     set_system_account_role_mapping,
 )
+from app.services.auth import require_permissions
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
 @router.get("", response_model=list[AccountResponse])
-def list_accounts(active_only: bool = False, account_type: str = None, db: Session = Depends(get_db)):
+def list_accounts(
+    active_only: bool = False,
+    account_type: str = None,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.view")),
+):
     q = db.query(Account)
     if active_only:
         q = q.filter(Account.is_active == True)
@@ -30,12 +36,20 @@ def list_accounts(active_only: bool = False, account_type: str = None, db: Sessi
 
 
 @router.get("/system-roles", response_model=list[SystemAccountRoleResponse])
-def list_system_account_roles(db: Session = Depends(get_db)):
+def list_system_account_roles(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.view")),
+):
     return list_system_account_role_statuses(db)
 
 
 @router.put("/system-roles/{role_key}", response_model=SystemAccountRoleResponse)
-def update_system_account_role(role_key: str, data: SystemAccountRoleUpdate, db: Session = Depends(get_db)):
+def update_system_account_role(
+    role_key: str,
+    data: SystemAccountRoleUpdate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.system_roles.manage")),
+):
     current = get_system_account_role_status(db, role_key)
     if not current:
         raise HTTPException(status_code=404, detail="System account role not found")
@@ -48,7 +62,11 @@ def update_system_account_role(role_key: str, data: SystemAccountRoleUpdate, db:
 
 
 @router.get("/{account_id}", response_model=AccountResponse)
-def get_account(account_id: int, db: Session = Depends(get_db)):
+def get_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.view")),
+):
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -56,7 +74,11 @@ def get_account(account_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=AccountResponse, status_code=201)
-def create_account(data: AccountCreate, db: Session = Depends(get_db)):
+def create_account(
+    data: AccountCreate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     account = Account(**data.model_dump())
     db.add(account)
     db.commit()
@@ -65,7 +87,12 @@ def create_account(data: AccountCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{account_id}", response_model=AccountResponse)
-def update_account(account_id: int, data: AccountUpdate, db: Session = Depends(get_db)):
+def update_account(
+    account_id: int,
+    data: AccountUpdate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -77,7 +104,11 @@ def update_account(account_id: int, data: AccountUpdate, db: Session = Depends(g
 
 
 @router.delete("/{account_id}")
-def delete_account(account_id: int, db: Session = Depends(get_db)):
+def delete_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")

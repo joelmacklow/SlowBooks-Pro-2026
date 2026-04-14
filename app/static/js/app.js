@@ -8,8 +8,10 @@
  */
 const App = {
     settings: {},
+    authState: { authenticated: false, bootstrap_required: false, user: null },
 
     routes: {
+        '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
         '/':              { page: 'dashboard',       label: 'Dashboard',          render: () => App.renderDashboard() },
         '/customers':     { page: 'customers',       label: 'Customer Center',    render: () => CustomersPage.render() },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      render: () => VendorsPage.render() },
@@ -18,13 +20,13 @@ const App = {
         '/estimates':     { page: 'estimates',       label: 'Create Estimates',   render: () => EstimatesPage.render() },
         '/payments':      { page: 'payments',        label: 'Receive Payments',   render: () => PaymentsPage.render() },
         '/banking':       { page: 'banking',         label: 'Bank Accounts',      render: () => BankingPage.render() },
-        '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  render: () => App.renderAccounts() },
+        '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  permission: 'accounts.view', render: () => App.renderAccounts() },
         '/reports':       { page: 'reports',         label: 'Report Center',      render: () => ReportsPage.render() },
-        '/settings':      { page: 'settings',        label: 'Company Settings',   render: () => SettingsPage.render() },
+        '/settings':      { page: 'settings',        label: 'Company Settings',   permission: 'settings.manage', render: () => SettingsPage.render() },
         '/iif':           { page: 'iif',             label: 'QuickBooks Interop', render: () => IIFPage.render() },
         '/quick-entry':   { page: 'quick-entry',     label: 'Quick Entry',        render: () => App.renderQuickEntry() },
         // Phase 1: Foundation
-        '/audit':         { page: 'audit',           label: 'Audit Log',          render: () => AuditPage.render() },
+        '/audit':         { page: 'audit',           label: 'Audit Log',          permission: 'audit.view', render: () => AuditPage.render() },
         // Phase 2: Accounts Payable
         '/purchase-orders': { page: 'purchase-orders', label: 'Purchase Orders',  render: () => PurchaseOrdersPage.render() },
         '/bills':         { page: 'bills',           label: 'Bills',              render: () => BillsPage.render() },
@@ -36,15 +38,89 @@ const App = {
         '/csv':           { page: 'csv',             label: 'CSV Import/Export',  render: () => App.renderCSV() },
         // Phase 5: Advanced Integration
         // Phase 6: Ambitious
-        '/companies':     { page: 'companies',       label: 'Companies',          render: () => CompaniesPage.render() },
-        '/employees':     { page: 'employees',       label: 'Employees',          render: () => EmployeesPage.render() },
-        '/payroll':       { page: 'payroll',         label: 'Payroll',            render: () => PayrollPage.render() },
+        '/companies':     { page: 'companies',       label: 'Companies',          permission: 'companies.view', render: () => CompaniesPage.render() },
+        '/employees':     { page: 'employees',       label: 'Employees',          permission: 'employees.view_private', render: () => EmployeesPage.render() },
+        '/payroll':       { page: 'payroll',         label: 'Payroll',            permission: 'payroll.view', render: () => PayrollPage.render() },
+        '/users-access':  { page: 'users-access',    label: 'Users & Access',     permission: 'users.manage', render: () => AuthPage.renderUserManagement() },
+    },
+
+    setAuthState(state = {}) {
+        App.authState = {
+            authenticated: !!state.authenticated,
+            bootstrap_required: !!state.bootstrap_required,
+            user: state.user || null,
+        };
+    },
+
+    hasPermission(permission) {
+        if (!permission) return true;
+        const permissions = App.authState.user?.membership?.effective_permissions || [];
+        return permissions.includes(permission);
+    },
+
+    syncNavVisibility() {
+        $$('.nav-link').forEach(link => {
+            const route = Object.values(App.routes).find(entry => entry.page === link.dataset.page);
+            const shouldShow = !route?.permission || App.hasPermission(route.permission);
+            link.parentElement.style.display = shouldShow ? '' : 'none';
+        });
+    },
+
+    syncAuthUI() {
+        const authUser = $('#auth-user');
+        const authLogout = $('#auth-logout');
+        const authLogin = $('#auth-login');
+        if (App.authState.authenticated && App.authState.user) {
+            if (authUser) authUser.textContent = `${App.authState.user.full_name} (${App.authState.user.membership.role_key})`;
+            if (authLogout) authLogout.style.display = '';
+            if (authLogin) authLogin.style.display = 'none';
+        } else {
+            if (authUser) authUser.textContent = App.authState.bootstrap_required ? 'Setup required' : 'Not signed in';
+            if (authLogout) authLogout.style.display = 'none';
+            if (authLogin) authLogin.style.display = '';
+        }
+    },
+
+    handleUnauthorized(path, _message) {
+        if (path.startsWith('/auth/')) return;
+        localStorage.removeItem('slowbooks-auth-token');
+        App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
+        App.syncAuthUI();
+        App.syncNavVisibility();
+        if ((location.hash || '#/') !== '#/login') {
+            App.navigate('#/login');
+        }
+    },
+
+    async loadAuthState() {
+        try {
+            App.setAuthState(await API.get('/auth/me'));
+        } catch (_err) {
+            App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
+        }
+        App.syncAuthUI();
+        App.syncNavVisibility();
     },
 
     async navigate(hash) {
         const path = hash.replace('#', '') || '/';
         const route = App.routes[path];
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
+        if (path === '/login' && App.authState.authenticated) {
+            location.hash = '#/';
+            return;
+        }
+        if (route.permission && !App.authState.authenticated) {
+            location.hash = '#/login';
+            return;
+        }
+        if (route.permission && !App.hasPermission(route.permission)) {
+            $('#page-content').innerHTML = `<div class="empty-state">
+                <p><strong>Access denied.</strong> Your account does not have permission to open ${escapeHtml(route.label)}.</p>
+            </div>`;
+            App.setStatus('Access denied');
+            return;
+        }
 
         // Update active nav
         $$('.nav-link').forEach(link => {
@@ -262,6 +338,8 @@ const App = {
             API.get('/accounts'),
             API.get('/accounts/system-roles'),
         ]);
+        const canManageAccounts = App.hasPermission('accounts.manage');
+        const canManageSystemRoles = App.hasPermission('accounts.system_roles.manage');
         App._accountsCache = accounts;
         App._systemAccountRolesCache = systemRoles;
         const grouped = {};
@@ -277,9 +355,9 @@ const App = {
         let html = `
             <div class="page-header">
                 <h2>Chart of Accounts</h2>
-                <button class="btn btn-primary" onclick="App.showAccountForm()">New Account</button>
+                ${canManageAccounts ? `<button class="btn btn-primary" onclick="App.showAccountForm()">New Account</button>` : ''}
             </div>
-            ${App.renderSystemAccountRoles(systemRoles)}
+            ${App.renderSystemAccountRoles(systemRoles, { canManageSystemRoles })}
             <div class="table-container"><table>
                 <thead><tr><th style="width:80px;">Number</th><th>Name</th><th style="width:100px;">Type</th><th class="amount" style="width:100px;">Balance</th><th style="width:60px;">Actions</th></tr></thead>
                 <tbody>`;
@@ -295,7 +373,7 @@ const App = {
                     <td>${a.account_type}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
-                        ${!a.is_system ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
+                        ${!a.is_system && canManageAccounts ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
                     </td>
                 </tr>`;
             }
@@ -304,7 +382,7 @@ const App = {
         return html;
     },
 
-    renderSystemAccountRoles(roles = []) {
+    renderSystemAccountRoles(roles = [], { canManageSystemRoles = false } = {}) {
         const statusStyles = {
             configured: 'background:#e6f6eb; color:#1f6b3a; border:1px solid #b8e0c2;',
             fallback: 'background:#fff4db; color:#8a5a00; border:1px solid #f0d38b;',
@@ -364,10 +442,10 @@ const App = {
                                     </span>
                                 </td>
                                 <td class="actions">
-                                    <button class="btn btn-sm btn-secondary" onclick="App.showSystemAccountRoleForm('${role.role_key}')">
+                                    ${canManageSystemRoles ? `<button class="btn btn-sm btn-secondary" onclick="App.showSystemAccountRoleForm('${role.role_key}')">
                                         ${role.status === 'configured' ? 'Change' : 'Assign'}
-                                    </button>
-                                    ${role.configured_account_valid ? `<button class="btn btn-sm btn-secondary" onclick="App.clearSystemAccountRole('${role.role_key}')">Clear</button>` : ''}
+                                    </button>` : ''}
+                                    ${canManageSystemRoles && role.configured_account_valid ? `<button class="btn btn-sm btn-secondary" onclick="App.clearSystemAccountRole('${role.role_key}')">Clear</button>` : ''}
                                 </td>
                             </tr>
                         `).join('')}
@@ -756,7 +834,7 @@ const App = {
 
     async loadSettings() {
         try {
-            App.settings = await API.get('/settings');
+            App.settings = await API.get('/settings/public');
         } catch (e) {
             App.settings = {};
         }
@@ -818,6 +896,7 @@ const App = {
             }
         });
 
+        await App.loadAuthState();
         await App.loadSettings();
 
         // Start clock — CMainFrame::OnTimer() at 1-second interval (WM_TIMER id=1)
@@ -828,7 +907,8 @@ const App = {
         App.loadCompanyName();
 
         // Navigate after splash closes
-        App.navigate(location.hash || '#/');
+        const initialHash = location.hash || (App.authState.authenticated ? '#/' : '#/login');
+        App.navigate(initialHash);
     },
 };
 

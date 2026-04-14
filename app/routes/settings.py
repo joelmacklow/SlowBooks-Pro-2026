@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.settings import Settings, DEFAULT_SETTINGS
+from app.services.auth import require_permissions
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -30,13 +31,37 @@ def _set(db: Session, key: str, value: str):
         db.add(row)
 
 
+@router.get("/public")
+def get_public_settings(db: Session = Depends(get_db)):
+    result = _get_all(db)
+    allowed_keys = (
+        "company_name",
+        "country",
+        "currency",
+        "locale",
+        "timezone",
+        "tax_regime",
+        "gst_basis",
+        "gst_period",
+        "prices_include_gst",
+    )
+    return {key: result.get(key, DEFAULT_SETTINGS.get(key, "")) for key in allowed_keys}
+
+
 @router.get("")
-def get_settings(db: Session = Depends(get_db)):
+def get_settings(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
     return _get_all(db)
 
 
 @router.put("")
-def update_settings(data: dict, db: Session = Depends(get_db)):
+def update_settings(
+    data: dict,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
     for key, value in data.items():
         if key in DEFAULT_SETTINGS:
             _set(db, key, str(value) if value is not None else "")
@@ -45,7 +70,10 @@ def update_settings(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/test-email")
-def test_email(db: Session = Depends(get_db)):
+def test_email(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
     """Feature 8: Send a test email to verify SMTP settings."""
     settings = _get_all(db)
     if not settings.get("smtp_host"):

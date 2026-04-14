@@ -4,11 +4,12 @@
  */
 const CompaniesPage = {
     async render() {
+        const canManageCompanies = App.hasPermission ? App.hasPermission('companies.manage') : true;
         const companies = await API.get('/companies');
         let html = `
             <div class="page-header">
                 <h2>Company Files</h2>
-                <button class="btn btn-primary" onclick="CompaniesPage.showCreate()">+ New Company</button>
+                ${canManageCompanies ? `<button class="btn btn-primary" onclick="CompaniesPage.showCreate()">+ New Company</button>` : ''}
             </div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
                 Each company uses a separate PostgreSQL database. Switch between companies below.

@@ -14,6 +14,7 @@ from typing import Optional
 from app.database import get_db
 from app.models.backups import Backup
 from app.services.backup_service import create_backup, restore_backup, list_backup_files, BACKUP_DIR
+from app.services.auth import require_permissions
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -27,7 +28,10 @@ class RestoreRequest(BaseModel):
 
 
 @router.get("")
-def list_backups(db: Session = Depends(get_db)):
+def list_backups(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("backups.view")),
+):
     """List only backups whose files still exist on disk."""
     db_backups = db.query(Backup).order_by(Backup.created_at.desc()).all()
     return [
@@ -40,7 +44,11 @@ def list_backups(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def make_backup(data: BackupCreate = BackupCreate(), db: Session = Depends(get_db)):
+def make_backup(
+    data: BackupCreate = BackupCreate(),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("backups.manage")),
+):
     result = create_backup(db, notes=data.notes)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
@@ -48,7 +56,10 @@ def make_backup(data: BackupCreate = BackupCreate(), db: Session = Depends(get_d
 
 
 @router.get("/download/{filename}")
-def download_backup(filename: str):
+def download_backup(
+    filename: str,
+    auth=Depends(require_permissions("backups.view")),
+):
     filepath = BACKUP_DIR / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Backup file not found")
@@ -56,7 +67,11 @@ def download_backup(filename: str):
 
 
 @router.post("/restore")
-def restore(data: RestoreRequest, db: Session = Depends(get_db)):
+def restore(
+    data: RestoreRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("backups.manage")),
+):
     result = restore_backup(db, data.filename)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Restore failed"))

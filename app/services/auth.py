@@ -17,7 +17,7 @@ CURRENT_COMPANY_SCOPE = "__current__"
 SESSION_DAYS = 30
 PASSWORD_ITERATIONS = 600_000
 
-PAYROLL_PERMISSIONS = {
+PERMISSION_DEFINITIONS = {
     "employees.view_private": "View employee payroll/private details.",
     "employees.manage": "Create and update employee records.",
     "employees.filing.export": "Export starter/leaver filing data.",
@@ -27,28 +27,74 @@ PAYROLL_PERMISSIONS = {
     "payroll.payslips.view": "View payslip PDFs.",
     "payroll.payslips.email": "Email payslips.",
     "payroll.filing.export": "Export Employment Information and payroll filing outputs.",
+    "settings.manage": "View and update sensitive company settings, including SMTP configuration.",
+    "accounts.view": "View the chart of accounts and system account role status.",
+    "accounts.manage": "Create, update, and delete accounts.",
+    "accounts.system_roles.manage": "Assign and clear system account role mappings.",
+    "audit.view": "View the audit log.",
+    "backups.view": "List and download backups.",
+    "backups.manage": "Create and restore backups.",
+    "companies.view": "View company database entries.",
+    "companies.manage": "Create company database entries.",
     "users.manage": "Create and manage users, roles, and permission overrides.",
 }
 
-ROLE_TEMPLATES = {
-    "owner": set(PAYROLL_PERMISSIONS.keys()),
+ROLE_TEMPLATE_DEFINITIONS = {
+    "owner": {
+        "label": "Owner",
+        "description": "Full access across payroll and admin features.",
+        "permissions": set(PERMISSION_DEFINITIONS.keys()),
+    },
+    "operations_admin": {
+        "label": "Operations Admin",
+        "description": "Administers settings, accounts, backups, companies, audit, and users.",
+        "permissions": {
+            "settings.manage",
+            "accounts.view",
+            "accounts.manage",
+            "accounts.system_roles.manage",
+            "audit.view",
+            "backups.view",
+            "backups.manage",
+            "companies.view",
+            "companies.manage",
+            "users.manage",
+        },
+    },
     "payroll_admin": {
-        "employees.view_private",
-        "employees.manage",
-        "employees.filing.export",
-        "payroll.view",
-        "payroll.create",
-        "payroll.process",
-        "payroll.payslips.view",
-        "payroll.payslips.email",
-        "payroll.filing.export",
+        "label": "Payroll Admin",
+        "description": "Manages employees, payroll runs, payslips, and filing outputs.",
+        "permissions": {
+            "employees.view_private",
+            "employees.manage",
+            "employees.filing.export",
+            "payroll.view",
+            "payroll.create",
+            "payroll.process",
+            "payroll.payslips.view",
+            "payroll.payslips.email",
+            "payroll.filing.export",
+        },
     },
     "payroll_viewer": {
-        "employees.view_private",
-        "payroll.view",
-        "payroll.payslips.view",
+        "label": "Payroll Viewer",
+        "description": "Read-only payroll and private employee access.",
+        "permissions": {
+            "employees.view_private",
+            "payroll.view",
+            "payroll.payslips.view",
+        },
     },
-    "staff": set(),
+    "staff": {
+        "label": "Staff",
+        "description": "Base template with no sensitive/admin capabilities by default.",
+        "permissions": set(),
+    },
+}
+
+ROLE_TEMPLATES = {
+    key: value["permissions"]
+    for key, value in ROLE_TEMPLATE_DEFINITIONS.items()
 }
 
 
@@ -106,7 +152,7 @@ def supported_role_keys() -> set[str]:
 
 
 def supported_permission_keys() -> set[str]:
-    return set(PAYROLL_PERMISSIONS)
+    return set(PERMISSION_DEFINITIONS)
 
 
 def validate_role_key(role_key: str) -> str:
@@ -118,11 +164,30 @@ def validate_role_key(role_key: str) -> str:
 def validate_permission_keys(permission_keys: list[str] | None) -> list[str]:
     result = []
     for permission in permission_keys or []:
-        if permission not in PAYROLL_PERMISSIONS:
+        if permission not in PERMISSION_DEFINITIONS:
             raise HTTPException(status_code=400, detail=f"Unknown permission key: {permission}")
         if permission not in result:
             result.append(permission)
     return result
+
+
+def supported_role_definitions() -> list[dict]:
+    return [
+        {
+            "key": key,
+            "label": value["label"],
+            "description": value["description"],
+            "permissions": sorted(value["permissions"]),
+        }
+        for key, value in ROLE_TEMPLATE_DEFINITIONS.items()
+    ]
+
+
+def supported_permission_definitions() -> list[dict]:
+    return [
+        {"key": key, "description": description}
+        for key, description in sorted(PERMISSION_DEFINITIONS.items())
+    ]
 
 
 def users_exist(db: Session) -> bool:

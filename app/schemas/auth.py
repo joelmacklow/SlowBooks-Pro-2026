@@ -93,4 +93,22 @@ class AuthSessionResponse(BaseModel):
 
 class CurrentSessionResponse(BaseModel):
     authenticated: bool
+    bootstrap_required: bool = False
     user: Optional[UserResponse] = None
+
+
+class RoleTemplateResponse(BaseModel):
+    key: str
+    label: str
+    description: str
+    permissions: list[str]
+
+
+class PermissionDefinitionResponse(BaseModel):
+    key: str
+    description: str
+
+
+class AuthMetaResponse(BaseModel):
+    roles: list[RoleTemplateResponse]
+    permissions: list[PermissionDefinitionResponse]
