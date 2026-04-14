@@ -7,10 +7,12 @@
  */
 const API = {
     async request(method, path, body = null) {
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks-auth-token') : null;
         const opts = {
             method,
             headers: { 'Content-Type': 'application/json' },
         };
+        if (token) opts.headers.Authorization = `Bearer ${token}`;
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(`/api${path}`, opts);
         if (!res.ok) {

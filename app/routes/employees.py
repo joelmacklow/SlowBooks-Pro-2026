@@ -11,13 +11,18 @@ from app.database import get_db
 from app.models.payroll import Employee
 from app.schemas.payroll import EmployeeCreate, EmployeeUpdate, EmployeeResponse
 from app.routes.settings import _get_all as get_settings
+from app.services.auth import require_permissions
 from app.services.employee_filing import generate_employee_filing_csv
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
 
 @router.get("", response_model=list[EmployeeResponse])
-def list_employees(active_only: bool = False, db: Session = Depends(get_db)):
+def list_employees(
+    active_only: bool = False,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.view_private")),
+):
     q = db.query(Employee)
     if active_only:
         q = q.filter(Employee.is_active == True)
@@ -25,7 +30,11 @@ def list_employees(active_only: bool = False, db: Session = Depends(get_db)):
 
 
 @router.get("/{emp_id}", response_model=EmployeeResponse)
-def get_employee(emp_id: int, db: Session = Depends(get_db)):
+def get_employee(
+    emp_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.view_private")),
+):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -33,7 +42,11 @@ def get_employee(emp_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=EmployeeResponse, status_code=201)
-def create_employee(data: EmployeeCreate, db: Session = Depends(get_db)):
+def create_employee(
+    data: EmployeeCreate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.manage")),
+):
     emp = Employee(**data.model_dump())
     db.add(emp)
     db.commit()
@@ -42,7 +55,12 @@ def create_employee(data: EmployeeCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{emp_id}", response_model=EmployeeResponse)
-def update_employee(emp_id: int, data: EmployeeUpdate, db: Session = Depends(get_db)):
+def update_employee(
+    emp_id: int,
+    data: EmployeeUpdate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.manage")),
+):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -54,7 +72,11 @@ def update_employee(emp_id: int, data: EmployeeUpdate, db: Session = Depends(get
 
 
 @router.get("/{emp_id}/filing/starter/export")
-def export_starter_employee_filing(emp_id: int, db: Session = Depends(get_db)):
+def export_starter_employee_filing(
+    emp_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.filing.export")),
+):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -70,7 +92,11 @@ def export_starter_employee_filing(emp_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{emp_id}/filing/leaver/export")
-def export_leaver_employee_filing(emp_id: int, db: Session = Depends(get_db)):
+def export_leaver_employee_filing(
+    emp_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("employees.filing.export")),
+):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")

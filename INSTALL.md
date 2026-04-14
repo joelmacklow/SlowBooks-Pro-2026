@@ -142,6 +142,18 @@ python3 run.py
 Open:
 - **http://localhost:3001**
 
+### Bootstrap the first admin for payroll/private data access
+
+Payroll and employee endpoints now require an authenticated user. If this is a fresh install, create the first admin with:
+
+```bash
+curl -X POST http://localhost:3001/api/auth/bootstrap-admin \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"change-me-now","full_name":"Admin User"}'
+```
+
+Use the returned bearer token when calling protected payroll/employee routes until a fuller auth UI lands.
+
 ---
 
 ## 5. Environment variable reference

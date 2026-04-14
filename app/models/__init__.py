@@ -11,6 +11,7 @@ from app.models.gst import GstCode
 
 # Phase 1: Foundation
 from app.models.audit import AuditLog
+from app.models.auth import User, UserMembership, MembershipPermissionOverride, AuthSession
 
 # Phase 2: Accounts Payable
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine
@@ -40,7 +41,7 @@ __all__ = [
     "BankAccount", "BankTransaction", "Reconciliation",
     "Settings", "GstCode",
     # Phase 1
-    "AuditLog",
+    "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession",
     # Phase 2
     "PurchaseOrder", "PurchaseOrderLine",
     "Bill", "BillLine", "BillPayment", "BillPaymentAllocation",

@@ -26,6 +26,7 @@ from app.services.accounting import (
     get_paye_payable_account_id,
     get_wages_expense_account_id,
 )
+from app.services.auth import require_permissions
 from app.services.closing_date import check_closing_date
 from app.services.nz_payroll import calculate_payroll_stub, round_money
 from app.routes.settings import _get_all as get_settings
@@ -98,13 +99,20 @@ def _active_employee_for_payday(employee: Employee, pay_date) -> bool:
 
 
 @router.get("", response_model=list[PayRunResponse])
-def list_pay_runs(db: Session = Depends(get_db)):
+def list_pay_runs(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.view")),
+):
     pay_runs = db.query(PayRun).order_by(PayRun.pay_date.desc(), PayRun.id.desc()).all()
     return [_pay_run_response(pay_run) for pay_run in pay_runs]
 
 
 @router.get("/{run_id}", response_model=PayRunResponse)
-def get_pay_run(run_id: int, db: Session = Depends(get_db)):
+def get_pay_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.view")),
+):
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")
@@ -112,7 +120,11 @@ def get_pay_run(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=PayRunResponse, status_code=201)
-def create_pay_run(data: PayRunCreate, db: Session = Depends(get_db)):
+def create_pay_run(
+    data: PayRunCreate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.create")),
+):
     if not data.stubs:
         raise HTTPException(status_code=400, detail="At least one employee stub is required")
 
@@ -176,7 +188,11 @@ def create_pay_run(data: PayRunCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/{run_id}/process", response_model=PayRunResponse)
-def process_pay_run(run_id: int, db: Session = Depends(get_db)):
+def process_pay_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.process")),
+):
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")
@@ -275,7 +291,12 @@ def process_pay_run(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{run_id}/payslips/{employee_id}/pdf")
-def payroll_payslip_pdf(run_id: int, employee_id: int, db: Session = Depends(get_db)):
+def payroll_payslip_pdf(
+    run_id: int,
+    employee_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.payslips.view")),
+):
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")
@@ -299,7 +320,13 @@ def payroll_payslip_pdf(run_id: int, employee_id: int, db: Session = Depends(get
 
 
 @router.post("/{run_id}/payslips/{employee_id}/email")
-def email_payroll_payslip(run_id: int, employee_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db)):
+def email_payroll_payslip(
+    run_id: int,
+    employee_id: int,
+    data: DocumentEmailRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.payslips.email")),
+):
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")
@@ -342,7 +369,11 @@ def email_payroll_payslip(run_id: int, employee_id: int, data: DocumentEmailRequ
 
 
 @router.get("/{run_id}/employment-information/export")
-def export_employment_information(run_id: int, db: Session = Depends(get_db)):
+def export_employment_information(
+    run_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("payroll.filing.export")),
+):
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")
