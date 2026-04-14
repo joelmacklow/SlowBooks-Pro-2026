@@ -18,7 +18,7 @@ const IIFPage = {
             <div class="page-header">
                 <h2>QuickBooks Interop</h2>
                 <div style="font-size:10px; color:var(--text-muted);">
-                    IIF Import/Export &mdash; Compatible with QuickBooks 2003 Pro
+                    QB2003-compatible legacy IIF for NZ-ledger data
                 </div>
             </div>
 
@@ -27,7 +27,7 @@ const IIFPage = {
                 <div class="iif-section">
                     <h3>&#9660; Export to IIF</h3>
                     <p style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
-                        Download Slowbooks data as .iif files for import into QuickBooks 2003 Pro
+                        Download NZ-ledger data as .iif files for import into QuickBooks 2003 Pro
                         via File &gt; Utilities &gt; Import &gt; IIF Files.
                     </p>
 
@@ -69,7 +69,7 @@ const IIFPage = {
                 <div class="iif-section">
                     <h3>&#9650; Import from IIF</h3>
                     <p style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
-                        Upload .iif files exported from QuickBooks 2003 Pro
+                        Upload .iif files exported from QuickBooks 2003 Pro or compatible legacy systems
                         via File &gt; Utilities &gt; Export &gt; Lists to IIF Files.
                     </p>
 

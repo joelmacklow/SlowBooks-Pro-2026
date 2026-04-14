@@ -152,7 +152,7 @@ Relevant files:
 
 ### Import And Export
 
-CSV and IIF import/export encode US address assumptions and sales-tax labels.
+CSV export now uses NZ-facing headers where SlowBooks owns the format, and the QuickBooks IIF surfaces now keep QB2003 wire compatibility while exporting/importing against the current NZ GST/address/account assumptions instead of stale US-facing sales-tax presentation.
 
 Relevant files:
 

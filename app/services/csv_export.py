@@ -59,7 +59,7 @@ def export_invoices(db: Session, date_from=None, date_to=None) -> str:
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Invoice #", "Customer", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Paid", "Balance"])
+    writer.writerow(["Invoice #", "Customer", "Date", "Due Date", "Status", "Subtotal", "GST", "Total", "Paid", "Balance"])
     for inv in invoices:
         writer.writerow([inv.invoice_number, inv.customer.name if inv.customer else "",
                          inv.date.isoformat(), inv.due_date.isoformat() if inv.due_date else "",

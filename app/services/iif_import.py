@@ -141,6 +141,11 @@ def _parse_decimal(s: str) -> Decimal:
         return Decimal("0")
 
 
+def _is_gst_split_account(account_name: str) -> bool:
+    normalized = str(account_name or "").strip().lower()
+    return normalized in {"gst", "sales tax payable"} or "tax" in normalized
+
+
 # ============================================================================
 # Reverse type mappings (IIF -> Slowbooks)
 # ============================================================================
@@ -463,7 +468,7 @@ def _import_invoice(db: Session, trns: dict, spls: list) -> Invoice:
         memo = spl.get("MEMO", "").strip()
 
         # Tax split
-        if "tax" in acct_name.lower():
+        if _is_gst_split_account(acct_name):
             tax_total += spl_amount
             continue
 
@@ -665,7 +670,7 @@ def _import_estimate(db: Session, trns: dict, spls: list) -> Estimate:
         spl_amount = abs(_parse_decimal(spl.get("AMOUNT", "")))
         memo = spl.get("MEMO", "").strip()
 
-        if "tax" in acct_name.lower():
+        if _is_gst_split_account(acct_name):
             tax_total += spl_amount
             continue
 

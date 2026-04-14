@@ -87,7 +87,7 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 - **Document Email** — Send invoices, statements, estimates, credit notes, payslips, and purchase orders as PDF attachments via SMTP
 - **CSV Import/Export** — Import/export customers, vendors, items, invoices, and chart of accounts as CSV
 - **Print-Optimized PDF** — Enhanced invoice PDF template with company logo support
-- **IIF Import/Export** — Full QuickBooks 2003 Pro interoperability (see below)
+- **IIF Import/Export** — QB2003-compatible legacy IIF interoperability for NZ-ledger data (see below)
 
 ### System & Administration
 - **Dark Mode** — Toggle between QB2003 Blue theme and dark mode (Alt+D or toolbar button). Persists in localStorage
@@ -104,8 +104,8 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 - 25 SPA routes, 24 sidebar nav links
 
 ### QuickBooks 2003 Pro Interoperability
-- **IIF Export** — Export all Slowbooks data (accounts, customers, vendors, items, invoices, payments, estimates) as .iif files importable into QB2003 via File > Utilities > Import > IIF Files
-- **IIF Import** — Parse and import .iif files exported from QB2003 with duplicate detection and per-row error handling
+- **IIF Export** — Export Slowbooks NZ ledger data (accounts, customers, vendors, items, invoices, payments, estimates) as .iif files importable into QB2003 via File > Utilities > Import > IIF Files
+- **IIF Import** — Parse and import .iif files exported from QB2003 or compatible legacy systems with duplicate detection and per-row error handling
 - **Validation** — Pre-flight validation of .iif files before import (checks structure, account types, balanced transactions)
 - **Date Range Filtering** — Export invoices and payments for specific date ranges
 - **Round-Trip Safe** — Export from Slowbooks, re-import into Slowbooks — deduplication prevents double-entry

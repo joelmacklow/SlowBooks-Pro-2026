@@ -321,12 +321,12 @@ def export_invoices(db: Session, date_from: date = None, date_to: date = None) -
                 il.description or "",
             ])
 
-        # SPL line for tax if applicable
+        # SPL line for GST if applicable
         tax_amt = Decimal(str(inv.tax_amount or 0))
         if tax_amt > 0:
             lines += _iif_line([
-                "SPL", "INVOICE", inv_date, "Sales Tax Payable", cust_name,
-                str(-tax_amt), inv.invoice_number or "", "", "", "Sales Tax",
+                "SPL", "INVOICE", inv_date, "GST", cust_name,
+                str(-tax_amt), inv.invoice_number or "", "", "", "GST",
             ])
 
         lines += _iif_line(["ENDTRNS"])
@@ -452,8 +452,8 @@ def export_estimates(db: Session) -> str:
         tax_amt = Decimal(str(est.tax_amount or 0))
         if tax_amt > 0:
             lines += _iif_line([
-                "SPL", "ESTIMATE", est_date, "Sales Tax Payable", cust_name,
-                str(-tax_amt), est.estimate_number or "", "Sales Tax",
+                "SPL", "ESTIMATE", est_date, "GST", cust_name,
+                str(-tax_amt), est.estimate_number or "", "GST",
             ])
 
         lines += _iif_line(["ENDTRNS"])
