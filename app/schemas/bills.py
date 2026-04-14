@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date as date_type, datetime as datetime_type
 from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel
@@ -32,8 +32,8 @@ class BillLineResponse(BaseModel):
 class BillCreate(BaseModel):
     vendor_id: int
     bill_number: str
-    date: date
-    due_date: Optional[date] = None
+    date: date_type
+    due_date: Optional[date_type] = None
     terms: str = "Net 30"
     ref_number: Optional[str] = None
     po_id: Optional[int] = None
@@ -44,8 +44,8 @@ class BillCreate(BaseModel):
 
 class BillUpdate(BaseModel):
     bill_number: Optional[str] = None
-    date: Optional[date] = None
-    due_date: Optional[date] = None
+    date: Optional[date_type] = None
+    due_date: Optional[date_type] = None
     terms: Optional[str] = None
     ref_number: Optional[str] = None
     tax_rate: Optional[float] = None
@@ -60,8 +60,8 @@ class BillResponse(BaseModel):
     vendor_name: Optional[str] = None
     status: str
     po_id: Optional[int] = None
-    date: date
-    due_date: Optional[date] = None
+    date: date_type
+    due_date: Optional[date_type] = None
     terms: Optional[str] = None
     ref_number: Optional[str] = None
     subtotal: float = 0
@@ -72,7 +72,7 @@ class BillResponse(BaseModel):
     balance_due: float = 0
     notes: Optional[str] = None
     lines: list[BillLineResponse] = []
-    created_at: Optional[datetime] = None
+    created_at: Optional[datetime_type] = None
     model_config = {"from_attributes": True}
 
 
@@ -83,7 +83,7 @@ class BillPaymentAllocationCreate(BaseModel):
 
 class BillPaymentCreate(BaseModel):
     vendor_id: int
-    date: date
+    date: date_type
     amount: float
     method: Optional[str] = None
     check_number: Optional[str] = None
@@ -96,10 +96,10 @@ class BillPaymentResponse(BaseModel):
     id: int
     vendor_id: int
     vendor_name: Optional[str] = None
-    date: date
+    date: date_type
     amount: float
     method: Optional[str] = None
     check_number: Optional[str] = None
     notes: Optional[str] = None
-    created_at: Optional[datetime] = None
+    created_at: Optional[datetime_type] = None
     model_config = {"from_attributes": True}

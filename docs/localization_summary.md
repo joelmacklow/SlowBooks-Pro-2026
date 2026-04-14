@@ -187,7 +187,7 @@ Relevant files:
    Journal posting now uses a Xero-style single `2200 GST` control account. Seed and migration logic rename legacy `Sales Tax Payable` to `GST`, invoices and generated recurring invoices credit GST, bills debit input GST, and credit memos debit GST reversals. GST settlement/reporting splits remain separate work.
 
 9. Fix posting lifecycle behavior:
-   Posted invoice line edits now reverse/repost journal entries. Invoice duplicates, estimate-to-invoice conversions, and purchase-order-to-bill conversions now post through normal create paths, and bill voids use the shared reversal helper with closing-date protection. Remaining lifecycle hardening should cover any future edit routes for bills or credit memos and decide how much non-line invoice metadata may change after posting.
+   Posted invoice line edits now reverse/repost journal entries. Invoice duplicates, estimate-to-invoice conversions, and purchase-order-to-bill conversions now post through normal create paths. Bills and credit memos now also distinguish metadata-only edits from financial edits: eligible financial edits reverse/repost journals, while bills with payments and credit memos with applications reject ambiguous totals-affecting changes. Closing-date protection remains in force for any reversal-producing edit.
 
 10. Replace the sales tax report with a GST return report:
     The Reports UI now exposes a GST Return flow using the shared period selector. It calculates GST101A Boxes 5-15, supports invoice and payments basis from Settings, accepts Box 9 and Box 13 adjustments before generation, includes source drilldowns, and generates a filled `gst101a-2023.pdf`. The old `/api/reports/sales-tax` endpoint remains a compatibility alias.

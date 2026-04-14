@@ -16,15 +16,17 @@ from app.models.invoices import Invoice, InvoiceStatus
 from app.models.contacts import Customer
 from app.models.items import Item
 from app.schemas.email import DocumentEmailRequest
-from app.schemas.credit_memos import CreditMemoCreate, CreditMemoResponse, CreditApplicationCreate
+from app.schemas.credit_memos import (
+    CreditMemoCreate, CreditMemoResponse, CreditApplicationCreate, CreditMemoUpdate,
+)
 from app.services.accounting import (
-    create_journal_entry, get_ar_account_id,
+    create_journal_entry, reverse_journal_entry, get_ar_account_id,
     get_default_income_account_id, get_gst_account_id,
 )
 from app.services.closing_date import check_closing_date
 from app.services.email_service import render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
-from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
+from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
 from app.services.pdf_service import generate_credit_memo_pdf
 from app.routes.settings import _get_all as get_settings
 
@@ -37,6 +39,65 @@ def _next_cm_number(db: Session) -> str:
         num = int(last.replace("CM-", "")) + 1
         return f"CM-{num:04d}"
     return "CM-0001"
+
+
+def _post_credit_memo_journal(db: Session, cm: CreditMemo, customer: Customer, lines, gst_totals):
+    ar_id = get_ar_account_id(db)
+    default_income_id = get_default_income_account_id(db)
+    tax_account_id = get_gst_account_id(db)
+    journal_lines = []
+
+    for i, line_data in enumerate(lines):
+        amt = gst_totals.lines[i].net_amount
+        if amt <= 0:
+            continue
+        income_id = default_income_id
+        if getattr(line_data, "item_id", None):
+            item = db.query(Item).filter(Item.id == line_data.item_id).first()
+            if item and item.income_account_id:
+                income_id = item.income_account_id
+        if income_id:
+            journal_lines.append({
+                "account_id": income_id, "debit": amt, "credit": Decimal("0"),
+                "description": getattr(line_data, "description", "") or "",
+            })
+
+    if gst_totals.tax_amount > 0 and tax_account_id:
+        journal_lines.append({
+            "account_id": tax_account_id, "debit": gst_totals.tax_amount, "credit": Decimal("0"),
+            "description": "GST credit",
+        })
+
+    if ar_id and journal_lines:
+        journal_lines.append({
+            "account_id": ar_id, "debit": Decimal("0"), "credit": gst_totals.total,
+            "description": f"Credit Memo {cm.memo_number}",
+        })
+        txn = create_journal_entry(
+            db, cm.date, f"Credit Memo {cm.memo_number} - {customer.name}",
+            journal_lines, source_type="credit_memo", source_id=cm.id,
+            reference=cm.memo_number,
+        )
+        cm.transaction_id = txn.id
+        return txn
+    return None
+
+
+def _replace_credit_memo_lines(db: Session, cm_id: int, lines_data, gst_totals):
+    db.query(CreditMemoLine).filter(CreditMemoLine.credit_memo_id == cm_id).delete()
+    for i, line_data in enumerate(lines_data):
+        gst_code, gst_rate = resolve_line_gst(db, line_data)
+        db.add(CreditMemoLine(
+            credit_memo_id=cm_id, item_id=line_data.item_id,
+            description=line_data.description, quantity=line_data.quantity,
+            rate=line_data.rate, amount=gst_totals.lines[i].net_amount,
+            gst_code=gst_code, gst_rate=gst_rate,
+            line_order=getattr(line_data, "line_order", None) or i,
+        ))
+
+
+def _credit_memo_has_applications(cm: CreditMemo) -> bool:
+    return Decimal(str(cm.amount_applied or 0)) > 0 or bool(cm.applications)
 
 
 @router.get("", response_model=list[CreditMemoResponse])
@@ -93,11 +154,6 @@ def create_credit_memo(data: CreditMemoCreate, db: Session = Depends(get_db)):
     db.add(cm)
     db.flush()
 
-    ar_id = get_ar_account_id(db)
-    default_income_id = get_default_income_account_id(db)
-    tax_account_id = get_gst_account_id(db)
-    journal_lines = []
-
     for i, line_data in enumerate(data.lines):
         gst_code, gst_rate = resolve_line_gst(db, line_data)
         amt = gst_totals.lines[i].net_amount
@@ -107,41 +163,80 @@ def create_credit_memo(data: CreditMemoCreate, db: Session = Depends(get_db)):
             rate=line_data.rate, amount=amt, gst_code=gst_code, gst_rate=gst_rate,
             line_order=line_data.line_order or i,
         ))
-        if amt > 0:
-            income_id = default_income_id
-            if line_data.item_id:
-                item = db.query(Item).filter(Item.id == line_data.item_id).first()
-                if item and item.income_account_id:
-                    income_id = item.income_account_id
-            if income_id:
-                journal_lines.append({
-                    "account_id": income_id, "debit": amt, "credit": Decimal("0"),
-                    "description": line_data.description or "",
-                })
-
-    # DR GST if tax
-    if gst_totals.tax_amount > 0 and tax_account_id:
-        journal_lines.append({
-            "account_id": tax_account_id, "debit": gst_totals.tax_amount, "credit": Decimal("0"),
-            "description": "GST credit",
-        })
-
-    # CR Accounts Receivable
-    if ar_id and journal_lines:
-        journal_lines.append({
-            "account_id": ar_id, "debit": Decimal("0"), "credit": gst_totals.total,
-            "description": f"Credit Memo {memo_number}",
-        })
-        txn = create_journal_entry(
-            db, data.date, f"Credit Memo {memo_number} - {customer.name}",
-            journal_lines, source_type="credit_memo", source_id=cm.id,
-        )
-        cm.transaction_id = txn.id
+    _post_credit_memo_journal(db, cm, customer, data.lines, gst_totals)
 
     db.commit()
     db.refresh(cm)
     resp = CreditMemoResponse.model_validate(cm)
     resp.customer_name = customer.name
+    return resp
+
+
+@router.put("/{cm_id}", response_model=CreditMemoResponse)
+def update_credit_memo(cm_id: int, data: CreditMemoUpdate, db: Session = Depends(get_db)):
+    cm = db.query(CreditMemo).filter(CreditMemo.id == cm_id).first()
+    if not cm:
+        raise HTTPException(status_code=404, detail="Credit memo not found")
+    if cm.status == CreditMemoStatus.VOID:
+        raise HTTPException(status_code=400, detail="Cannot edit voided credit memo")
+
+    old_transaction_id = cm.transaction_id
+    old_date = cm.date
+    update_values = data.model_dump(exclude_unset=True, exclude={"lines"})
+    new_date = update_values.get("date", old_date)
+    financial_change = data.lines is not None or new_date != old_date
+
+    if financial_change:
+        check_closing_date(db, old_date)
+        if new_date != old_date:
+            check_closing_date(db, new_date)
+        if _credit_memo_has_applications(cm):
+            raise HTTPException(status_code=400, detail="Cannot change financial fields on a credit memo with applications")
+
+    for key, val in update_values.items():
+        setattr(cm, key, val)
+
+    if financial_change:
+        if data.lines is not None:
+            gst_inputs = resolve_gst_line_inputs(db, data.lines)
+            gst_totals = calculate_document_gst(
+                gst_inputs,
+                prices_include_gst=prices_include_gst(db),
+                gst_context="sales",
+            )
+            _replace_credit_memo_lines(db, cm.id, data.lines, gst_totals)
+        else:
+            gst_totals = calculate_document_gst(
+                stored_gst_line_inputs(db, cm.lines),
+                prices_include_gst=prices_include_gst(db),
+                gst_context="sales",
+            )
+
+        cm.subtotal = gst_totals.subtotal
+        cm.tax_rate = gst_totals.effective_tax_rate
+        cm.tax_amount = gst_totals.tax_amount
+        cm.total = gst_totals.total
+        cm.balance_remaining = gst_totals.total - cm.amount_applied
+
+        if old_transaction_id:
+            reverse_journal_entry(
+                db,
+                old_transaction_id,
+                old_date,
+                f"Reversal Credit Memo {cm.memo_number}",
+                source_type="credit_memo_reversal",
+                source_id=cm.id,
+                reference=cm.memo_number,
+            )
+
+        posting_customer = db.query(Customer).filter(Customer.id == cm.customer_id).first()
+        _post_credit_memo_journal(db, cm, posting_customer, cm.lines, gst_totals)
+
+    db.commit()
+    db.refresh(cm)
+    resp = CreditMemoResponse.model_validate(cm)
+    if cm.customer:
+        resp.customer_name = cm.customer.name
     return resp
 
 

@@ -41,6 +41,13 @@ class CreditMemoCreate(BaseModel):
     lines: list[CreditMemoLineCreate] = []
 
 
+class CreditMemoUpdate(BaseModel):
+    date: Optional[date] = None
+    original_invoice_id: Optional[int] = None
+    notes: Optional[str] = None
+    lines: Optional[list[CreditMemoLineCreate]] = None
+
+
 class CreditMemoResponse(BaseModel):
     id: int
     memo_number: str

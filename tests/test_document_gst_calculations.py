@@ -351,6 +351,177 @@ class DocumentGstCalculationTests(unittest.TestCase):
         self.assertEqual(sum(line.debit for line in posted_lines), Decimal("115.00"))
         self.assertEqual(sum(line.credit for line in posted_lines), Decimal("115.00"))
 
+    def test_posted_bill_line_update_reverses_old_journal_and_posts_replacement(self):
+        from app.routes.bills import create_bill, update_bill
+        from app.schemas.bills import BillCreate, BillLineCreate, BillUpdate
+
+        with self.Session() as db:
+            _customer, vendor = self._seed_parties_and_accounts(db)
+            created = create_bill(BillCreate(
+                vendor_id=vendor.id,
+                bill_number="B-200",
+                date=date(2026, 4, 13),
+                lines=[BillLineCreate(description="Original bill", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            original_transaction_id = db.query(Bill).filter(Bill.id == created.id).one().transaction_id
+
+            updated = update_bill(created.id, BillUpdate(
+                lines=[BillLineCreate(description="Replacement bill", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+            ), db=db)
+            stored_bill = db.query(Bill).filter(Bill.id == created.id).one()
+            expense_account = db.query(Account).filter(Account.account_number == "6000").one()
+            gst_account = db.query(Account).filter(Account.account_number == "2200").one()
+            ap_account = db.query(Account).filter(Account.account_number == "2000").one()
+            transactions = db.query(Transaction).filter(Transaction.source_id == created.id).order_by(Transaction.id).all()
+
+        self.assertEqual(updated.subtotal, Decimal("200.00"))
+        self.assertEqual(updated.tax_amount, Decimal("30.00"))
+        self.assertEqual(updated.total, Decimal("230.00"))
+        self.assertNotEqual(stored_bill.transaction_id, original_transaction_id)
+        self.assertEqual([txn.source_type for txn in transactions], ["bill", "bill_reversal", "bill"])
+        self.assertEqual(expense_account.balance, Decimal("200.00"))
+        self.assertEqual(gst_account.balance, Decimal("-30.00"))
+        self.assertEqual(ap_account.balance, Decimal("230.00"))
+
+    def test_posted_bill_metadata_update_does_not_repost_journal(self):
+        from app.routes.bills import create_bill, update_bill
+        from app.schemas.bills import BillCreate, BillLineCreate, BillUpdate
+
+        with self.Session() as db:
+            _customer, vendor = self._seed_parties_and_accounts(db)
+            created = create_bill(BillCreate(
+                vendor_id=vendor.id,
+                bill_number="B-201",
+                date=date(2026, 4, 13),
+                lines=[BillLineCreate(description="Original bill", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            original_transaction_id = db.query(Bill).filter(Bill.id == created.id).one().transaction_id
+
+            updated = update_bill(created.id, BillUpdate(notes="Updated note", due_date=date(2026, 5, 13)), db=db)
+            stored_bill = db.query(Bill).filter(Bill.id == created.id).one()
+            transactions = db.query(Transaction).filter(Transaction.source_id == created.id).order_by(Transaction.id).all()
+
+        self.assertEqual(updated.notes, "Updated note")
+        self.assertEqual(str(updated.due_date), "2026-05-13")
+        self.assertEqual(stored_bill.transaction_id, original_transaction_id)
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].source_type, "bill")
+
+    def test_paid_bill_financial_edit_is_rejected(self):
+        from fastapi import HTTPException
+        from app.routes.bills import create_bill, update_bill
+        from app.routes.bill_payments import create_bill_payment
+        from app.schemas.bills import BillCreate, BillLineCreate, BillPaymentAllocationCreate, BillPaymentCreate, BillUpdate
+
+        with self.Session() as db:
+            _customer, vendor = self._seed_parties_and_accounts(db)
+            db.add(Account(name="Business Bank Account", account_number="1000", account_type=AccountType.ASSET))
+            db.commit()
+            created = create_bill(BillCreate(
+                vendor_id=vendor.id,
+                bill_number="B-202",
+                date=date(2026, 4, 13),
+                lines=[BillLineCreate(description="Original bill", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            create_bill_payment(BillPaymentCreate(
+                vendor_id=vendor.id,
+                date=date(2026, 4, 14),
+                amount=115,
+                allocations=[BillPaymentAllocationCreate(bill_id=created.id, amount=115)],
+            ), db=db)
+
+            with self.assertRaises(HTTPException) as ctx:
+                update_bill(created.id, BillUpdate(
+                    lines=[BillLineCreate(description="Replacement bill", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+                ), db=db)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("payments", ctx.exception.detail.lower())
+
+    def test_credit_memo_line_update_reverses_old_journal_and_posts_replacement(self):
+        from app.routes.credit_memos import create_credit_memo, update_credit_memo
+        from app.schemas.credit_memos import CreditMemoCreate, CreditMemoLineCreate, CreditMemoUpdate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed_parties_and_accounts(db)
+            created = create_credit_memo(CreditMemoCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[CreditMemoLineCreate(description="Original credit", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            original_transaction_id = db.query(CreditMemo).filter(CreditMemo.id == created.id).one().transaction_id
+
+            updated = update_credit_memo(created.id, CreditMemoUpdate(
+                lines=[CreditMemoLineCreate(description="Replacement credit", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+            ), db=db)
+            stored_credit = db.query(CreditMemo).filter(CreditMemo.id == created.id).one()
+            ar_account = db.query(Account).filter(Account.account_number == "1100").one()
+            gst_account = db.query(Account).filter(Account.account_number == "2200").one()
+            income_account = db.query(Account).filter(Account.account_number == "4000").one()
+            transactions = db.query(Transaction).filter(Transaction.source_id == created.id).order_by(Transaction.id).all()
+
+        self.assertEqual(updated.subtotal, Decimal("200.00"))
+        self.assertEqual(updated.tax_amount, Decimal("30.00"))
+        self.assertEqual(updated.total, Decimal("230.00"))
+        self.assertNotEqual(stored_credit.transaction_id, original_transaction_id)
+        self.assertEqual([txn.source_type for txn in transactions], ["credit_memo", "credit_memo_reversal", "credit_memo"])
+        self.assertEqual(ar_account.balance, Decimal("-230.00"))
+        self.assertEqual(gst_account.balance, Decimal("-30.00"))
+        self.assertEqual(income_account.balance, Decimal("-200.00"))
+
+    def test_applied_credit_memo_financial_edit_is_rejected(self):
+        from fastapi import HTTPException
+        from app.routes.credit_memos import create_credit_memo, update_credit_memo, apply_credit
+        from app.routes.invoices import create_invoice
+        from app.schemas.credit_memos import CreditApplicationCreate, CreditMemoCreate, CreditMemoLineCreate, CreditMemoUpdate
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed_parties_and_accounts(db)
+            invoice = create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[InvoiceLineCreate(description="Invoice", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            created = create_credit_memo(CreditMemoCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 13),
+                lines=[CreditMemoLineCreate(description="Original credit", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            apply_credit(created.id, CreditApplicationCreate(invoice_id=invoice.id, amount=50), db=db)
+
+            with self.assertRaises(HTTPException) as ctx:
+                update_credit_memo(created.id, CreditMemoUpdate(
+                    lines=[CreditMemoLineCreate(description="Replacement credit", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+                ), db=db)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("applications", ctx.exception.detail.lower())
+
+    def test_closing_date_blocks_bill_financial_repost(self):
+        from fastapi import HTTPException
+        from app.routes.bills import create_bill, update_bill
+        from app.schemas.bills import BillCreate, BillLineCreate, BillUpdate
+
+        with self.Session() as db:
+            _customer, vendor = self._seed_parties_and_accounts(db)
+            created = create_bill(BillCreate(
+                vendor_id=vendor.id,
+                bill_number="B-203",
+                date=date(2026, 4, 13),
+                lines=[BillLineCreate(description="Original bill", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            db.add(Settings(key="closing_date", value="2026-04-13"))
+            db.commit()
+
+            with self.assertRaises(HTTPException) as ctx:
+                update_bill(created.id, BillUpdate(
+                    lines=[BillLineCreate(description="Replacement bill", quantity=1, rate=Decimal("200"), gst_code="GST15")],
+                ), db=db)
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("closing date", ctx.exception.detail.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
