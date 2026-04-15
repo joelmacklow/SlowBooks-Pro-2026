@@ -80,11 +80,13 @@ def create_company(db: Session, name: str, database_name: str, description: str 
     try:
         validated_database_name = _validate_database_name(database_name)
     except ValueError as exc:
-        return {"success": False, "error": str(exc)}
+        message = str(exc)
+        return {"success": False, "error": message, "public_error": message, "status_code": 400}
 
     existing = db.query(Company).filter(Company.database_name == validated_database_name).first()
     if existing:
-        return {"success": False, "error": f"Database '{validated_database_name}' already exists"}
+        message = f"Database '{validated_database_name}' already exists"
+        return {"success": False, "error": message, "public_error": message, "status_code": 400}
 
     created_database = False
     system_engine = None
@@ -109,7 +111,7 @@ def create_company(db: Session, name: str, database_name: str, description: str 
                 _drop_database(validated_database_name)
             except Exception:
                 pass
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": str(e), "public_error": "Failed to create company", "status_code": 500}
     finally:
         if system_engine is not None:
             system_engine.dispose()

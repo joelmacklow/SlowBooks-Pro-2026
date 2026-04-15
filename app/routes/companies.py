@@ -3,14 +3,15 @@
 # Feature 16: Company switching from UI
 # ============================================================================
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.services.company_service import list_companies, create_company
 from app.services.auth import require_permissions
+from app.services.company_service import create_company, list_companies
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -37,5 +38,8 @@ def new_company(
 ):
     result = create_company(db, data.name, data.database_name, data.description)
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Failed to create company"))
+        raise HTTPException(
+            status_code=result.get("status_code", 400),
+            detail=result.get("public_error", "Failed to create company"),
+        )
     return result
