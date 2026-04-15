@@ -157,7 +157,12 @@ Default compose behavior:
 
 Local bind mounts are used for:
 - repo source code into the app container
-- PostgreSQL data at `./data/postgres`
+- PostgreSQL data at `./data/postgresql`
+
+If you already have an older local `./data/postgres` folder from the previous
+compose layout, it will not be reused automatically. Remove it for a fresh
+local database, or migrate/upgrade it explicitly before reusing it with
+Postgres 18.
 
 ### Docker with external PostgreSQL
 

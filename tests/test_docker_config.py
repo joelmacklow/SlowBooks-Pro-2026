@@ -63,6 +63,8 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         compose_text = (root / "docker-compose.yml").read_text()
         self.assertIn("image: postgres:18", compose_text)
+        self.assertIn("./data/postgresql:/var/lib/postgresql", compose_text)
+        self.assertNotIn("./data/postgres:/var/lib/postgresql/data", compose_text)
 
         for key in (
             "DATABASE_URL=",

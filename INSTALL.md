@@ -55,7 +55,12 @@ The app container will:
 ### Local bind mounts
 The default compose stack bind-mounts:
 - the repo source into the app container
-- PostgreSQL data to `./data/postgres`
+- PostgreSQL data to `./data/postgresql`
+
+If you already have an older local `./data/postgres` folder from the previous
+compose layout, it will not be reused automatically. Remove it for a fresh
+local database, or migrate/upgrade it explicitly before reusing it with
+Postgres 18.
 
 ---
 
