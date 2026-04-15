@@ -3,8 +3,6 @@
 # Feature 11: Create, list, download, restore backups
 # ============================================================================
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -13,8 +11,8 @@ from typing import Optional
 
 from app.database import get_db
 from app.models.backups import Backup
-from app.services.backup_service import create_backup, restore_backup, list_backup_files, BACKUP_DIR
 from app.services.auth import require_permissions
+from app.services.backup_service import create_backup, resolve_backup_path, restore_backup
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -34,13 +32,22 @@ def list_backups(
 ):
     """List only backups whose files still exist on disk."""
     db_backups = db.query(Backup).order_by(Backup.created_at.desc()).all()
-    return [
-        {"id": b.id, "filename": b.filename, "file_size": b.file_size,
-         "backup_type": b.backup_type, "notes": b.notes,
-         "created_at": b.created_at.isoformat() if b.created_at else None}
-        for b in db_backups
-        if (BACKUP_DIR / b.filename).exists()
-    ]
+    visible_backups = []
+    for backup in db_backups:
+        try:
+            filepath = resolve_backup_path(backup.filename)
+        except ValueError:
+            continue
+        if filepath.exists():
+            visible_backups.append({
+                "id": backup.id,
+                "filename": backup.filename,
+                "file_size": backup.file_size,
+                "backup_type": backup.backup_type,
+                "notes": backup.notes,
+                "created_at": backup.created_at.isoformat() if backup.created_at else None,
+            })
+    return visible_backups
 
 
 @router.post("")
@@ -60,10 +67,14 @@ def download_backup(
     filename: str,
     auth=Depends(require_permissions("backups.view")),
 ):
-    filepath = BACKUP_DIR / filename
+    try:
+        filepath = resolve_backup_path(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Backup file not found")
-    return FileResponse(str(filepath), filename=filename, media_type="application/octet-stream")
+    return FileResponse(str(filepath), filename=filepath.name, media_type="application/octet-stream")
 
 
 @router.post("/restore")
@@ -74,5 +85,8 @@ def restore(
 ):
     result = restore_backup(db, data.filename)
     if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "Restore failed"))
+        raise HTTPException(
+            status_code=result.get("status_code", 500),
+            detail=result.get("error", "Restore failed"),
+        )
     return result

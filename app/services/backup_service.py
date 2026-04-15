@@ -3,6 +3,7 @@
 # Feature 11: Database backup and restore accessible from settings
 # ============================================================================
 
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from app.models.backups import Backup
 
 BACKUP_DIR = Path(__file__).parent.parent.parent / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_FILENAME_PATTERN = re.compile(r"slowbooks_\d{8}_\d{6}\.sql\Z")
 
 
 def _parse_db_url(url: str) -> dict:
@@ -30,6 +32,26 @@ def _parse_db_url(url: str) -> dict:
         "dbname": parsed.path.lstrip("/") or "bookkeeper",
         "sslmode": (query.get("sslmode") or [""])[0],
     }
+
+
+def resolve_backup_path(filename: str) -> Path:
+    """Resolve a managed backup filename to a path inside the backup directory."""
+    if not isinstance(filename, str):
+        raise ValueError("Invalid backup filename")
+
+    candidate = filename.strip()
+    if candidate != filename or not candidate:
+        raise ValueError("Invalid backup filename")
+    if Path(candidate).is_absolute() or "/" in candidate or "\\" in candidate:
+        raise ValueError("Invalid backup filename")
+    if not BACKUP_FILENAME_PATTERN.fullmatch(candidate):
+        raise ValueError("Invalid backup filename")
+
+    backup_root = BACKUP_DIR.resolve()
+    resolved = (BACKUP_DIR / candidate).resolve()
+    if resolved.parent != backup_root:
+        raise ValueError("Invalid backup filename")
+    return resolved
 
 
 def create_backup(db: Session, notes: str = None, backup_type: str = "manual") -> dict:
@@ -72,9 +94,13 @@ def create_backup(db: Session, notes: str = None, backup_type: str = "manual") -
 
 def restore_backup(db: Session, filename: str) -> dict:
     """Restore a database from a backup file."""
-    filepath = BACKUP_DIR / filename
+    try:
+        filepath = resolve_backup_path(filename)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc), "status_code": 400}
+
     if not filepath.exists():
-        return {"success": False, "error": f"Backup file not found: {filename}"}
+        return {"success": False, "error": "Backup file not found", "status_code": 404}
 
     params = _parse_db_url(DATABASE_URL)
     env = {"PGPASSWORD": params["password"]}
