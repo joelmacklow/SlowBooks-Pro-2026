@@ -6,11 +6,12 @@
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.settings import Settings
+from app.services.auth import require_permissions
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -21,11 +22,14 @@ ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/svg+xml"}
 
 
 @router.post("/logo")
-async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_logo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Only PNG, JPEG, GIF, or SVG images are allowed")
 
-    # Save file
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "png"
     filename = f"company_logo.{ext}"
     filepath = UPLOAD_DIR / filename
@@ -33,7 +37,6 @@ async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db
     with open(filepath, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Save path to settings
     logo_path = f"/static/uploads/{filename}"
     row = db.query(Settings).filter(Settings.key == "company_logo_path").first()
     if row:

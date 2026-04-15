@@ -187,8 +187,8 @@ Relevant files:
 4. Decide and implement the NZ income-tax replacement surface:
    Schedule C is retired on the NZ branch, but the replacement output still needs a product decision: IR3 business summary, IR10-style financial statements, accountant export, or another NZ-specific output.
 
-5. Tighten residual auth-boundary gaps after the broader RBAC rollout:
-   The platform now enforces RBAC across payroll, admin, and the core business modules (contacts, items, sales, purchasing, banking, and import/export). Remaining follow-up is to decide whether residual endpoints such as disabled tax/upload surfaces should also join the same boundary, and to handle any future multi-company context switching.
+5. Extend the auth model to future multi-company context switching:
+   The platform now enforces RBAC across payroll, admin, core business modules, logo uploads, and retires the dormant legacy tax API surface. Remaining auth follow-up is future multi-company context switching and any new module surfaces added later.
 
 6. Keep expanding focused regression coverage:
    Continue adding targeted tests whenever localized behavior changes, especially around GST math/reporting, GST settlement matching, posting lifecycle integrity, payroll calculations/outputs, filing history state, and settings-driven behavior.
