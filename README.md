@@ -155,19 +155,24 @@ Default compose behavior:
 - runs `python scripts/bootstrap_database.py` (migrations + NZ seed)
 - starts the app
 
-Local bind mounts are used for:
-- repo source code into the app container
-- PostgreSQL data at `./data/postgresql`
+Local Docker mounts are used for:
+- repo source code bind-mounted into the app container as `./:/app:Z`
+- PostgreSQL data stored in the Docker-managed named volume `postgres_data`
 
-If you already have an older local `./data/postgres` folder from the previous
-compose layout, it will not be reused automatically. Remove it for a fresh
-local database, or migrate/upgrade it explicitly before reusing it with
-Postgres 18.
+If you already have an older local `./data/postgres` or `./data/postgresql`
+folder from previous compose layouts, it is no longer used by the bundled
+database service. Remove it if you do not need it, or migrate it explicitly
+before importing that data into the current Postgres 18 volume.
 
-The compose bind mounts include Docker's `:Z` relabel flag so the default stack
-also works on SELinux-enabled Linux hosts instead of failing with `Permission denied`
-when the app reads `scripts/docker-entrypoint.sh` or Postgres initializes its
-data directory.
+The app source bind mount includes Docker's `:Z` relabel flag so the default
+stack also works on SELinux-enabled Linux hosts instead of failing with
+`Permission denied` when the app reads `scripts/docker-entrypoint.sh`.
+
+To reset the bundled database completely, run:
+
+```bash
+docker compose down -v
+```
 
 ### Docker with external PostgreSQL
 

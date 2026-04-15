@@ -52,21 +52,26 @@ The app container will:
 - app: **http://localhost:3001**
 - database: bundled `postgres:18`
 
-### Local bind mounts
-The default compose stack bind-mounts:
-- the repo source into the app container
-- PostgreSQL data to `./data/postgresql`
+### Local Docker mounts
+The default compose stack uses:
+- a bind mount for the repo source into the app container as `./:/app:Z`
+- a Docker-managed named volume `postgres_data` for PostgreSQL data
 
-If you already have an older local `./data/postgres` folder from the previous
-compose layout, it will not be reused automatically. Remove it for a fresh
-local database, or migrate/upgrade it explicitly before reusing it with
-Postgres 18.
+If you already have an older local `./data/postgres` or `./data/postgresql`
+folder from previous compose layouts, it is no longer used by the bundled
+database service. Remove it if you do not need it, or migrate it explicitly
+before importing that data into the current Postgres 18 volume.
 
-The compose bind mounts include Docker's `:Z` relabel flag so the default stack
+The app bind mount includes Docker's `:Z` relabel flag so the default stack
 works on SELinux-enabled Linux hosts. Without that relabeling, Docker bind
 mounts commonly fail with `Permission denied` when the app reads
-`scripts/docker-entrypoint.sh` or when Postgres tries to initialize
-`/var/lib/postgresql`.
+`scripts/docker-entrypoint.sh`.
+
+To reset the bundled database completely:
+
+```bash
+docker compose down -v
+```
 
 ---
 
