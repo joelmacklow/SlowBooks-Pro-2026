@@ -282,8 +282,16 @@ def _pdf_amount(value) -> str:
     return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
 
 
+def _pdf_amount_comb(value) -> str:
+    return _pdf_amount(value).replace(".", "")
+
+
 def _pdf_date(value: date | None) -> str:
     return value.strftime("%d/%m/%y") if value else ""
+
+
+def _pdf_date_comb(value: date | None) -> str:
+    return value.strftime("%d%m%Y") if value else ""
 
 
 def _pdf_period(start: str, end: str) -> str:
@@ -297,19 +305,19 @@ def _overlay_pdf(report: dict, company_settings: dict, return_due_date: date | N
     c.setFont("Helvetica", 8)
     _draw_comb_text(c, GST_REGISTRATION_RECT_PAGE_1, gst_number, 11, font_size=8, y_offset=2.2)
     _draw_comb_text(c, GST_PERIOD_RECT_PAGE_1, _pdf_period(report["start_date"], report["end_date"]), 11, font_size=8, y_offset=2.2)
-    _draw_comb_text(c, GST_DUE_RECT_PAGE_1, _pdf_date(return_due_date), 8, font_size=8, y_offset=2.2)
+    _draw_comb_text(c, GST_DUE_RECT_PAGE_1, _pdf_date_comb(return_due_date), 8, font_size=8, y_offset=2.2)
     c.drawString(285, 540, phone or company_settings.get("company_phone") or "")
 
     boxes = report["boxes"]
     for rect, box_key in zip(GST_BOX_RECTS_PAGE_1, ("5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15")):
-        _draw_comb_text(c, rect, _pdf_amount(boxes[box_key]), 11)
+        _draw_comb_text(c, rect, _pdf_amount_comb(boxes[box_key]), 11)
     c.showPage()
     c.setFont("Helvetica", 8)
     _draw_comb_text(c, GST_REGISTRATION_RECT_PAGE_2, gst_number, 11, font_size=8, y_offset=2.2)
-    _draw_comb_text(c, GST_END_DATE_RECT_PAGE_2, date.fromisoformat(report["end_date"]).strftime("%d/%m/%y"), 8, font_size=8, y_offset=2.2)
-    _draw_comb_text(c, GST_DUE_RECT_PAGE_2, _pdf_date(return_due_date), 8, font_size=8, y_offset=2.2)
+    _draw_comb_text(c, GST_END_DATE_RECT_PAGE_2, date.fromisoformat(report["end_date"]).strftime("%d%m%Y"), 8, font_size=8, y_offset=2.2)
+    _draw_comb_text(c, GST_DUE_RECT_PAGE_2, _pdf_date_comb(return_due_date), 8, font_size=8, y_offset=2.2)
     if report["net_position"] == "payable":
-        _draw_comb_text(c, GST_AMOUNT_PAY_RECT_PAGE_2, _pdf_amount(boxes["15"]), 11)
+        _draw_comb_text(c, GST_AMOUNT_PAY_RECT_PAGE_2, _pdf_amount_comb(boxes["15"]), 11)
     c.showPage()
     c.save()
     out.seek(0)
