@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.bank_import import BankImportResult
 from app.services.auth import require_permissions
 from app.services.bank_import import import_ofx_file, preview_ofx_file
 
