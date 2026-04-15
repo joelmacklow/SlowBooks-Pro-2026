@@ -169,7 +169,6 @@ class GstReturnReportTests(unittest.TestCase):
         self.assertEqual(report["net_position"], "refundable")
 
     def test_pdf_endpoint_fills_gst101a_box_fields(self):
-        from app.services.gst_return import _comb_text_positions
         from app.routes.invoices import create_invoice
         from app.routes.reports import gst_return_pdf
         from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
@@ -190,23 +189,20 @@ class GstReturnReportTests(unittest.TestCase):
                 db=db,
             )
 
-        positions = _comb_text_positions((0, 0, 110, 10), "11500", 11)
         self.assertEqual(response.media_type, "application/pdf")
         self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="GST101A_2026-04-01_2026-04-30.pdf"')
         fields = PdfReader(io.BytesIO(response.body)).get_fields()
         text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(response.body)).pages)
         compact_text = "".join(text.split())
-        self.assertEqual([pair[1] for pair in positions], list("11500"))
-        self.assertEqual(positions[0][0], 65.0)
-        self.assertEqual(positions[-1][0], 105.0)
         self.assertIn("01/04-30/04", compact_text)
         self.assertIn("28052026", compact_text)
         self.assertIn("123-456-789", compact_text)
-        self.assertIn("11500", compact_text)
-        self.assertIn("500", compact_text)
-        self.assertIn("2000", compact_text)
-        self.assertIn("200", compact_text)
-        self.assertIn("1800", compact_text)
+        self.assertEqual(fields["5.0"]["/V"], "11500")
+        self.assertEqual(fields["5.4"]["/V"], "500")
+        self.assertEqual(fields["5.5"]["/V"], "2000")
+        self.assertEqual(fields["5.8"]["/V"], "200")
+        self.assertEqual(fields["5.10.0"]["/V"], "1800")
+        self.assertEqual(fields["Amount of Pay"]["/V"], "1800")
         self.assertEqual(fields["refund / gst"]["/V"], "/No")
 
 

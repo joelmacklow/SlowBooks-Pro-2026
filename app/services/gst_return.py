@@ -308,16 +308,11 @@ def _overlay_pdf(report: dict, company_settings: dict, return_due_date: date | N
     _draw_comb_text(c, GST_DUE_RECT_PAGE_1, _pdf_date_comb(return_due_date), 8, font_size=8, y_offset=2.2)
     c.drawString(285, 540, phone or company_settings.get("company_phone") or "")
 
-    boxes = report["boxes"]
-    for rect, box_key in zip(GST_BOX_RECTS_PAGE_1, ("5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15")):
-        _draw_comb_text(c, rect, _pdf_amount_comb(boxes[box_key]), 11)
     c.showPage()
     c.setFont("Helvetica", 8)
     _draw_comb_text(c, GST_REGISTRATION_RECT_PAGE_2, gst_number, 11, font_size=8, y_offset=2.2)
     _draw_comb_text(c, GST_END_DATE_RECT_PAGE_2, date.fromisoformat(report["end_date"]).strftime("%d%m%Y"), 8, font_size=8, y_offset=2.2)
     _draw_comb_text(c, GST_DUE_RECT_PAGE_2, _pdf_date_comb(return_due_date), 8, font_size=8, y_offset=2.2)
-    if report["net_position"] == "payable":
-        _draw_comb_text(c, GST_AMOUNT_PAY_RECT_PAGE_2, _pdf_amount_comb(boxes["15"]), 11)
     c.showPage()
     c.save()
     out.seek(0)
@@ -337,7 +332,20 @@ def generate_gst101a_pdf(
     for page_number, page in enumerate(writer.pages):
         page.merge_page(overlay.pages[page_number])
 
+    boxes = report["boxes"]
     fields = {
+        "5.0": _pdf_amount_comb(boxes["5"]),
+        "5.1": _pdf_amount_comb(boxes["6"]),
+        "5.2": _pdf_amount_comb(boxes["7"]),
+        "5.3": _pdf_amount_comb(boxes["8"]),
+        "5.4": _pdf_amount_comb(boxes["9"]),
+        "5.5": _pdf_amount_comb(boxes["10"]),
+        "5.6": _pdf_amount_comb(boxes["11"]),
+        "5.7": _pdf_amount_comb(boxes["12"]),
+        "5.8": _pdf_amount_comb(boxes["13"]),
+        "5.9": _pdf_amount_comb(boxes["14"]),
+        "5.10.0": _pdf_amount_comb(boxes["15"]),
+        "Amount of Pay": _pdf_amount_comb(boxes["15"] if report["net_position"] == "payable" else 0),
         "refund / gst": "/No" if report["net_position"] == "payable" else "/Yes",
     }
 
