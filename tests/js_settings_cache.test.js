@@ -5,11 +5,16 @@ const vm = require('vm');
 const settingsCode = fs.readFileSync('app/static/js/settings.js', 'utf8');
 const code = `${settingsCode}\nthis.SettingsPage = SettingsPage;`;
 const updatedSettings = { locale: 'en-NZ', currency: 'NZD', company_name: 'SlowBooks NZ' };
+const posts = [];
 const context = {
     App: { settings: { locale: 'en-US', currency: 'USD' } },
     API: {
         get: async () => ({ payroll_contact_name: '', payroll_contact_phone: '', payroll_contact_email: '' }),
         put: async () => updatedSettings,
+        post: async (path) => {
+            posts.push(path);
+            return { status: 'loaded' };
+        },
     },
     FormData: class {
         constructor(target) {
@@ -33,6 +38,7 @@ vm.runInContext(code, context);
     const sampleHtml = await context.SettingsPage.render();
     assert.ok(sampleHtml.includes('Employment Information and employee filing exports'));
     assert.ok(!sampleHtml.includes('payday filing'));
+    assert.ok(sampleHtml.includes('Load NZ Demo Data'));
 
     await context.SettingsPage.save({
         preventDefault() {},
@@ -40,6 +46,9 @@ vm.runInContext(code, context);
     });
 
     assert.deepStrictEqual(context.App.settings, updatedSettings);
+
+    await context.SettingsPage.loadDemoData();
+    assert.deepStrictEqual(posts, ['/settings/load-demo-data']);
 })().catch((err) => {
     console.error(err);
     process.exit(1);

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.settings import Settings, DEFAULT_SETTINGS
 from app.services.auth import require_permissions
+from scripts.seed_nz_demo_data import seed as run_demo_seed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -93,3 +94,12 @@ def test_email(
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+
+
+@router.post("/load-demo-data")
+def load_demo_data(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    run_demo_seed()
+    return {"status": "loaded"}

@@ -191,6 +191,14 @@ const SettingsPage = {
                     <div id="backup-list"></div>
                 </div>
 
+                <div class="settings-section">
+                    <h3>Demo Data</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Load the built-in NZ demo business for evaluation or training. Safe to rerun; the seed script skips when the demo business already exists.
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="SettingsPage.loadDemoData()">Load NZ Demo Data</button>
+                </div>
+
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save Settings</button>
                 </div>
@@ -234,6 +242,13 @@ const SettingsPage = {
             const result = await API.post('/backups');
             toast(`Backup created: ${result.filename}`);
             SettingsPage.loadBackups();
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async loadDemoData() {
+        try {
+            await API.post('/settings/load-demo-data');
+            toast('NZ demo data loaded');
         } catch (err) { toast(err.message, 'error'); }
     },
 
