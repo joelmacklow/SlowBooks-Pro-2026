@@ -5,9 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.config import resolve_database_url
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.config import resolve_database_url
 
 
 def resolve_alembic_executable() -> str:

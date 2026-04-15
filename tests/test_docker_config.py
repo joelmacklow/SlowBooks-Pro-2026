@@ -1,5 +1,7 @@
 import importlib
 import os
+import runpy
+import sys
 import unittest
 from pathlib import Path
 
@@ -60,6 +62,7 @@ class DockerConfigTests(unittest.TestCase):
         self.assertTrue((root / ".dockerignore").exists())
         self.assertTrue((root / "scripts" / "docker-entrypoint.sh").exists())
         self.assertTrue((root / "scripts" / "docker" / "docker-entrypoint.sh").exists())
+        self.assertIn("PYTHONPATH=/app", dockerfile_text)
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         compose_text = (root / "docker-compose.yml").read_text()
         self.assertIn("image: postgres:18", compose_text)
@@ -78,6 +81,21 @@ class DockerConfigTests(unittest.TestCase):
             "POSTGRES_SSLMODE=",
         ):
             self.assertIn(key, env_example)
+
+    def test_bootstrap_database_script_can_import_app_when_run_as_script(self):
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "bootstrap_database.py"
+        original_cwd = Path.cwd()
+        original_path = sys.path[:]
+
+        try:
+            os.chdir(root)
+            sys.path = [str(script.parent)] + [entry for entry in original_path if Path(entry or ".").resolve() != root]
+            namespace = runpy.run_path(str(script), run_name="bootstrap_database_test")
+            self.assertIn("run_bootstrap", namespace)
+        finally:
+            os.chdir(original_cwd)
+            sys.path = original_path
 
 
 if __name__ == "__main__":
