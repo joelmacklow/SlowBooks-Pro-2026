@@ -62,6 +62,12 @@ compose layout, it will not be reused automatically. Remove it for a fresh
 local database, or migrate/upgrade it explicitly before reusing it with
 Postgres 18.
 
+The compose bind mounts include Docker's `:Z` relabel flag so the default stack
+works on SELinux-enabled Linux hosts. Without that relabeling, Docker bind
+mounts commonly fail with `Permission denied` when the app reads
+`scripts/docker-entrypoint.sh` or when Postgres tries to initialize
+`/var/lib/postgresql`.
+
 ---
 
 ## 3. Docker with external PostgreSQL
