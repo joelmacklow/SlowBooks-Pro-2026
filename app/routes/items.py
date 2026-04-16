@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/items", tags=["items"])
 def list_items(
     active_only: bool = False,
     item_type: str = None,
+    vendor_id: int = None,
     search: str = None,
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("items.view")),
@@ -22,6 +23,8 @@ def list_items(
         q = q.filter(Item.is_active == True)
     if item_type:
         q = q.filter(Item.item_type == item_type)
+    if vendor_id:
+        q = q.filter(Item.vendor_id == vendor_id)
     if search:
         q = q.filter(Item.name.ilike(f"%{search}%"))
     return q.order_by(Item.name).all()

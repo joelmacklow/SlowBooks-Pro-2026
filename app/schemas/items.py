@@ -13,6 +13,7 @@ class ItemCreate(BaseModel):
     description: Optional[str] = None
     rate: Decimal = Decimal("0")
     cost: Decimal = Decimal("0")
+    vendor_id: Optional[int] = None
     income_account_id: Optional[int] = None
     expense_account_id: Optional[int] = None
     is_taxable: bool = True
@@ -24,6 +25,7 @@ class ItemUpdate(BaseModel):
     description: Optional[str] = None
     rate: Optional[Decimal] = None
     cost: Optional[Decimal] = None
+    vendor_id: Optional[int] = None
     income_account_id: Optional[int] = None
     expense_account_id: Optional[int] = None
     is_taxable: Optional[bool] = None
@@ -37,6 +39,7 @@ class ItemResponse(BaseModel):
     description: Optional[str]
     rate: Decimal
     cost: Decimal
+    vendor_id: Optional[int]
     income_account_id: Optional[int]
     expense_account_id: Optional[int]
     is_taxable: bool

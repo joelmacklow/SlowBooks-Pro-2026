@@ -99,6 +99,31 @@ const PurchaseOrdersPage = {
         })), PurchaseOrdersPage._settings);
     },
 
+    _itemsForVendor(vendorId, selectedItemId = null) {
+        return (PurchaseOrdersPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            if (!vendorId) return true;
+            return String(item.vendor_id || '') === String(vendorId);
+        });
+    },
+
+    _snapshotLinesFromDom() {
+        const rows = $$('#po-lines tr');
+        if (!rows.length) return PurchaseOrdersPage._detailState?.lines || [];
+        return rows.map((row, index) => {
+            const gst = readGstLinePayload(row);
+            return {
+                item_id: row.querySelector('.line-item')?.value ? parseInt(row.querySelector('.line-item').value) : null,
+                description: row.querySelector('.line-desc')?.value || '',
+                quantity: row.querySelector('.line-qty')?.value || 1,
+                rate: row.querySelector('.line-rate')?.value || 0,
+                gst_code: gst.gst_code,
+                gst_rate: gst.gst_rate,
+                line_order: index,
+            };
+        });
+    },
+
     renderDetailScreen() {
         const po = PurchaseOrdersPage._detailState;
         const canManagePurchasing = App.hasPermission ? App.hasPermission('purchasing.manage') : true;
@@ -127,7 +152,7 @@ const PurchaseOrdersPage = {
                 <div class="settings-section">
                     <div class="form-grid">
                         <div class="form-group"><label>Vendor *</label>
-                            <select name="vendor_id" required ${canManagePurchasing ? '' : 'disabled'}><option value="">Select...</option>${vendorOpts}</select></div>
+                            <select name="vendor_id" required onchange="PurchaseOrdersPage.vendorChanged(this.value)" ${canManagePurchasing ? '' : 'disabled'}><option value="">Select...</option>${vendorOpts}</select></div>
                         <div class="form-group"><label>Date Raised *</label>
                             <input name="date" type="date" required value="${po.date || ''}" ${canManagePurchasing ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Delivery Date</label>
@@ -154,7 +179,7 @@ const PurchaseOrdersPage = {
                     <table class="line-items-table">
                         <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th><th></th></tr></thead>
                         <tbody id="po-lines">
-                            ${(po.lines || []).map((l, i) => PurchaseOrdersPage.lineHtml(i, l, PurchaseOrdersPage._items, canManagePurchasing)).join('')}
+                            ${(po.lines || []).map((l, i) => PurchaseOrdersPage.lineHtml(i, l, PurchaseOrdersPage._itemsForVendor(po.vendor_id, l.item_id), canManagePurchasing, po.vendor_id)).join('')}
                         </tbody>
                     </table>
                     ${canManagePurchasing ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="PurchaseOrdersPage.addLine()">+ Add Line</button>' : ''}
@@ -184,7 +209,7 @@ const PurchaseOrdersPage = {
             </form>`;
     },
 
-    lineHtml(idx, line, items, canManage = true) {
+    lineHtml(idx, line, items, canManage = true, vendorId = null) {
         const opts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
         return `<tr data-poline="${idx}">
             <td><select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select></td>
@@ -199,7 +224,8 @@ const PurchaseOrdersPage = {
 
     addLine() {
         const idx = PurchaseOrdersPage.lineCount++;
-        $('#po-lines').insertAdjacentHTML('beforeend', PurchaseOrdersPage.lineHtml(idx, {}, PurchaseOrdersPage._items, true));
+        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
+        $('#po-lines').insertAdjacentHTML('beforeend', PurchaseOrdersPage.lineHtml(idx, {}, PurchaseOrdersPage._itemsForVendor(vendorId), true, vendorId));
         PurchaseOrdersPage.updateTotals();
     },
 
@@ -216,6 +242,18 @@ const PurchaseOrdersPage = {
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.cost || item.rate;
         }
+        PurchaseOrdersPage.updateTotals();
+    },
+
+    async vendorChanged(value) {
+        if (!PurchaseOrdersPage._detailState) return;
+        PurchaseOrdersPage._detailState.lines = PurchaseOrdersPage._snapshotLinesFromDom();
+        PurchaseOrdersPage._detailState.vendor_id = value ? parseInt(value) : '';
+        const tbody = $('#po-lines');
+        if (!tbody) return;
+        tbody.innerHTML = (PurchaseOrdersPage._detailState.lines || []).map((line, idx) =>
+            PurchaseOrdersPage.lineHtml(idx, line, PurchaseOrdersPage._itemsForVendor(PurchaseOrdersPage._detailState.vendor_id, line.item_id), true, PurchaseOrdersPage._detailState.vendor_id)
+        ).join('');
         PurchaseOrdersPage.updateTotals();
     },
 

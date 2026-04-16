@@ -43,12 +43,16 @@ const ItemsPage = {
 
     async showForm(id = null) {
         let item = { name:'', item_type:'service', description:'', rate:0, cost:0,
-            income_account_id:'', expense_account_id:'', is_taxable:true };
+            vendor_id:'', income_account_id:'', expense_account_id:'', is_taxable:true };
         if (id) item = await API.get(`/items/${id}`);
 
-        const accounts = await API.get('/accounts');
+        const [accounts, vendors] = await Promise.all([
+            API.get('/accounts'),
+            API.get('/vendors?active_only=true'),
+        ]);
         const incomeAccts = accounts.filter(a => ['income','cogs'].includes(a.account_type));
         const expenseAccts = accounts.filter(a => ['expense','cogs'].includes(a.account_type));
+        const vendorOptions = vendors.map(v => `<option value="${v.id}" ${item.vendor_id==v.id?'selected':''}>${escapeHtml(v.name)}</option>`).join('');
 
         openModal(id ? 'Edit Item' : 'New Item', `
             <form id="item-form" onsubmit="ItemsPage.save(event, ${id})">
@@ -66,6 +70,11 @@ const ItemsPage = {
                         <input name="rate" type="number" step="0.01" value="${item.rate}"></div>
                     <div class="form-group"><label>Cost</label>
                         <input name="cost" type="number" step="0.01" value="${item.cost}"></div>
+                    <div class="form-group"><label>Preferred Vendor</label>
+                        <select name="vendor_id">
+                            <option value="">-- None --</option>
+                            ${vendorOptions}
+                        </select></div>
                     <div class="form-group"><label>Income Account</label>
                         <select name="income_account_id">
                             <option value="">-- None --</option>
@@ -96,6 +105,7 @@ const ItemsPage = {
             description: form.description.value,
             rate: parseFloat(form.rate.value) || 0,
             cost: parseFloat(form.cost.value) || 0,
+            vendor_id: form.vendor_id.value ? parseInt(form.vendor_id.value) : null,
             income_account_id: form.income_account_id.value ? parseInt(form.income_account_id.value) : null,
             expense_account_id: form.expense_account_id.value ? parseInt(form.expense_account_id.value) : null,
             is_taxable: form.is_taxable.checked,
