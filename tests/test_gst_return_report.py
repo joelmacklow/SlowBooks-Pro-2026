@@ -205,6 +205,54 @@ class GstReturnReportTests(unittest.TestCase):
         self.assertEqual(fields["Amount of Pay"]["/V"], "1800")
         self.assertEqual(fields["refund / gst"]["/V"], "/No")
 
+    def test_confirmed_return_uses_saved_snapshot_instead_of_transient_adjustments(self):
+        from app.routes.invoices import create_invoice
+        from app.routes.reports import GstReturnConfirmRequest, confirm_gst_return, gst_return_pdf, gst_return_report
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
+
+        with self.Session() as db:
+            customer, _vendor = self._seed(db)
+            create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 1),
+                lines=[InvoiceLineCreate(description="Initial sale", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+            ), db=db)
+            confirm_gst_return(GstReturnConfirmRequest(
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 4, 30),
+                box9_adjustments=Decimal("5.00"),
+                box13_adjustments=Decimal("2.00"),
+            ), db=db, auth={'user_id': 1})
+            create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 2),
+                lines=[InvoiceLineCreate(description="Later sale", quantity=1, rate=Decimal("50"), gst_code="GST15")],
+            ), db=db)
+
+            report = gst_return_report(
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 4, 30),
+                box9_adjustments=Decimal("0.00"),
+                box13_adjustments=Decimal("0.00"),
+                db=db,
+            )
+            response = gst_return_pdf(
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 4, 30),
+                box9_adjustments=Decimal("0.00"),
+                box13_adjustments=Decimal("0.00"),
+                db=db,
+            )
+
+        self.assertEqual(report["return_confirmation"]["status"], "confirmed")
+        self.assertEqual(report["boxes"]["5"], 115.0)
+        self.assertEqual(report["boxes"]["9"], 5.0)
+        self.assertEqual(report["boxes"]["13"], 2.0)
+        fields = PdfReader(io.BytesIO(response.body)).get_fields()
+        self.assertEqual(fields["5.0"]["/V"], "11500")
+        self.assertEqual(fields["5.4"]["/V"], "500")
+        self.assertEqual(fields["5.8"]["/V"], "200")
+
 
 if __name__ == "__main__":
     unittest.main()

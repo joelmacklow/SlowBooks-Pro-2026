@@ -306,6 +306,8 @@ const ReportsPage = {
             period_label: periodLabel,
             due_date: dueDate,
             status,
+            return_status: status === 'confirmed' ? 'confirmed' : 'draft',
+            confirmed_at: null,
             tab: 'summary',
             page: 1,
             page_size: 50,
@@ -320,21 +322,27 @@ const ReportsPage = {
     _gstDetailControls() {
         const state = ReportsPage._gstDetailStateOrNull();
         if (!state) return '';
+        const isConfirmed = state.return_status === 'confirmed';
+        const confirmationNote = isConfirmed
+            ? `Return confirmed ${state.confirmed_at ? formatDate(state.confirmed_at) : ''}`
+            : 'Confirm this GST return to save Box 9 and Box 13 permanently before downloading GST101A.';
         return `
             <div class="settings-section">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">${confirmationNote}</div>
                 <div class="form-grid" style="margin-bottom:4px;">
                     <div class="form-group">
                         <label>Box 9 adjustments</label>
-                        <input id="gst-box9-adjustments" type="number" step="0.01" value="${escapeHtml(state.box9_adjustments || '0.00')}">
+                        <input id="gst-box9-adjustments" type="number" step="0.01" value="${escapeHtml(state.box9_adjustments || '0.00')}" ${isConfirmed ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label>Box 13 credit adjustments</label>
-                        <input id="gst-box13-adjustments" type="number" step="0.01" value="${escapeHtml(state.box13_adjustments || '0.00')}">
+                        <input id="gst-box13-adjustments" type="number" step="0.01" value="${escapeHtml(state.box13_adjustments || '0.00')}" ${isConfirmed ? 'disabled' : ''}>
                     </div>
                 </div>
                 <div class="form-actions" style="justify-content:flex-start;">
-                    <button class="btn btn-secondary" onclick="ReportsPage.refreshGstReturnDetail()">Refresh</button>
-                    <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()">Download GST101A PDF</button>
+                    <button class="btn btn-secondary" onclick="ReportsPage.refreshGstReturnDetail()" ${isConfirmed ? 'disabled' : ''}>Refresh</button>
+                    ${isConfirmed ? '' : '<button class="btn btn-primary" onclick="ReportsPage.confirmGstReturn()">Confirm GST Return</button>'}
+                    <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()" ${isConfirmed ? '' : 'disabled'}>Download GST101A PDF</button>
                 </div>
             </div>`;
     },
@@ -456,6 +464,11 @@ const ReportsPage = {
                 ? `<div style="margin-top:12px; padding:8px; background:var(--gray-50); border:1px solid var(--gray-200);">
                         <strong>Settlement Status:</strong> No settlement required for this period.
                    </div>`
+                : settlement.status === 'awaiting_return_confirmation'
+                    ? `<div style="margin-top:12px; padding:8px; background:var(--gray-50); border:1px solid var(--gray-200);">
+                            <strong>Settlement Status:</strong> Awaiting return confirmation<br>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Confirm the GST return before settlement options become available.</div>
+                       </div>`
                 : `<div style="margin-top:12px; padding:8px; background:var(--gray-50); border:1px solid var(--gray-200);">
                         <strong>Settlement Status:</strong> Unsettled<br>
                         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Expected bank amount: ${formatCurrency(settlement.expected_bank_amount || 0)}</div>
@@ -531,6 +544,11 @@ const ReportsPage = {
             detailContent = ReportsPage.renderGstTransactions(data);
         } else {
             const data = await API.get(`/reports/gst-return?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(state.box9_adjustments || '0.00')}&box13_adjustments=${encodeURIComponent(state.box13_adjustments || '0.00')}`);
+            state.return_status = data.return_confirmation?.status || 'draft';
+            state.confirmed_at = data.return_confirmation?.confirmed_at || null;
+            if (data.return_confirmation?.due_date) state.due_date = data.return_confirmation.due_date;
+            if (data.return_confirmation?.box9_adjustments) state.box9_adjustments = data.return_confirmation.box9_adjustments;
+            if (data.return_confirmation?.box13_adjustments) state.box13_adjustments = data.return_confirmation.box13_adjustments;
             detailContent = ReportsPage.renderGstReturnSummary(data);
         }
 
@@ -558,11 +576,39 @@ const ReportsPage = {
     downloadGstReturnPdf() {
         const state = ReportsPage._gstDetailStateOrNull();
         if (!state) return;
+        if (state.return_status !== 'confirmed') {
+            toast('Confirm the GST return before downloading GST101A', 'error');
+            return;
+        }
         const box9 = ($("#gst-box9-adjustments")?.value || state.box9_adjustments || "0.00");
         const box13 = ($("#gst-box13-adjustments")?.value || state.box13_adjustments || "0.00");
         state.box9_adjustments = box9;
         state.box13_adjustments = box13;
         API.download(`/reports/gst-return/pdf?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`, `GST101A_${state.start_date}_${state.end_date}.pdf`);
+    },
+
+    async confirmGstReturn() {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return;
+        const box9 = ($("#gst-box9-adjustments")?.value || state.box9_adjustments || "0.00");
+        const box13 = ($("#gst-box13-adjustments")?.value || state.box13_adjustments || "0.00");
+        try {
+            const result = await API.post('/reports/gst-return/confirm', {
+                start_date: state.start_date,
+                end_date: state.end_date,
+                box9_adjustments: box9,
+                box13_adjustments: box13,
+            });
+            toast('GST return confirmed');
+            state.return_status = 'confirmed';
+            state.confirmed_at = result.confirmed_at || null;
+            state.box9_adjustments = result.box9_adjustments || box9;
+            state.box13_adjustments = result.box13_adjustments || box13;
+            if (result.due_date) state.due_date = result.due_date;
+            App.navigate('#/reports/gst-return/detail');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
     },
 
     async confirmGstSettlement(bankTransactionId) {

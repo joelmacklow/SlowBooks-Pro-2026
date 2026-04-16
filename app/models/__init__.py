@@ -8,6 +8,7 @@ from app.models.payments import Payment, PaymentAllocation
 from app.models.banking import BankAccount, BankTransaction, Reconciliation
 from app.models.settings import Settings
 from app.models.gst import GstCode
+from app.models.gst_return import GstReturn
 from app.models.gst_settlement import GstSettlement
 
 # Phase 1: Foundation
@@ -41,7 +42,7 @@ __all__ = [
     "Estimate", "EstimateLine",
     "Payment", "PaymentAllocation",
     "BankAccount", "BankTransaction", "Reconciliation",
-    "Settings", "GstCode", "GstSettlement",
+    "Settings", "GstCode", "GstReturn", "GstSettlement",
     # Phase 1
     "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession",
     # Phase 2

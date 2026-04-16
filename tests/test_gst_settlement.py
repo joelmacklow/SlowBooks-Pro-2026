@@ -60,6 +60,16 @@ class GstSettlementTests(unittest.TestCase):
         db.commit()
         return customer, vendor, bank_account
 
+    def _confirm_return(self, db, start_date: date, end_date: date, box9_adjustments=Decimal("0.00"), box13_adjustments=Decimal("0.00")):
+        from app.routes.reports import GstReturnConfirmRequest, confirm_gst_return
+
+        return confirm_gst_return(GstReturnConfirmRequest(
+            start_date=start_date,
+            end_date=end_date,
+            box9_adjustments=box9_adjustments,
+            box13_adjustments=box13_adjustments,
+        ), db=db, auth={'user_id': 1})
+
     def test_payable_period_can_be_settled_from_reconciled_bank_transaction(self):
         from app.models.banking import BankTransaction
         from app.routes.invoices import create_invoice
@@ -84,6 +94,11 @@ class GstSettlementTests(unittest.TestCase):
             db.add(bank_txn)
             db.commit()
 
+            report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
+            self.assertEqual(report['settlement']['status'], 'awaiting_return_confirmation')
+            self.assertEqual(len(report['settlement']['candidates']), 0)
+
+            self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
             report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
             self.assertEqual(report['settlement']['status'], 'unsettled')
             self.assertEqual(len(report['settlement']['candidates']), 1)
@@ -127,6 +142,7 @@ class GstSettlementTests(unittest.TestCase):
             db.add(bank_txn)
             db.commit()
 
+            self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
             result = confirm_gst_settlement(GstSettlementConfirmRequest(
                 start_date=date(2026, 4, 1),
                 end_date=date(2026, 4, 30),
@@ -171,6 +187,7 @@ class GstSettlementTests(unittest.TestCase):
             db.add_all([wrong_amount, not_reconciled])
             db.commit()
 
+            self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
             with self.assertRaises(HTTPException) as wrong_ctx:
                 confirm_gst_settlement(GstSettlementConfirmRequest(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), bank_transaction_id=wrong_amount.id), db=db)
             with self.assertRaises(HTTPException) as unreconciled_ctx:
@@ -204,6 +221,7 @@ class GstSettlementTests(unittest.TestCase):
             )
             db.add(bank_txn)
             db.commit()
+            self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
             confirm_gst_settlement(GstSettlementConfirmRequest(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), bank_transaction_id=bank_txn.id), db=db)
 
             with self.assertRaises(HTTPException) as second_ctx:
@@ -237,11 +255,46 @@ class GstSettlementTests(unittest.TestCase):
             db.add(bank_txn)
             db.commit()
 
+            self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
             with self.assertRaises(HTTPException) as ctx:
                 confirm_gst_settlement(GstSettlementConfirmRequest(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), bank_transaction_id=bank_txn.id), db=db)
 
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn('closing date', ctx.exception.detail.lower())
+
+    def test_settlement_requires_confirmed_return_first(self):
+        from app.models.banking import BankTransaction
+        from app.routes.invoices import create_invoice
+        from app.routes.reports import GstSettlementConfirmRequest, confirm_gst_settlement
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
+
+        with self.Session() as db:
+            customer, _vendor, bank_account = self._seed(db)
+            create_invoice(InvoiceCreate(
+                customer_id=customer.id,
+                date=date(2026, 4, 1),
+                lines=[InvoiceLineCreate(description='Standard sale', quantity=1, rate=Decimal('100'), gst_code='GST15')],
+            ), db=db)
+            bank_txn = BankTransaction(
+                bank_account_id=bank_account.id,
+                date=date(2026, 5, 7),
+                amount=Decimal('-15.00'),
+                payee='Inland Revenue',
+                description='GST payment',
+                reconciled=True,
+            )
+            db.add(bank_txn)
+            db.commit()
+
+            with self.assertRaises(HTTPException) as ctx:
+                confirm_gst_settlement(GstSettlementConfirmRequest(
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 4, 30),
+                    bank_transaction_id=bank_txn.id,
+                ), db=db)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn('confirm the gst return', ctx.exception.detail.lower())
 
 
 if __name__ == '__main__':

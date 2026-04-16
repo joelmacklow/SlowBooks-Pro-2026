@@ -6,6 +6,8 @@ const code = `${fs.readFileSync('app/static/js/reports.js', 'utf8')}\nthis.Repor
 const calls = [];
 const downloads = [];
 const navigations = [];
+const posts = [];
+let gstReturnConfirmed = false;
 const elements = {
     '#gst-box9-adjustments': { value: '5.00' },
     '#gst-box13-adjustments': { value: '2.00' },
@@ -84,7 +86,12 @@ const context = {
                     output_gst: 20,
                     input_gst: 2,
                     net_gst: 18,
-                    settlement: { status: 'unsettled', expected_bank_amount: -18, candidates: [] },
+                    return_confirmation: gstReturnConfirmed
+                        ? { status: 'confirmed', confirmed_at: '2026-05-01T10:00:00', due_date: '2026-05-28', box9_adjustments: '5.00', box13_adjustments: '2.00' }
+                        : { status: 'draft', confirmed_at: null, due_date: '2026-05-28', box9_adjustments: '5.00', box13_adjustments: '2.00' },
+                    settlement: gstReturnConfirmed
+                        ? { status: 'unsettled', expected_bank_amount: -18, candidates: [] }
+                        : { status: 'awaiting_return_confirmation', expected_bank_amount: -18, candidates: [] },
                 };
             }
             throw new Error(`unexpected get ${path}`);
@@ -92,10 +99,19 @@ const context = {
         download: async (path, filename) => {
             downloads.push({ path, filename });
         },
+        post: async (path, body) => {
+            posts.push({ path, body });
+            if (path === '/reports/gst-return/confirm') {
+                gstReturnConfirmed = true;
+                return { status: 'confirmed', confirmed_at: '2026-05-01T10:00:00', due_date: '2026-05-28', box9_adjustments: '5.00', box13_adjustments: '2.00' };
+            }
+            throw new Error(`unexpected post ${path}`);
+        },
     },
     App: {
         navigate: (hash) => navigations.push(hash),
     },
+    toast() {},
     $: (selector) => elements[selector],
     escapeHtml: (value) => String(value ?? ''),
     formatCurrency: (value) => `$${Number(value).toFixed(2)}`,
@@ -128,17 +144,43 @@ vm.runInContext(code, context);
         end_date: '2026-04-30',
         box9_adjustments: '5.00',
         box13_adjustments: '2.00',
-        tab: 'transactions',
-        page: 2,
+        tab: 'summary',
+        page: 1,
         page_size: 1,
     };
-    const detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
+    let detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
+    assert.ok(detailHtml.includes('Confirm GST Return'));
+    assert.ok(detailHtml.includes('Download GST101A PDF'));
+    assert.ok(detailHtml.includes('disabled'));
+    assert.ok(detailHtml.includes('Awaiting return confirmation'));
+
+    await context.ReportsPage.confirmGstReturn();
+    assert.strictEqual(JSON.stringify(posts), JSON.stringify([
+        {
+            path: '/reports/gst-return/confirm',
+            body: {
+                start_date: '2026-04-01',
+                end_date: '2026-04-30',
+                box9_adjustments: '5.00',
+                box13_adjustments: '2.00',
+            },
+        },
+    ]));
+
+    context.ReportsPage._gstDetailState.tab = 'transactions';
+    context.ReportsPage._gstDetailState.page = 2;
+    detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
     assert.ok(detailHtml.includes('Transactions'));
     assert.ok(detailHtml.includes('Showing 2-2 of 2'));
     assert.ok(calls.some(path => path.includes('/reports/gst-return/transactions?')));
     assert.ok(calls.some(path => path.includes('page=2')));
     assert.ok(calls.some(path => path.includes('page_size=1')));
     assert.ok(detailHtml.includes('1002'));
+
+    context.ReportsPage._gstDetailState.tab = 'summary';
+    detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
+    assert.ok(detailHtml.includes('Return confirmed'));
+    assert.ok(!detailHtml.includes('Confirm GST Return'));
 
     context.ReportsPage.downloadGstReturnPdf();
     assert.deepStrictEqual(downloads, [

@@ -67,7 +67,7 @@ def settlement_candidates(db: Session, report: dict) -> list[dict]:
     ]
 
 
-def build_settlement_state(db: Session, start_date: date, end_date: date, report: dict) -> dict:
+def build_settlement_state(db: Session, start_date: date, end_date: date, report: dict, return_confirmed: bool = False) -> dict:
     settlement = get_active_settlement(db, start_date, end_date)
     expected_amount = _expected_bank_amount(report)
     state = {
@@ -90,6 +90,9 @@ def build_settlement_state(db: Session, start_date: date, end_date: date, report
             'bank_transaction_id': settlement.bank_transaction_id,
             'transaction_id': settlement.transaction_id,
         }
+        return state
+    if not return_confirmed:
+        state['status'] = 'awaiting_return_confirmation'
         return state
     state['candidates'] = settlement_candidates(db, report)
     return state

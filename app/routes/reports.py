@@ -18,6 +18,7 @@ from sqlalchemy import func as sqlfunc
 from app.database import get_db
 from app.models.accounts import Account, AccountType
 from app.models.banking import BankTransaction
+from app.models.gst_return import GstReturn, GstReturnStatus
 from app.models.gst_settlement import GstSettlement, GstSettlementStatus
 from app.models.transactions import Transaction, TransactionLine
 from app.models.invoices import Invoice, InvoiceStatus
@@ -36,6 +37,12 @@ from app.services.gst_return import (
     gst_financial_year_label,
     gst_financial_year_start,
     gst_period_windows,
+)
+from app.services.gst_return_filing import (
+    build_confirmed_return_report,
+    build_return_confirmation_state,
+    confirm_return as confirm_gst_return_record,
+    get_confirmed_return,
 )
 from app.services.gst_settlement import build_settlement_state, confirm_settlement
 
@@ -62,6 +69,94 @@ def _decimal_text(value) -> str:
 
 def _period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.day} {start_date.strftime('%b %Y')} - {end_date.day} {end_date.strftime('%b %Y')}"
+
+
+def _draft_return_confirmation_state(start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> dict:
+    state = build_return_confirmation_state(None)
+    state["due_date"] = gst_due_date(end_date).isoformat()
+    state["box9_adjustments"] = _decimal_text(box9_adjustments)
+    state["box13_adjustments"] = _decimal_text(box13_adjustments)
+    return state
+
+
+def _load_gst_return_report(db: Session, start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> tuple[dict, GstReturn | None]:
+    confirmed_return = get_confirmed_return(db, start_date, end_date)
+    if confirmed_return:
+        report = build_confirmed_return_report(confirmed_return)
+        report["return_confirmation"] = build_return_confirmation_state(confirmed_return)
+        return report, confirmed_return
+
+    report = calculate_gst_return(
+        db,
+        start_date,
+        end_date,
+        box9_adjustments=_decimal_query_value(box9_adjustments),
+        box13_adjustments=_decimal_query_value(box13_adjustments),
+        include_items=False,
+    )
+    report["return_confirmation"] = _draft_return_confirmation_state(
+        start_date,
+        end_date,
+        _decimal_query_value(box9_adjustments),
+        _decimal_query_value(box13_adjustments),
+    )
+    return report, None
+
+
+def _load_gst_transaction_report(db: Session, start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> tuple[dict, GstReturn | None]:
+    confirmed_return = get_confirmed_return(db, start_date, end_date)
+    if confirmed_return:
+        box9_adjustments = Decimal(str(confirmed_return.box9_adjustments))
+        box13_adjustments = Decimal(str(confirmed_return.box13_adjustments))
+
+    report = calculate_gst_return(
+        db,
+        start_date,
+        end_date,
+        box9_adjustments=_decimal_query_value(box9_adjustments),
+        box13_adjustments=_decimal_query_value(box13_adjustments),
+        include_items=True,
+    )
+    report["return_confirmation"] = (
+        build_return_confirmation_state(confirmed_return)
+        if confirmed_return else
+        _draft_return_confirmation_state(start_date, end_date, _decimal_query_value(box9_adjustments), _decimal_query_value(box13_adjustments))
+    )
+    return report, confirmed_return
+
+
+def _historical_return_from_confirmed(record: GstReturn) -> dict:
+    return {
+        "gst_return_id": record.id,
+        "start_date": record.start_date.isoformat(),
+        "end_date": record.end_date.isoformat(),
+        "period_label": _period_label(record.start_date, record.end_date),
+        "due_date": record.due_date.isoformat(),
+        "confirmed_at": record.confirmed_at.isoformat() if record.confirmed_at else None,
+        "status": "confirmed",
+        "status_label": "Confirmed",
+        "net_gst": float(record.net_gst),
+        "net_position": record.net_position,
+        "box9_adjustments": _decimal_text(record.box9_adjustments),
+        "box13_adjustments": _decimal_text(record.box13_adjustments),
+    }
+
+
+def _historical_return_from_legacy_settlement(settlement: GstSettlement) -> dict:
+    return {
+        "settlement_id": settlement.id,
+        "start_date": settlement.start_date.isoformat(),
+        "end_date": settlement.end_date.isoformat(),
+        "period_label": _period_label(settlement.start_date, settlement.end_date),
+        "due_date": gst_due_date(settlement.end_date).isoformat(),
+        "settlement_date": settlement.settlement_date.isoformat(),
+        "status": "confirmed",
+        "status_label": "Confirmed",
+        "net_gst": float(settlement.net_gst),
+        "net_position": settlement.net_position,
+        "box9_adjustments": _decimal_text(settlement.box9_adjustments),
+        "box13_adjustments": _decimal_text(settlement.box13_adjustments),
+    }
 
 
 @router.get("/profit-loss")
@@ -216,15 +311,20 @@ def gst_return_report(
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
-    report = calculate_gst_return(
+    report, confirmed_return = _load_gst_return_report(
         db,
         start_date,
         end_date,
-        box9_adjustments=_decimal_query_value(box9_adjustments),
-        box13_adjustments=_decimal_query_value(box13_adjustments),
-        include_items=False,
+        box9_adjustments,
+        box13_adjustments,
     )
-    report["settlement"] = build_settlement_state(db, start_date, end_date, report)
+    report["settlement"] = build_settlement_state(
+        db,
+        start_date,
+        end_date,
+        report,
+        return_confirmed=confirmed_return is not None,
+    )
     return report
 
 
@@ -238,25 +338,37 @@ def gst_returns_overview(
     gst_period = settings.get("gst_period")
     fy_start = gst_financial_year_start(as_of_date)
 
-    confirmed_settlements = (
+    confirmed_returns = (
+        db.query(GstReturn)
+        .filter(GstReturn.status == GstReturnStatus.CONFIRMED)
+        .order_by(GstReturn.end_date.desc(), GstReturn.id.desc())
+        .all()
+    )
+    confirmed_return_periods = {(row.start_date, row.end_date) for row in confirmed_returns}
+
+    legacy_settlements = (
         db.query(GstSettlement)
         .filter(GstSettlement.status == GstSettlementStatus.CONFIRMED)
         .order_by(GstSettlement.end_date.desc(), GstSettlement.id.desc())
         .all()
     )
-    confirmed_periods = {(row.start_date, row.end_date) for row in confirmed_settlements}
+    legacy_periods = {
+        (row.start_date, row.end_date)
+        for row in legacy_settlements
+        if (row.start_date, row.end_date) not in confirmed_return_periods
+    }
 
     open_periods = []
-    for start, end in gst_period_windows(gst_period, fy_start, as_of_date):
-        if (start, end) in confirmed_periods:
+    for start_date_value, end_date_value in gst_period_windows(gst_period, fy_start, as_of_date):
+        if (start_date_value, end_date_value) in confirmed_return_periods or (start_date_value, end_date_value) in legacy_periods:
             continue
         open_periods.append({
-            "start_date": start.isoformat(),
-            "end_date": end.isoformat(),
-            "period_label": _period_label(start, end),
-            "due_date": gst_due_date(end).isoformat(),
-            "status": "current_period" if start <= as_of_date <= end else "due",
-            "status_label": "Current period" if start <= as_of_date <= end else "Due",
+            "start_date": start_date_value.isoformat(),
+            "end_date": end_date_value.isoformat(),
+            "period_label": _period_label(start_date_value, end_date_value),
+            "due_date": gst_due_date(end_date_value).isoformat(),
+            "status": "current_period" if start_date_value <= as_of_date <= end_date_value else "due",
+            "status_label": "Current period" if start_date_value <= as_of_date <= end_date_value else "Due",
             "net_gst": None,
             "box9_adjustments": "0.00",
             "box13_adjustments": "0.00",
@@ -264,8 +376,9 @@ def gst_returns_overview(
 
     historical_groups = []
     groups_by_year = {}
-    for settlement in confirmed_settlements:
-        financial_year = gst_financial_year_label(settlement.end_date)
+
+    def add_group_return(period: dict, end_date_value: date):
+        financial_year = gst_financial_year_label(end_date_value)
         if financial_year not in groups_by_year:
             groups_by_year[financial_year] = {
                 "financial_year": financial_year,
@@ -273,20 +386,15 @@ def gst_returns_overview(
                 "returns": [],
             }
             historical_groups.append(groups_by_year[financial_year])
-        groups_by_year[financial_year]["returns"].append({
-            "settlement_id": settlement.id,
-            "start_date": settlement.start_date.isoformat(),
-            "end_date": settlement.end_date.isoformat(),
-            "period_label": _period_label(settlement.start_date, settlement.end_date),
-            "due_date": gst_due_date(settlement.end_date).isoformat(),
-            "settlement_date": settlement.settlement_date.isoformat(),
-            "status": "confirmed",
-            "status_label": "Confirmed",
-            "net_gst": float(settlement.net_gst),
-            "net_position": settlement.net_position,
-            "box9_adjustments": _decimal_text(settlement.box9_adjustments),
-            "box13_adjustments": _decimal_text(settlement.box13_adjustments),
-        })
+        groups_by_year[financial_year]["returns"].append(period)
+
+    for confirmed_return in confirmed_returns:
+        add_group_return(_historical_return_from_confirmed(confirmed_return), confirmed_return.end_date)
+
+    for settlement in legacy_settlements:
+        if (settlement.start_date, settlement.end_date) in confirmed_return_periods:
+            continue
+        add_group_return(_historical_return_from_legacy_settlement(settlement), settlement.end_date)
 
     return {
         "open_periods": open_periods,
@@ -308,13 +416,12 @@ def gst_return_transactions(
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
-    report = calculate_gst_return(
+    report, _confirmed_return = _load_gst_transaction_report(
         db,
         start_date,
         end_date,
-        box9_adjustments=_decimal_query_value(box9_adjustments),
-        box13_adjustments=_decimal_query_value(box13_adjustments),
-        include_items=True,
+        box9_adjustments,
+        box13_adjustments,
     )
     total_count = len(report["items"])
     start_index = (page - 1) * page_size
@@ -328,6 +435,43 @@ def gst_return_transactions(
         "total_count": total_count,
         "total_pages": total_pages,
         "items": report["items"][start_index:end_index],
+    }
+
+
+class GstReturnConfirmRequest(BaseModel):
+    start_date: date
+    end_date: date
+    box9_adjustments: Decimal = Decimal("0.00")
+    box13_adjustments: Decimal = Decimal("0.00")
+
+
+@router.post("/gst-return/confirm")
+def confirm_gst_return(
+    data: GstReturnConfirmRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = calculate_gst_return(
+        db,
+        data.start_date,
+        data.end_date,
+        box9_adjustments=_decimal_query_value(data.box9_adjustments),
+        box13_adjustments=_decimal_query_value(data.box13_adjustments),
+        include_items=False,
+    )
+    gst_return = confirm_gst_return_record(
+        db,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        report=report,
+    )
+    return {
+        "status": "confirmed",
+        "gst_return_id": gst_return.id,
+        "confirmed_at": gst_return.confirmed_at.isoformat() if gst_return.confirmed_at else None,
+        "due_date": gst_return.due_date.isoformat(),
+        "box9_adjustments": _decimal_text(gst_return.box9_adjustments),
+        "box13_adjustments": _decimal_text(gst_return.box13_adjustments),
     }
 
 
@@ -345,14 +489,10 @@ def confirm_gst_settlement(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("accounts.manage")),
 ):
-    report = calculate_gst_return(
-        db,
-        data.start_date,
-        data.end_date,
-        box9_adjustments=_decimal_query_value(data.box9_adjustments),
-        box13_adjustments=_decimal_query_value(data.box13_adjustments),
-        include_items=False,
-    )
+    confirmed_return = get_confirmed_return(db, data.start_date, data.end_date)
+    if not confirmed_return:
+        raise HTTPException(status_code=400, detail="Confirm the GST return before confirming settlement")
+    report = build_confirmed_return_report(confirmed_return)
     return confirm_settlement(
         db,
         start_date=data.start_date,
@@ -392,18 +532,17 @@ def gst_return_pdf(
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
-    report = calculate_gst_return(
+    report, confirmed_return = _load_gst_return_report(
         db,
         start_date,
         end_date,
-        box9_adjustments=_decimal_query_value(box9_adjustments),
-        box13_adjustments=_decimal_query_value(box13_adjustments),
-        include_items=False,
+        box9_adjustments,
+        box13_adjustments,
     )
     pdf_bytes = generate_gst101a_pdf(
         report,
         get_settings(db),
-        return_due_date=_optional_query_value(return_due_date),
+        return_due_date=_optional_query_value(return_due_date) or (confirmed_return.due_date if confirmed_return else None),
         phone=_optional_query_value(phone),
     )
     return Response(

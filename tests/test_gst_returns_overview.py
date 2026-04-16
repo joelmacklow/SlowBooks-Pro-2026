@@ -59,6 +59,24 @@ class GstReturnsOverviewTests(unittest.TestCase):
         db.commit()
         return customer, vendor, bank_account
 
+
+    def _confirm_return_only(self, db, customer, start_date: date, end_date: date, box9_adjustments=Decimal("5.00"), box13_adjustments=Decimal("2.00")):
+        from app.routes.invoices import create_invoice
+        from app.routes.reports import GstReturnConfirmRequest, confirm_gst_return
+        from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate
+
+        create_invoice(InvoiceCreate(
+            customer_id=customer.id,
+            date=start_date,
+            lines=[InvoiceLineCreate(description="Standard sale", quantity=1, rate=Decimal("100"), gst_code="GST15")],
+        ), db=db)
+        return confirm_gst_return(GstReturnConfirmRequest(
+            start_date=start_date,
+            end_date=end_date,
+            box9_adjustments=box9_adjustments,
+            box13_adjustments=box13_adjustments,
+        ), db=db, auth={'user_id': 1})
+
     def _confirm_period(self, db, customer, bank_account, start_date: date, end_date: date, settlement_date: date):
         from app.models.banking import BankTransaction
         from app.routes.invoices import create_invoice
@@ -80,6 +98,13 @@ class GstReturnsOverviewTests(unittest.TestCase):
         )
         db.add(bank_txn)
         db.commit()
+        from app.routes.reports import GstReturnConfirmRequest, confirm_gst_return
+        confirm_gst_return(GstReturnConfirmRequest(
+            start_date=start_date,
+            end_date=end_date,
+            box9_adjustments=Decimal("0.00"),
+            box13_adjustments=Decimal("0.00"),
+        ), db=db, auth={'user_id': 1})
         confirm_gst_settlement(GstSettlementConfirmRequest(
             start_date=start_date,
             end_date=end_date,
@@ -147,6 +172,30 @@ class GstReturnsOverviewTests(unittest.TestCase):
         self.assertEqual(response["total_pages"], 2)
         self.assertEqual(len(response["items"]), 1)
         self.assertEqual(response["items"][0]["number"], "1002")
+
+    def test_confirmed_return_without_settlement_moves_to_history_and_keeps_adjustments(self):
+        from app.routes.reports import gst_returns_overview
+
+        with self.Session() as db:
+            customer, _vendor, _bank_account = self._seed(db, gst_period="six-monthly")
+            self._confirm_return_only(
+                db,
+                customer,
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 9, 30),
+                box9_adjustments=Decimal("5.00"),
+                box13_adjustments=Decimal("2.00"),
+            )
+
+            overview = gst_returns_overview(as_of_date=date(2026, 10, 10), db=db)
+
+        self.assertEqual(len(overview["open_periods"]), 1)
+        self.assertEqual(overview["open_periods"][0]["period_label"], "1 Oct 2026 - 31 Mar 2027")
+        historical = overview["historical_groups"][0]["returns"][0]
+        self.assertEqual(historical["period_label"], "1 Apr 2026 - 30 Sep 2026")
+        self.assertEqual(historical["box9_adjustments"], "5.00")
+        self.assertEqual(historical["box13_adjustments"], "2.00")
+        self.assertEqual(historical["status"], "confirmed")
 
 
 if __name__ == "__main__":
