@@ -381,7 +381,7 @@ const App = {
                     <td>${a.account_type}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
-                        ${!a.is_system && canManageAccounts ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
+                        ${canManageAccounts ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
                     </td>
                 </tr>`;
             }
