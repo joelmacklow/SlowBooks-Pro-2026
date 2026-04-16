@@ -115,7 +115,12 @@ def create_company(db: Session, name: str, database_name: str, description: str 
                 _drop_database(validated_database_name)
             except Exception:
                 pass
-        return {"success": False, "error": str(e), "public_error": "Failed to create company", "status_code": 500}
+        return {
+            "success": False,
+            "error": "Internal error while creating company",
+            "public_error": "Failed to create company",
+            "status_code": 500,
+        }
     finally:
         if system_engine is not None:
             system_engine.dispose()
