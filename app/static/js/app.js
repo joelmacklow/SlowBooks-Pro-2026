@@ -857,8 +857,12 @@ const App = {
             const s = App.settings || {};
             const companyEl = $('#status-company');
             const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
-            if (companyEl && s.company_name && s.company_name !== 'My Company') {
-                companyEl.textContent = `Company: ${s.company_name}${selectedCompany ? ` (${selectedCompany})` : ''}`;
+            if (companyEl) {
+                const companyName = s.company_name && s.company_name !== 'My Company' ? s.company_name : '';
+                const display = companyName
+                    ? `Company: ${companyName}${selectedCompany ? ` (${selectedCompany})` : ''}`
+                    : `Company: ${selectedCompany || 'bookkeeper.sbk'}`;
+                companyEl.textContent = display;
             }
         } catch (e) { /* ignore on load */ }
     },
