@@ -175,7 +175,8 @@ const AuthPage = {
                                 </td>
                                 <td>${escapeHtml(user.membership.role_key)}</td>
                                 <td style="font-size:10px; color:var(--text-muted);">
-                                    ${AuthPage.renderPermissionSummary(user.membership.allow_permissions.concat(user.membership.deny_permissions)) || 'None'}
+                                    ${AuthPage.renderPermissionSummary(user.membership.allow_permissions.concat(user.membership.deny_permissions)) || 'None'}<br>
+                                    <span style="color:var(--text-light);">Companies: ${escapeHtml((user.company_memberships || []).map((membership) => membership.company_scope).join(', ') || user.membership.company_scope)}</span>
                                 </td>
                                 <td>${user.is_active && user.membership.is_active ? 'Active' : 'Inactive'}</td>
                                 <td class="actions"><button class="btn btn-sm btn-secondary" onclick="AuthPage.showUserForm(${index})">Edit</button></td>
@@ -187,9 +188,10 @@ const AuthPage = {
 
     showUserForm(index = null) {
         const user = index === null ? null : AuthPage._usersCache[index];
-        const meta = AuthPage._metaCache || { roles: [], permissions: [] };
+        const meta = AuthPage._metaCache || { roles: [], permissions: [], company_scopes: [] };
         const allow = new Set(user?.membership?.allow_permissions || []);
         const deny = new Set(user?.membership?.deny_permissions || []);
+        const companyScopes = new Set((user?.company_memberships || []).map((membership) => membership.company_scope));
         openModal(user ? `Edit ${user.full_name}` : 'New User', `
             <form onsubmit="AuthPage.saveUser(event, ${index === null ? 'null' : index})">
                 <div class="form-grid">
@@ -207,6 +209,10 @@ const AuthPage = {
                 <div class="settings-section">
                     <h3>Deny Overrides</h3>
                     <div class="card-grid">${meta.permissions.map(permission => `<label class="card" style="cursor:pointer;"><input type="checkbox" name="deny_permissions" value="${permission.key}" ${deny.has(permission.key) ? 'checked' : ''}> <strong>${escapeHtml(AuthPage.formatPermissionLabel(permission.key))}</strong><div style="font-size:10px; color:var(--text-muted); margin-top:4px;">${escapeHtml(permission.description)}</div></label>`).join('')}</div>
+                </div>
+                <div class="settings-section">
+                    <h3>Company Access</h3>
+                    <div class="card-grid">${(meta.company_scopes || []).map(scope => `<label class="card" style="cursor:pointer;"><input type="checkbox" name="company_scopes" value="${scope.key}" ${(!user && scope.key === '__current__') || companyScopes.has(scope.key) ? 'checked' : ''}> <strong>${escapeHtml(scope.label)}</strong><div style="font-size:10px; color:var(--text-muted); margin-top:4px;">${escapeHtml(scope.database_name)}${scope.is_default ? ' — Default company' : ''}</div></label>`).join('')}</div>
                 </div>
                 <div class="form-grid">
                     <div class="form-group"><label><input type="checkbox" name="is_active" ${user ? (user.is_active ? 'checked' : '') : 'checked'}> User Active</label></div>
@@ -228,6 +234,7 @@ const AuthPage = {
             role_key: form.role_key.value,
             allow_permissions: collect('allow_permissions'),
             deny_permissions: collect('deny_permissions'),
+            company_scopes: collect('company_scopes'),
             is_active: !!form.is_active.checked,
             membership_active: !!form.membership_active.checked,
         };

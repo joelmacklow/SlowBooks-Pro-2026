@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DATABASE_URL
 from app.models.companies import Company
+from app.models.settings import DEFAULT_SETTINGS, Settings
 from scripts.bootstrap_database import run_bootstrap as run_database_bootstrap
 
 DATABASE_NAME_PATTERN = re.compile(r"[a-z0-9_]{1,63}\Z")
@@ -39,6 +40,44 @@ def _database_url(database_name: str) -> str:
     validated_name = _validate_database_name(database_name)
     parsed = urlparse(DATABASE_URL)
     return urlunparse(parsed._replace(path=f"/{validated_name}"))
+
+
+def current_database_name() -> str:
+    return urlparse(DATABASE_URL).path.lstrip("/") or "bookkeeper"
+
+
+def default_company_entry(db: Session) -> dict:
+    settings = dict(DEFAULT_SETTINGS)
+    for row in db.query(Settings).all():
+        settings[row.key] = row.value
+    return {
+        "id": None,
+        "name": settings.get("company_name") or "My Company",
+        "database_name": current_database_name(),
+        "description": "Default company",
+        "last_accessed": None,
+        "is_default": True,
+    }
+
+
+def list_company_scope_options(db: Session) -> list[dict]:
+    default_company = default_company_entry(db)
+    options = [{
+        "key": "__current__",
+        "label": default_company["name"],
+        "database_name": default_company["database_name"],
+        "is_default": True,
+    }]
+    for company in list_companies(db):
+        if company["database_name"] == default_company["database_name"]:
+            continue
+        options.append({
+            "key": company["database_name"],
+            "label": company["name"],
+            "database_name": company["database_name"],
+            "is_default": False,
+        })
+    return options
 
 
 def _drop_database(database_name: str) -> None:

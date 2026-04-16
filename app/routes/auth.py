@@ -12,6 +12,7 @@ from app.schemas.auth import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.services.company_service import list_company_scope_options
 from app.services.auth import (
     bootstrap_admin_user,
     build_user_response,
@@ -65,6 +66,7 @@ def auth_meta(db: Session = Depends(get_db), auth=Depends(require_permissions("u
     return AuthMetaResponse(
         roles=supported_role_definitions(),
         permissions=supported_permission_definitions(),
+        company_scopes=list_company_scope_options(db),
     )
 
 
@@ -83,6 +85,7 @@ def create_user(data: UserCreateRequest, db: Session = Depends(get_db), auth=Dep
         role_key=data.role_key,
         allow_permissions=data.allow_permissions,
         deny_permissions=data.deny_permissions,
+        company_scopes=data.company_scopes,
         is_active=data.is_active,
     )
 
@@ -97,6 +100,7 @@ def update_user(user_id: int, data: UserUpdateRequest, db: Session = Depends(get
         role_key=data.role_key,
         allow_permissions=data.allow_permissions,
         deny_permissions=data.deny_permissions,
+        company_scopes=data.company_scopes,
         is_active=data.is_active,
         membership_active=data.membership_active,
     )

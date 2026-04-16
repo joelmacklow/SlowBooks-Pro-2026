@@ -38,11 +38,12 @@ class UserCreateRequest(BaseModel):
     role_key: str
     allow_permissions: list[str] = []
     deny_permissions: list[str] = []
+    company_scopes: list[str] = ["__current__"]
     is_active: bool = True
 
-    @field_validator("allow_permissions", "deny_permissions")
+    @field_validator("allow_permissions", "deny_permissions", "company_scopes")
     @classmethod
-    def dedupe_permissions(cls, value: list[str]) -> list[str]:
+    def dedupe_values(cls, value: list[str]) -> list[str]:
         seen = []
         for item in value:
             if item not in seen:
@@ -64,6 +65,7 @@ class UserUpdateRequest(BaseModel):
     role_key: Optional[str] = None
     allow_permissions: Optional[list[str]] = None
     deny_permissions: Optional[list[str]] = None
+    company_scopes: Optional[list[str]] = None
     is_active: Optional[bool] = None
     membership_active: Optional[bool] = None
 
@@ -77,12 +79,21 @@ class MembershipResponse(BaseModel):
     effective_permissions: list[str] = []
 
 
+class UserMembershipSummaryResponse(BaseModel):
+    company_scope: str
+    role_key: str
+    is_active: bool
+    allow_permissions: list[str] = []
+    deny_permissions: list[str] = []
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
     full_name: str
     is_active: bool
     membership: MembershipResponse
+    company_memberships: list[UserMembershipSummaryResponse] = []
     created_at: Optional[datetime] = None
 
 
@@ -109,6 +120,14 @@ class PermissionDefinitionResponse(BaseModel):
     description: str
 
 
+class CompanyScopeOptionResponse(BaseModel):
+    key: str
+    label: str
+    database_name: str
+    is_default: bool = False
+
+
 class AuthMetaResponse(BaseModel):
     roles: list[RoleTemplateResponse]
     permissions: list[PermissionDefinitionResponse]
+    company_scopes: list[CompanyScopeOptionResponse] = []
