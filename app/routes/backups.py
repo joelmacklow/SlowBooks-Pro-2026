@@ -12,7 +12,7 @@ from typing import Optional
 from app.database import get_db
 from app.models.backups import Backup
 from app.services.auth import require_permissions
-from app.services.backup_service import create_backup, resolve_backup_path, restore_backup
+from app.services.backup_service import BACKUP_FILENAME_PATTERN, create_backup, resolve_backup_path, restore_backup
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -67,6 +67,9 @@ def download_backup(
     filename: str,
     auth=Depends(require_permissions("backups.view")),
 ):
+    if not BACKUP_FILENAME_PATTERN.fullmatch(filename):
+        raise HTTPException(status_code=400, detail="Invalid backup filename")
+
     try:
         filepath = resolve_backup_path(filename)
     except ValueError as exc:
