@@ -5,8 +5,11 @@ const vm = require('vm');
 const code = `${fs.readFileSync('app/static/js/reports.js', 'utf8')}\nthis.ReportsPage = ReportsPage;`;
 const calls = [];
 const downloads = [];
-let modalHtml = '';
-const elements = {};
+const navigations = [];
+const elements = {
+    '#gst-box9-adjustments': { value: '5.00' },
+    '#gst-box13-adjustments': { value: '2.00' },
+};
 
 const context = {
     console,
@@ -14,39 +17,91 @@ const context = {
     Math,
     Promise,
     setTimeout,
+    URLSearchParams,
     API: {
         get: async (path) => {
             calls.push(path);
-            return {
-                start_date: '2026-04-01',
-                end_date: '2026-04-30',
-                gst_basis: 'invoice',
-                gst_period: 'two-monthly',
-                boxes: { 5: 115, 6: 0, 7: 115, 8: 15, 9: 5, 10: 20, 11: 0, 12: 0, 13: 2, 14: 2, 15: 18 },
-                net_position: 'payable',
-                items: [],
-            };
+            if (path === '/reports/gst-return/overview') {
+                return {
+                    open_periods: [
+                        {
+                            start_date: '2026-04-01',
+                            end_date: '2026-09-30',
+                            period_label: '1 Apr 2026 - 30 Sep 2026',
+                            due_date: '2026-10-28',
+                            status: 'due',
+                            box9_adjustments: '0.00',
+                            box13_adjustments: '0.00',
+                            net_gst: null,
+                        },
+                    ],
+                    historical_groups: [
+                        {
+                            label: '2026 financial year',
+                            returns: [
+                                {
+                                    start_date: '2025-10-01',
+                                    end_date: '2026-03-31',
+                                    period_label: '1 Oct 2025 - 31 Mar 2026',
+                                    due_date: '2026-05-07',
+                                    status: 'confirmed',
+                                    box9_adjustments: '0.00',
+                                    box13_adjustments: '0.00',
+                                    net_gst: 15,
+                                },
+                            ],
+                        },
+                    ],
+                };
+            }
+            if (path.startsWith('/reports/gst-return/transactions?')) {
+                return {
+                    page: 2,
+                    page_size: 1,
+                    total_count: 2,
+                    total_pages: 2,
+                    items: [
+                        {
+                            date: '2026-04-02',
+                            source_type: 'invoice',
+                            number: '1002',
+                            name: 'Aroha Ltd',
+                            standard_gross: 230,
+                            zero_rated: 0,
+                            excluded: 0,
+                        },
+                    ],
+                };
+            }
+            if (path.startsWith('/reports/gst-return?')) {
+                return {
+                    start_date: '2026-04-01',
+                    end_date: '2026-04-30',
+                    gst_basis: 'invoice',
+                    gst_period: 'two-monthly',
+                    boxes: { 5: 115, 6: 0, 7: 115, 8: 15, 9: 5, 10: 20, 11: 0, 12: 0, 13: 2, 14: 2, 15: 18 },
+                    net_position: 'payable',
+                    output_gst: 20,
+                    input_gst: 2,
+                    net_gst: 18,
+                    settlement: { status: 'unsettled', expected_bank_amount: -18, candidates: [] },
+                };
+            }
+            throw new Error(`unexpected get ${path}`);
         },
         download: async (path, filename) => {
             downloads.push({ path, filename });
         },
     },
-    openModal: (_title, html) => {
-        modalHtml = html;
-        elements['#report-period-select'] = { value: 'custom', addEventListener() {} };
-        elements['#report-custom-start'] = { value: '2026-04-01', addEventListener() {} };
-        elements['#report-custom-end'] = { value: '2026-04-30', addEventListener() {} };
-        elements['#report-content'] = { innerHTML: '' };
-        elements['#gst-box9-adjustments'] = { value: '5.00', addEventListener() {} };
-        elements['#gst-box13-adjustments'] = { value: '2.00', addEventListener() {} };
-        elements['#report-custom-range'] = { style: {} };
+    App: {
+        navigate: (hash) => navigations.push(hash),
     },
-    closeModal: () => {},
     $: (selector) => elements[selector],
     escapeHtml: (value) => String(value ?? ''),
     formatCurrency: (value) => `$${Number(value).toFixed(2)}`,
     formatDate: (value) => value,
     todayISO: () => '2026-04-30',
+    location: { hash: '#/reports/gst-return' },
 };
 
 vm.createContext(context);
@@ -56,13 +111,34 @@ vm.runInContext(code, context);
     const html = await context.ReportsPage.render();
     assert.ok(html.includes('GST Return'));
     assert.ok(!html.includes('Sales Tax'));
+    assert.ok(html.includes("ReportsPage.gstReturn()"));
 
-    await context.ReportsPage.gstReturn();
-    assert.ok(modalHtml.includes('Box 9 adjustments'));
-    assert.ok(modalHtml.includes('Box 13 credit adjustments'));
-    assert.ok(calls.some(path => path.includes('/reports/gst-return?')));
-    assert.ok(calls.some(path => path.includes('box9_adjustments=5.00')));
-    assert.ok(calls.some(path => path.includes('box13_adjustments=2.00')));
+    context.ReportsPage.gstReturn();
+    assert.deepStrictEqual(navigations, ['#/reports/gst-return']);
+
+    const overviewHtml = await context.ReportsPage.renderGstReturnsScreen();
+    assert.ok(calls.includes('/reports/gst-return/overview'));
+    assert.ok(overviewHtml.includes('Historical Returns'));
+    assert.ok(overviewHtml.includes('2026 financial year'));
+    assert.ok(overviewHtml.includes('1 Oct 2025 - 31 Mar 2026'));
+
+    context.location.hash = '#/reports/gst-return/detail';
+    context.ReportsPage._gstDetailState = {
+        start_date: '2026-04-01',
+        end_date: '2026-04-30',
+        box9_adjustments: '5.00',
+        box13_adjustments: '2.00',
+        tab: 'transactions',
+        page: 2,
+        page_size: 1,
+    };
+    const detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
+    assert.ok(detailHtml.includes('Transactions'));
+    assert.ok(detailHtml.includes('Showing 2-2 of 2'));
+    assert.ok(calls.some(path => path.includes('/reports/gst-return/transactions?')));
+    assert.ok(calls.some(path => path.includes('page=2')));
+    assert.ok(calls.some(path => path.includes('page_size=1')));
+    assert.ok(detailHtml.includes('1002'));
 
     context.ReportsPage.downloadGstReturnPdf();
     assert.deepStrictEqual(downloads, [

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -17,6 +17,11 @@ from app.services.gst_calculations import round_money
 
 GST101A_TEMPLATE = Path(__file__).parent.parent / "forms" / "gst101a-2023.pdf"
 GST_FRACTION = Decimal("3") / Decimal("23")
+GST_PERIOD_MONTHS = {
+    "monthly": 1,
+    "two-monthly": 2,
+    "six-monthly": 6,
+}
 GST_BOX_RECTS_PAGE_1 = [
     (407.307, 502.532, 566.39, 519.43),
     (407.744, 482.073, 566.281, 498.971),
@@ -134,12 +139,52 @@ def _apply_purchases(parts: dict, totals: dict, sign: Decimal = Decimal("1")) ->
     _add(totals, "excluded_purchases", sign * parts["excluded"])
 
 
+def gst_period_months(gst_period: str | None) -> int:
+    return GST_PERIOD_MONTHS.get(gst_period or "", 2)
+
+
+def _add_months(start_date: date, months: int) -> date:
+    year = start_date.year + ((start_date.month - 1 + months) // 12)
+    month = ((start_date.month - 1 + months) % 12) + 1
+    return date(year, month, 1)
+
+
+def gst_financial_year_start(as_of_date: date) -> date:
+    year = as_of_date.year if as_of_date.month >= 4 else as_of_date.year - 1
+    return date(year, 4, 1)
+
+
+def gst_financial_year_label(period_end: date) -> int:
+    return period_end.year if period_end.month <= 3 else period_end.year + 1
+
+
+def gst_period_windows(gst_period: str | None, start_date: date, as_of_date: date) -> list[tuple[date, date]]:
+    windows = []
+    months = gst_period_months(gst_period)
+    cursor = start_date
+    while cursor <= as_of_date:
+        next_start = _add_months(cursor, months)
+        windows.append((cursor, next_start - timedelta(days=1)))
+        cursor = next_start
+    return windows
+
+
+def gst_due_date(period_end: date) -> date:
+    if period_end.month == 3:
+        return date(period_end.year, 5, 7)
+    if period_end.month == 11:
+        return date(period_end.year + 1, 1, 15)
+    next_month_start = _add_months(date(period_end.year, period_end.month, 1), 1)
+    return date(next_month_start.year, next_month_start.month, 28)
+
+
 def calculate_gst_return(
     db: Session,
     start_date: date,
     end_date: date,
     box9_adjustments: Decimal = Decimal("0.00"),
     box13_adjustments: Decimal = Decimal("0.00"),
+    include_items: bool = True,
 ) -> dict:
     settings = _setting_map(db)
     basis = settings.get("gst_basis") or DEFAULT_SETTINGS["gst_basis"]
@@ -171,7 +216,8 @@ def calculate_gst_return(
                 allocation_ratio = _ratio(allocation.amount, invoice.total)
                 parts = _line_parts(invoice.lines, allocation_ratio)
                 _apply_sales(parts, totals)
-                items.append(_source_item("payment", invoice.invoice_number, payment.date, invoice.customer.name if invoice.customer else "", parts, allocation_ratio))
+                if include_items:
+                    items.append(_source_item("payment", invoice.invoice_number, payment.date, invoice.customer.name if invoice.customer else "", parts, allocation_ratio))
 
         bill_payments = (
             db.query(BillPayment)
@@ -189,7 +235,8 @@ def calculate_gst_return(
                 allocation_ratio = _ratio(allocation.amount, bill.total)
                 parts = _line_parts(bill.lines, allocation_ratio)
                 _apply_purchases(parts, totals)
-                items.append(_source_item("bill_payment", bill.bill_number, payment.date, bill.vendor.name if bill.vendor else "", parts, allocation_ratio))
+                if include_items:
+                    items.append(_source_item("bill_payment", bill.bill_number, payment.date, bill.vendor.name if bill.vendor else "", parts, allocation_ratio))
     else:
         invoices = (
             db.query(Invoice)
@@ -201,7 +248,8 @@ def calculate_gst_return(
         for invoice in invoices:
             parts = _line_parts(invoice.lines)
             _apply_sales(parts, totals)
-            items.append(_source_item("invoice", invoice.invoice_number, invoice.date, invoice.customer.name if invoice.customer else "", parts))
+            if include_items:
+                items.append(_source_item("invoice", invoice.invoice_number, invoice.date, invoice.customer.name if invoice.customer else "", parts))
 
         bills = (
             db.query(Bill)
@@ -213,7 +261,8 @@ def calculate_gst_return(
         for bill in bills:
             parts = _line_parts(bill.lines)
             _apply_purchases(parts, totals)
-            items.append(_source_item("bill", bill.bill_number, bill.date, bill.vendor.name if bill.vendor else "", parts))
+            if include_items:
+                items.append(_source_item("bill", bill.bill_number, bill.date, bill.vendor.name if bill.vendor else "", parts))
 
     credit_memos = (
         db.query(CreditMemo)
@@ -225,7 +274,8 @@ def calculate_gst_return(
     for memo in credit_memos:
         parts = _line_parts(memo.lines)
         _apply_sales(parts, totals, sign=Decimal("-1"))
-        items.append(_source_item("credit_memo", memo.memo_number, memo.date, memo.customer.name if memo.customer else "", parts, Decimal("-1")))
+        if include_items:
+            items.append(_source_item("credit_memo", memo.memo_number, memo.date, memo.customer.name if memo.customer else "", parts, Decimal("-1")))
 
     box5 = _money(totals["box5"])
     box6 = _money(totals["box6"])

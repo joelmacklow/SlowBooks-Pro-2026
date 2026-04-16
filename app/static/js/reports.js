@@ -256,64 +256,176 @@ const ReportsPage = {
         }, "As Of", true);
     },
 
-    async gstReturn() {
-        const currentYear = new Date().getFullYear();
-        const defaultCustomStart = `${currentYear}-01-01`;
-        const defaultCustomEnd = todayISO();
-        openModal("GST Return", `
-            <div class="form-grid" style="margin-bottom:4px;">
-                <div class="form-group">
-                    <label>Dates</label>
-                    <select id="report-period-select">${ReportsPage.periodOptions("this_year_to_date")}</select>
-                </div>
-                <div class="form-group">
-                    <label>Box 9 adjustments</label>
-                    <input id="gst-box9-adjustments" type="number" step="0.01" value="0.00">
-                </div>
-                <div class="form-group">
-                    <label>Box 13 credit adjustments</label>
-                    <input id="gst-box13-adjustments" type="number" step="0.01" value="0.00">
-                </div>
-            </div>
-            ${ReportsPage.customRangeHtml(defaultCustomStart, defaultCustomEnd)}
-            <div id="report-content">
-                <div style="font-size:11px; color:var(--gray-500);">Loading report...</div>
-            </div>
-            <div class="form-actions">
-                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()">Download GST101A PDF</button>
-            </div>`);
-
-        const select = $("#report-period-select");
-        const startInput = $("#report-custom-start");
-        const endInput = $("#report-custom-end");
-        const box9Input = $("#gst-box9-adjustments");
-        const box13Input = $("#gst-box13-adjustments");
-        const content = $("#report-content");
-
-        const render = async () => {
-            ReportsPage.toggleCustomRange();
-            content.innerHTML = `<div style="font-size:11px; color:var(--gray-500);">Loading report...</div>`;
-            try {
-                const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
-                const box9 = box9Input.value || "0.00";
-                const box13 = box13Input.value || "0.00";
-                const data = await API.get(`/reports/gst-return?start_date=${range.start}&end_date=${range.end}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`);
-                content.innerHTML = ReportsPage.renderGstReturn(data);
-            } catch (err) {
-                content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
-            }
-        };
-
-        select.addEventListener("change", render);
-        startInput.addEventListener("change", () => { if (select.value === "custom") render(); });
-        endInput.addEventListener("change", () => { if (select.value === "custom") render(); });
-        box9Input.addEventListener("change", render);
-        box13Input.addEventListener("change", render);
-        await render();
+    gstReturn() {
+        ReportsPage._gstDetailState = null;
+        return App.navigate('#/reports/gst-return');
     },
 
-    renderGstReturn(data) {
+    _gstStatusBadge(status, label) {
+        const style = status === 'confirmed'
+            ? 'background:#dff5e6; color:#216e3a; border:1px solid #a8d5b8;'
+            : status === 'due'
+                ? 'background:#fde7c7; color:#8a5a00; border:1px solid #f3c98a;'
+                : 'background:var(--gray-50); color:var(--text-muted); border:1px solid var(--gray-200);';
+        return `<span style="display:inline-block; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:600; ${style}">${escapeHtml(label)}</span>`;
+    },
+
+    _gstSourceTypeLabel(sourceType) {
+        const map = {
+            invoice: 'Invoice',
+            payment: 'Payment',
+            bill: 'Bill',
+            bill_payment: 'Bill Payment',
+            credit_memo: 'Credit Memo',
+        };
+        return map[sourceType] || sourceType;
+    },
+
+    _ensureGstHistoryState(groups) {
+        if (!ReportsPage._gstExpandedYears || ReportsPage._gstExpandedYears.size === 0) {
+            ReportsPage._gstExpandedYears = new Set((groups || []).slice(0, 1).map(group => group.label));
+        }
+    },
+
+    toggleGstHistoryYear(label) {
+        ReportsPage._gstExpandedYears = ReportsPage._gstExpandedYears || new Set();
+        if (ReportsPage._gstExpandedYears.has(label)) {
+            ReportsPage._gstExpandedYears.delete(label);
+        } else {
+            ReportsPage._gstExpandedYears.add(label);
+        }
+        App.navigate('#/reports/gst-return');
+    },
+
+    openGstReturnDetail(startDate, endDate, box9Adjustments = '0.00', box13Adjustments = '0.00', periodLabel = '', dueDate = '', status = '') {
+        ReportsPage._gstDetailState = {
+            start_date: startDate,
+            end_date: endDate,
+            box9_adjustments: box9Adjustments,
+            box13_adjustments: box13Adjustments,
+            period_label: periodLabel,
+            due_date: dueDate,
+            status,
+            tab: 'summary',
+            page: 1,
+            page_size: 50,
+        };
+        App.navigate('#/reports/gst-return/detail');
+    },
+
+    _gstDetailStateOrNull() {
+        return ReportsPage._gstDetailState || null;
+    },
+
+    _gstDetailControls() {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return '';
+        return `
+            <div class="settings-section">
+                <div class="form-grid" style="margin-bottom:4px;">
+                    <div class="form-group">
+                        <label>Box 9 adjustments</label>
+                        <input id="gst-box9-adjustments" type="number" step="0.01" value="${escapeHtml(state.box9_adjustments || '0.00')}">
+                    </div>
+                    <div class="form-group">
+                        <label>Box 13 credit adjustments</label>
+                        <input id="gst-box13-adjustments" type="number" step="0.01" value="${escapeHtml(state.box13_adjustments || '0.00')}">
+                    </div>
+                </div>
+                <div class="form-actions" style="justify-content:flex-start;">
+                    <button class="btn btn-secondary" onclick="ReportsPage.refreshGstReturnDetail()">Refresh</button>
+                    <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()">Download GST101A PDF</button>
+                </div>
+            </div>`;
+    },
+
+    refreshGstReturnDetail() {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return App.navigate('#/reports/gst-return');
+        state.box9_adjustments = $("#gst-box9-adjustments")?.value || '0.00';
+        state.box13_adjustments = $("#gst-box13-adjustments")?.value || '0.00';
+        state.page = 1;
+        App.navigate('#/reports/gst-return/detail');
+    },
+
+    switchGstTab(tab) {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return App.navigate('#/reports/gst-return');
+        state.tab = tab;
+        if (tab !== 'transactions') state.page = 1;
+        App.navigate('#/reports/gst-return/detail');
+    },
+
+    goGstTransactionsPage(page) {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return App.navigate('#/reports/gst-return');
+        state.tab = 'transactions';
+        state.page = page;
+        App.navigate('#/reports/gst-return/detail');
+    },
+
+    backToGstReturns() {
+        App.navigate('#/reports/gst-return');
+    },
+
+    async renderGstReturnsScreen() {
+        const data = await API.get('/reports/gst-return/overview');
+        ReportsPage._ensureGstHistoryState(data.historical_groups || []);
+        const currentRows = (data.open_periods || []).map(period => `
+            <tr>
+                <td><strong>${escapeHtml(period.period_label)}</strong></td>
+                <td>${formatDate(period.due_date)}</td>
+                <td>${ReportsPage._gstStatusBadge(period.status, period.status_label)}</td>
+                <td class="amount">${period.net_gst == null ? '&mdash;' : formatCurrency(period.net_gst)}</td>
+                <td class="actions"><button class="btn btn-sm btn-secondary" onclick="ReportsPage.openGstReturnDetail('${period.start_date}', '${period.end_date}', '${period.box9_adjustments}', '${period.box13_adjustments}', '${escapeHtml(period.period_label)}', '${period.due_date}', '${period.status}')">View return</button></td>
+            </tr>`).join('');
+
+        const historicalGroups = (data.historical_groups || []).map(group => {
+            const expanded = ReportsPage._gstExpandedYears.has(group.label);
+            const rows = (group.returns || []).map(period => `
+                <tr>
+                    <td><strong>${escapeHtml(period.period_label)}</strong></td>
+                    <td>${formatDate(period.due_date)}</td>
+                    <td>${ReportsPage._gstStatusBadge(period.status, period.status_label)}</td>
+                    <td class="amount">${formatCurrency(period.net_gst)}</td>
+                    <td class="actions"><button class="btn btn-sm btn-secondary" onclick="ReportsPage.openGstReturnDetail('${period.start_date}', '${period.end_date}', '${period.box9_adjustments}', '${period.box13_adjustments}', '${escapeHtml(period.period_label)}', '${period.due_date}', '${period.status}')">View return</button></td>
+                </tr>`).join('');
+            return `
+                <div class="settings-section" style="padding:0;">
+                    <button type="button" class="btn btn-secondary" style="width:100%; text-align:left; border:none; border-radius:0; background:transparent; padding:14px 16px;" onclick="ReportsPage.toggleGstHistoryYear('${escapeHtml(group.label)}')">
+                        <strong>${expanded ? '&#9662;' : '&#9656;'}</strong> ${escapeHtml(group.label)}
+                    </button>
+                    ${expanded ? `<div class="table-container" style="border-top:1px solid var(--gray-200);"><table>
+                        <thead><tr><th>Period</th><th>File by date</th><th>Status</th><th class="amount">Net GST</th><th>Actions</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table></div>` : ''}
+                </div>`;
+        }).join('');
+
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports</div>
+                    <h2>GST Returns</h2>
+                </div>
+                <button class="btn btn-secondary" onclick="App.navigate('#/reports')">Back to Reports</button>
+            </div>
+            <div class="settings-section">
+                <h3>Current &amp; In Progress</h3>
+                <div class="table-container"><table>
+                    <thead><tr><th>Period</th><th>File by date</th><th>Status</th><th class="amount">Net GST</th><th>Actions</th></tr></thead>
+                    <tbody>${currentRows || '<tr><td colspan="5" style="text-align:center; color:var(--gray-400);">No open GST periods.</td></tr>'}</tbody>
+                </table></div>
+            </div>
+            <div>
+                <div class="page-header" style="margin-top:20px;">
+                    <h3>Historical Returns</h3>
+                </div>
+                ${historicalGroups || '<div class="empty-state"><p>No confirmed GST returns yet.</p></div>'}
+            </div>`;
+    },
+
+    renderGstReturnSummary(data) {
         const boxRows = [
             ["5", "Total sales and income including GST and zero-rated supplies"],
             ["6", "Zero-rated supplies included in Box 5"],
@@ -331,16 +443,6 @@ const ReportsPage = {
                 <td><strong>${box}</strong></td>
                 <td>${escapeHtml(label)}</td>
                 <td class="amount">${formatCurrency(data.boxes[box] || 0)}</td>
-            </tr>`).join("");
-        const sourceRows = (data.items || []).map(item => `
-            <tr>
-                <td>${formatDate(item.date)}</td>
-                <td>${escapeHtml(item.source_type)}</td>
-                <td>${escapeHtml(item.number)}</td>
-                <td>${escapeHtml(item.name)}</td>
-                <td class="amount">${formatCurrency(item.standard_gross || 0)}</td>
-                <td class="amount">${formatCurrency(item.zero_rated || 0)}</td>
-                <td class="amount">${formatCurrency(item.excluded || 0)}</td>
             </tr>`).join("");
         const position = data.net_position === "refundable" ? "GST refund" :
             data.net_position === "payable" ? "GST to pay" : "Nil GST";
@@ -383,46 +485,103 @@ const ReportsPage = {
                     <span>${position}: <strong>${formatCurrency(data.net_gst)}</strong></span>
                 </div>
             </div>
-            <div class="table-container"><table>
+                <div class="table-container"><table>
                 <thead><tr><th>Box</th><th>GST101A field</th><th class="amount">Amount</th></tr></thead>
                 <tbody>${boxRows}</tbody>
-            </table></div>
-            <h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">Source drilldown</h3>
-            <div class="table-container"><table>
-                <thead><tr><th>Date</th><th>Source</th><th>Number</th><th>Name</th><th class="amount">Standard-rated</th><th class="amount">Zero-rated</th><th class="amount">Excluded</th></tr></thead>
-                <tbody>${sourceRows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No GST activity</td></tr>'}</tbody>
             </table></div>
             ${settlementHtml}`;
     },
 
+    renderGstTransactions(data) {
+        const startIndex = data.total_count === 0 ? 0 : ((data.page - 1) * data.page_size) + 1;
+        const endIndex = Math.min(data.page * data.page_size, data.total_count);
+        const rows = (data.items || []).map(item => `
+            <tr>
+                <td>${formatDate(item.date)}</td>
+                <td>${escapeHtml(ReportsPage._gstSourceTypeLabel(item.source_type))}</td>
+                <td>${escapeHtml(item.number)}</td>
+                <td>${escapeHtml(item.name)}</td>
+                <td class="amount">${formatCurrency(item.standard_gross || 0)}</td>
+                <td class="amount">${formatCurrency(item.zero_rated || 0)}</td>
+                <td class="amount">${formatCurrency(item.excluded || 0)}</td>
+            </tr>`).join('');
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px;">
+                <div style="font-size:11px; color:var(--text-muted);">Showing ${startIndex}-${endIndex} of ${data.total_count}</div>
+                <div class="actions">
+                    <button class="btn btn-sm btn-secondary" ${data.page <= 1 ? 'disabled' : ''} onclick="ReportsPage.goGstTransactionsPage(${data.page - 1})">Previous</button>
+                    <button class="btn btn-sm btn-secondary" ${data.page >= data.total_pages ? 'disabled' : ''} onclick="ReportsPage.goGstTransactionsPage(${data.page + 1})">Next</button>
+                </div>
+            </div>
+            <div class="table-container" style="max-height:480px; overflow:auto;"><table>
+                <thead><tr><th>Date</th><th>Source</th><th>Number</th><th>Name</th><th class="amount">Standard-rated</th><th class="amount">Zero-rated</th><th class="amount">Excluded</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No GST activity</td></tr>'}</tbody>
+            </table></div>`;
+    },
+
+    async renderGstReturnDetailScreen() {
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) {
+            return `<div class="empty-state"><p>Select a GST return from the GST Returns screen first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="ReportsPage.backToGstReturns()">Back to GST Returns</button></p></div>`;
+        }
+
+        let detailContent = `<div class="empty-state"><p>Loading GST return...</p></div>`;
+        if (state.tab === 'transactions') {
+            const data = await API.get(`/reports/gst-return/transactions?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(state.box9_adjustments || '0.00')}&box13_adjustments=${encodeURIComponent(state.box13_adjustments || '0.00')}&page=${state.page || 1}&page_size=${state.page_size || 50}`);
+            detailContent = ReportsPage.renderGstTransactions(data);
+        } else {
+            const data = await API.get(`/reports/gst-return?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(state.box9_adjustments || '0.00')}&box13_adjustments=${encodeURIComponent(state.box13_adjustments || '0.00')}`);
+            detailContent = ReportsPage.renderGstReturnSummary(data);
+        }
+
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports / GST Returns</div>
+                    <h2>${escapeHtml(state.period_label || `${state.start_date} - ${state.end_date}`)}</h2>
+                    <div style="font-size:11px; color:var(--text-muted);">
+                        ${state.due_date ? `File by ${formatDate(state.due_date)}` : ''}${state.status ? ` · ${escapeHtml(state.status.replaceAll('_', ' '))}` : ''}
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="ReportsPage.backToGstReturns()">Back to GST Returns</button>
+            </div>
+            ${ReportsPage._gstDetailControls()}
+            <div class="settings-section">
+                <div style="display:flex; gap:8px; margin-bottom:12px;">
+                    <button class="btn ${state.tab === 'summary' ? 'btn-primary' : 'btn-secondary'}" onclick="ReportsPage.switchGstTab('summary')">GST Return</button>
+                    <button class="btn ${state.tab === 'transactions' ? 'btn-primary' : 'btn-secondary'}" onclick="ReportsPage.switchGstTab('transactions')">Transactions</button>
+                </div>
+                ${detailContent}
+            </div>`;
+    },
+
     downloadGstReturnPdf() {
-        const select = $("#report-period-select");
-        const startInput = $("#report-custom-start");
-        const endInput = $("#report-custom-end");
-        const box9 = ($("#gst-box9-adjustments")?.value || "0.00");
-        const box13 = ($("#gst-box13-adjustments")?.value || "0.00");
-        const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
-        API.download(`/reports/gst-return/pdf?start_date=${range.start}&end_date=${range.end}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`, `GST101A_${range.start}_${range.end}.pdf`);
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return;
+        const box9 = ($("#gst-box9-adjustments")?.value || state.box9_adjustments || "0.00");
+        const box13 = ($("#gst-box13-adjustments")?.value || state.box13_adjustments || "0.00");
+        state.box9_adjustments = box9;
+        state.box13_adjustments = box13;
+        API.download(`/reports/gst-return/pdf?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`, `GST101A_${state.start_date}_${state.end_date}.pdf`);
     },
 
     async confirmGstSettlement(bankTransactionId) {
-        const select = $("#report-period-select");
-        const startInput = $("#report-custom-start");
-        const endInput = $("#report-custom-end");
-        const box9 = ($("#gst-box9-adjustments")?.value || "0.00");
-        const box13 = ($("#gst-box13-adjustments")?.value || "0.00");
-        const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
+        const state = ReportsPage._gstDetailStateOrNull();
+        if (!state) return;
+        const box9 = ($("#gst-box9-adjustments")?.value || state.box9_adjustments || "0.00");
+        const box13 = ($("#gst-box13-adjustments")?.value || state.box13_adjustments || "0.00");
         try {
             await API.post('/reports/gst-return/settlement', {
-                start_date: range.start,
-                end_date: range.end,
+                start_date: state.start_date,
+                end_date: state.end_date,
                 bank_transaction_id: bankTransactionId,
                 box9_adjustments: box9,
                 box13_adjustments: box13,
             });
             toast('GST settlement confirmed');
-            const data = await API.get(`/reports/gst-return?start_date=${range.start}&end_date=${range.end}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`);
-            $("#report-content").innerHTML = ReportsPage.renderGstReturn(data);
+            state.box9_adjustments = box9;
+            state.box13_adjustments = box13;
+            App.navigate('#/reports/gst-return/detail');
         } catch (err) {
             toast(err.message, 'error');
         }
