@@ -40,6 +40,7 @@ const BillsPage = {
                     <td class="amount">${formatCurrency(b.total)}</td>
                     <td class="amount">${formatCurrency(b.balance_due)}</td>
                     <td class="actions">
+                        ${b.po_id ? `<button class="btn btn-sm btn-secondary" onclick="BillsPage.openPurchaseOrder(${b.po_id})">Purchase Order</button>` : ''}
                         <button class="btn btn-sm btn-secondary" onclick="BillsPage.view(${b.id})">View</button>
                         ${canManagePurchasing && b.status !== 'void' && b.status !== 'paid' ? `<button class="btn btn-sm btn-danger" onclick="BillsPage.void(${b.id})">Void</button>` : ''}
                     </td>
@@ -69,7 +70,8 @@ const BillsPage = {
                 <strong>Vendor:</strong> ${escapeHtml(bill.vendor_name || '')}<br>
                 <strong>Date:</strong> ${formatDate(bill.date)}<br>
                 <strong>Due:</strong> ${formatDate(bill.due_date)}<br>
-                <strong>Status:</strong> ${statusBadge(bill.status)}
+                <strong>Status:</strong> ${statusBadge(bill.status)}<br>
+                ${bill.po_id ? `<strong>Purchase Order:</strong> <button type="button" class="btn btn-sm btn-secondary" onclick="BillsPage.openPurchaseOrder(${bill.po_id})">Open PO</button>` : ''}
             </div>
             <div class="table-container"><table>
                 <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Amount</th></tr></thead>
@@ -83,6 +85,21 @@ const BillsPage = {
             <div class="form-actions">
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
+    },
+
+    async openPurchaseOrder(poId) {
+        if (!poId) return;
+        if (typeof closeModal === 'function') closeModal();
+        if (typeof PurchaseOrdersPage !== 'undefined' && typeof PurchaseOrdersPage._loadEditorContext === 'function') {
+            await PurchaseOrdersPage._loadEditorContext(poId);
+            App.navigate('#/purchase-orders/detail');
+            return;
+        }
+        if (typeof PurchaseOrdersPage !== 'undefined' && typeof PurchaseOrdersPage.open === 'function') {
+            await PurchaseOrdersPage.open(poId);
+            return;
+        }
+        App.navigate('#/purchase-orders');
     },
 
     _items: [],
