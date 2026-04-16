@@ -38,6 +38,7 @@ vm.runInContext(code, context);
     const sampleHtml = await context.SettingsPage.render();
     assert.ok(sampleHtml.includes('Employment Information and employee filing exports'));
     assert.ok(!sampleHtml.includes('payday filing'));
+    assert.ok(sampleHtml.includes('Approved PO Delivery Locations'));
     assert.ok(sampleHtml.includes('Load NZ Demo Data'));
     assert.ok(sampleHtml.includes('Load Xero Sample Default Chart'));
     assert.ok(sampleHtml.includes('Load MAS Chart of Accounts'));

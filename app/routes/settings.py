@@ -38,6 +38,7 @@ def get_public_settings(db: Session = Depends(get_db)):
     result = _get_all(db)
     allowed_keys = (
         "company_name",
+        "default_tax_rate",
         "country",
         "currency",
         "locale",

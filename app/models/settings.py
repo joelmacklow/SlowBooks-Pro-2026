@@ -51,6 +51,7 @@ DEFAULT_SETTINGS = {
     "smtp_from_email": "",
     "smtp_from_name": "",
     "smtp_use_tls": "true",
+    "purchase_order_delivery_locations": "",
     # Feature 15: Company Logo
     "company_logo_path": "",
     # NZ localization foundation

@@ -5,6 +5,7 @@
 const PurchaseOrdersPage = {
     _items: [],
     _vendors: [],
+    _deliveryLocations: [],
     _settings: {},
     _detailState: null,
     lineCount: 0,
@@ -33,6 +34,7 @@ const PurchaseOrdersPage = {
                     <td class="actions">
                         ${canManagePurchasing ? `<button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.open(${po.id})">Edit</button>
                         <button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.emailPurchaseOrder(${po.id})">Email</button>
+                        <button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number)}')">Print / PDF</button>
                         ${po.status !== 'closed' ? `<button class="btn btn-sm btn-primary" onclick="PurchaseOrdersPage.convertToBill(${po.id})">To Bill</button>` : ''}` : ''}
                     </td>
                 </tr>`;
@@ -53,16 +55,18 @@ const PurchaseOrdersPage = {
     },
 
     async _loadEditorContext(id = null) {
-        const [vendors, items, settings, gstCodes] = await Promise.all([
+        const [vendors, items, settings, gstCodes, deliveryLocations] = await Promise.all([
             API.get('/vendors?active_only=true'),
             API.get('/items?active_only=true'),
-            API.get('/settings'),
+            API.get('/settings/public'),
             API.get('/gst-codes'),
+            API.get('/purchase-orders/delivery-locations'),
         ]);
         App.gstCodes = gstCodes;
         PurchaseOrdersPage._vendors = vendors;
         PurchaseOrdersPage._items = items;
         PurchaseOrdersPage._settings = settings;
+        PurchaseOrdersPage._deliveryLocations = deliveryLocations;
 
         let po = {
             id: null,
@@ -80,6 +84,7 @@ const PurchaseOrdersPage = {
             lines: [],
         };
         if (id) po = await API.get(`/purchase-orders/${id}`);
+        if (!id && !po.ship_to && deliveryLocations.length) po.ship_to = deliveryLocations[0].value;
         if (!po.lines || po.lines.length === 0) po.lines = [{ item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }];
         PurchaseOrdersPage.lineCount = po.lines.length;
         PurchaseOrdersPage._detailState = po;
@@ -102,6 +107,12 @@ const PurchaseOrdersPage = {
         }
         const totals = PurchaseOrdersPage._totals(po.lines || []);
         const vendorOpts = PurchaseOrdersPage._vendors.map(v => `<option value="${v.id}" ${po.vendor_id==v.id?'selected':''}>${escapeHtml(v.name)}</option>`).join('');
+        const deliveryLocations = PurchaseOrdersPage._deliveryLocations || [];
+        const selectedLocation = deliveryLocations.some(location => location.value === po.ship_to) ? po.ship_to : '';
+        const deliveryOptions = deliveryLocations.map(location =>
+            `<option value="${escapeHtml(location.value)}" ${selectedLocation === location.value ? 'selected' : ''}>${escapeHtml(location.label)}</option>`
+        ).join('');
+        const hasLegacyShipTo = !!po.ship_to && !selectedLocation;
         return `
             <div class="page-header">
                 <div>
@@ -130,7 +141,12 @@ const PurchaseOrdersPage = {
                 <div class="settings-section">
                     <div class="form-grid">
                         <div class="form-group full-width"><label>Delivery Address</label>
-                            <textarea name="ship_to" rows="3" ${canManagePurchasing ? '' : 'disabled'}>${escapeHtml(po.ship_to || '')}</textarea></div>
+                            <select name="ship_to" ${canManagePurchasing ? '' : 'disabled'} ${deliveryLocations.length ? 'required' : ''}>
+                                <option value="">${deliveryLocations.length ? 'Select approved delivery location...' : 'No approved delivery locations configured'}</option>
+                                ${deliveryOptions}
+                            </select>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Admins control this list in Company Settings so purchase orders only ship to approved company locations.</div>
+                            ${hasLegacyShipTo ? `<div style="font-size:10px; color:var(--warning-700, #9a6700); margin-top:6px;">Saved PO delivery address: ${escapeHtml(po.ship_to)}</div>` : ''}</div>
                     </div>
                 </div>
                 <div class="settings-section">
@@ -160,6 +176,8 @@ const PurchaseOrdersPage = {
                 </div>
                 ${canManagePurchasing ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/purchase-orders')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number || '')}')` : ''}" ${po.id ? '' : 'disabled'}>Print / PDF</button>
+                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.emailPurchaseOrder(${po.id})` : ''}" ${po.id ? '' : 'disabled'}>Email PO</button>
                     <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
                 </div>` : ''}
             </form>`;
@@ -230,9 +248,17 @@ const PurchaseOrdersPage = {
         });
     },
 
+    openPdf(id, poNumber) {
+        API.open(`/purchase-orders/${id}/pdf`, `purchase-order-${poNumber}.pdf`);
+    },
+
     async save(e, id) {
         e.preventDefault();
         const form = e.target;
+        if (PurchaseOrdersPage._deliveryLocations.length && !form.ship_to.value) {
+            toast('Select an approved delivery location', 'error');
+            return;
+        }
         const lines = [];
         $$('#po-lines tr').forEach((row, i) => {
             const gst = readGstLinePayload(row);

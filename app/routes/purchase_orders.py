@@ -3,6 +3,8 @@
 # Feature 6: Non-posting vendor documents
 # ============================================================================
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -22,6 +24,85 @@ from app.services.pdf_service import generate_purchase_order_pdf
 from app.routes.settings import _get_all as get_settings
 
 router = APIRouter(prefix="/api/purchase-orders", tags=["purchase_orders"])
+
+
+def _join_address_lines(lines: list[str]) -> str:
+    return "\n".join(line.strip() for line in lines if line and line.strip())
+
+
+def _label_for_address(name: str | None, value: str) -> str:
+    parts = [part.strip() for part in value.splitlines() if part.strip()]
+    if name and name.strip():
+        return ", ".join([name.strip(), *parts])
+    return ", ".join(parts)
+
+
+def _approved_delivery_locations(settings: dict) -> list[dict[str, str]]:
+    locations: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    company_lines = [
+        settings.get("company_address1", ""),
+        settings.get("company_address2", ""),
+        " ".join(
+            part.strip()
+            for part in [
+                settings.get("company_city", ""),
+                settings.get("company_state", ""),
+                settings.get("company_zip", ""),
+            ]
+            if part and part.strip()
+        ),
+    ]
+    company_value = _join_address_lines(company_lines)
+    if company_value:
+        normalized = company_value.casefold()
+        seen.add(normalized)
+        locations.append({
+            "label": _label_for_address("Company Main Address", company_value),
+            "value": company_value,
+        })
+
+    raw_locations = (settings.get("purchase_order_delivery_locations") or "").strip()
+    if not raw_locations:
+        return locations
+
+    for block in re.split(r"(?:\r?\n){2,}", raw_locations):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if len(lines) == 1:
+            name = None
+            value = lines[0]
+        else:
+            name = lines[0]
+            value = _join_address_lines(lines[1:])
+        if not value:
+            continue
+        normalized = value.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        locations.append({
+            "label": _label_for_address(name, value),
+            "value": value,
+        })
+    return locations
+
+
+def _approved_delivery_location_values(db: Session) -> set[str]:
+    return {
+        location["value"]
+        for location in _approved_delivery_locations(get_settings(db))
+    }
+
+
+def _validate_ship_to(ship_to: str | None, db: Session) -> None:
+    if not ship_to:
+        return
+    approved_values = _approved_delivery_location_values(db)
+    if approved_values and ship_to not in approved_values:
+        raise HTTPException(status_code=400, detail="Ship-to address must be an approved delivery location")
 
 
 def _next_po_number(db: Session) -> str:
@@ -49,6 +130,11 @@ def list_pos(vendor_id: int = None, status: str = None, db: Session = Depends(ge
     return results
 
 
+@router.get("/delivery-locations")
+def list_delivery_locations(db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
+    return _approved_delivery_locations(get_settings(db))
+
+
 @router.get("/{po_id}", response_model=POResponse)
 def get_po(po_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
@@ -65,6 +151,7 @@ def create_po(data: POCreate, db: Session = Depends(get_db), auth=Depends(requir
     vendor = db.query(Vendor).filter(Vendor.id == data.vendor_id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    _validate_ship_to(data.ship_to, db)
 
     po_number = _next_po_number(db)
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
@@ -107,6 +194,8 @@ def update_po(po_id: int, data: POUpdate, db: Session = Depends(get_db), auth=De
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    if "ship_to" in data.model_fields_set:
+        _validate_ship_to(data.ship_to, db)
 
     for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
         if key == "status":

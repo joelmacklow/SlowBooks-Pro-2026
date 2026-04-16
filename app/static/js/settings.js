@@ -184,6 +184,17 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
+                    <h3>Approved PO Delivery Locations</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Admin-only list of company-approved delivery locations for purchase orders. Enter one location per block: optional location name on the first line, then the delivery address lines beneath it. Leave a blank line between locations. The primary company address is approved automatically.
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group full-width"><label>Approved PO Delivery Locations</label>
+                            <textarea name="purchase_order_delivery_locations" rows="8" placeholder="Warehouse&#10;8 Depot Road&#10;Wellington Wellington 6011&#10;&#10;Christchurch Office&#10;55 Moorhouse Avenue&#10;Christchurch Canterbury 8011">${escapeHtml(s.purchase_order_delivery_locations || '')}</textarea></div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Backup / Restore</h3>
                     <div style="display:flex; gap:8px; margin-bottom:12px;">
                         <button type="button" class="btn btn-primary" onclick="SettingsPage.createBackup()">Create Backup</button>
