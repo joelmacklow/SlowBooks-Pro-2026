@@ -77,6 +77,8 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('SlowBooks HQ, 1 Queen Street, Auckland Auckland 1010'));
     assert.ok(detailHtml.includes('Delivery Instructions / Notes'));
     assert.ok(detailHtml.includes('Assigned on save'));
+    assert.ok(detailHtml.includes('Create & Add New'));
+    assert.ok(detailHtml.includes('>Create<'));
     assert.ok(detailHtml.includes('Create & Print / PDF'));
     assert.ok(detailHtml.includes('Create & Email'));
 

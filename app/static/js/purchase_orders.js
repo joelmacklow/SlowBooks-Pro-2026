@@ -176,9 +176,10 @@ const PurchaseOrdersPage = {
                 </div>
                 ${canManagePurchasing ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/purchase-orders')">Cancel</button>
+                    ${po.id ? '' : `<button type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
                     <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number || '')}')` : `PurchaseOrdersPage.submitWithAction(event, null, 'pdf')`}">${po.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
                     <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.emailPurchaseOrder(${po.id})` : `PurchaseOrdersPage.submitWithAction(event, null, 'email')`}">${po.id ? 'Email PO' : 'Create & Email'}</button>
-                    <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
+                    <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create'}</button>
                 </div>` : ''}
             </form>`;
     },
@@ -308,6 +309,11 @@ const PurchaseOrdersPage = {
                 PurchaseOrdersPage._detailState = savedPo;
                 App.navigate('#/purchase-orders/detail');
                 await PurchaseOrdersPage.emailPurchaseOrder(savedPo.id);
+                return;
+            }
+            if (afterAction === 'add-new') {
+                await PurchaseOrdersPage._loadEditorContext(null);
+                App.navigate('#/purchase-orders/detail');
                 return;
             }
 

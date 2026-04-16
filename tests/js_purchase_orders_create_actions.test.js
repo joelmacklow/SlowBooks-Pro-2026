@@ -9,6 +9,7 @@ const opened = [];
 const emailCalls = [];
 const posts = [];
 const navigations = [];
+const loadedContexts = [];
 
 const lineRows = [{
     querySelector(selector) {
@@ -29,6 +30,11 @@ const context = {
     setTimeout,
     API: {
         get: async (path) => {
+            if (path === '/vendors?active_only=true') return [{ id: 1, name: 'Harbour Supplies' }];
+            if (path === '/items?active_only=true') return [{ id: 2, name: 'Pens', description: 'Pens', cost: 15 }];
+            if (path === '/settings/public') return { default_tax_rate: '15', prices_include_gst: 'false' };
+            if (path === '/gst-codes') return [{ code: 'GST15', rate: 0.15, name: 'GST 15%' }];
+            if (path === '/purchase-orders/delivery-locations') return [{ label: 'HQ', value: '1 Queen Street\nAuckland Auckland 1010' }];
             if (path === '/purchase-orders/9') return { id: 9, po_number: 'PO-0009', vendor_id: 1 };
             if (path === '/vendors/1') return { id: 1, name: 'Harbour Supplies', email: 'vendor@example.com' };
             throw new Error(`unexpected path ${path}`);
@@ -79,6 +85,11 @@ function makeForm() {
     context.PurchaseOrdersPage._settings = { default_tax_rate: '15' };
     context.PurchaseOrdersPage._deliveryLocations = [{ label: 'HQ', value: '1 Queen Street\nAuckland Auckland 1010' }];
     context.PurchaseOrdersPage._detailState = { id: null, status: 'draft', po_number: '', vendor_id: '', date: '2026-04-17', expected_date: '', ship_to: '1 Queen Street\nAuckland Auckland 1010', notes: '', lines: [] };
+    const originalLoadEditorContext = context.PurchaseOrdersPage._loadEditorContext;
+    context.PurchaseOrdersPage._loadEditorContext = async (id) => {
+        loadedContexts.push(id);
+        return originalLoadEditorContext(id);
+    };
 
     await context.PurchaseOrdersPage.save({ preventDefault() {}, target: makeForm() }, null, 'pdf');
     assert.strictEqual(posts.length, 1);
@@ -95,6 +106,16 @@ function makeForm() {
         ['/purchase-orders/9/email', 'vendor@example.com'],
     ]);
     assert.deepStrictEqual(navigations, ['#/purchase-orders/detail']);
+
+    emailCalls.length = 0;
+    navigations.length = 0;
+
+    await context.PurchaseOrdersPage.save({ preventDefault() {}, target: makeForm() }, null, 'add-new');
+    assert.strictEqual(posts.length, 3);
+    assert.deepStrictEqual(loadedContexts, [null]);
+    assert.deepStrictEqual(navigations, ['#/purchase-orders/detail']);
+    assert.strictEqual(context.PurchaseOrdersPage._detailState.id, null);
+    assert.strictEqual(context.PurchaseOrdersPage._detailState.vendor_id, '');
 })().catch(err => {
     console.error(err);
     process.exit(1);
