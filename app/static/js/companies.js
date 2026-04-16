@@ -91,11 +91,16 @@ const CompaniesPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    switchTo(dbName) {
+    async switchTo(dbName) {
         // Store selected company in localStorage
         localStorage.setItem('slowbooks_company', dbName);
         toast(`Switched to ${dbName}. Reload to apply.`);
-        // In a full implementation, this would reload with X-Company-Id header
+        if (typeof App !== 'undefined') {
+            await App.loadSettings();
+            App.loadCompanyName();
+            App.navigate('#/');
+            return;
+        }
         location.reload();
     },
 };

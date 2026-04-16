@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_master_db
 from app.models.auth import AuthSession, MembershipPermissionOverride, User, UserMembership
 
 CURRENT_COMPANY_SCOPE = "__current__"
@@ -344,7 +344,7 @@ def get_auth_context(db: Session, authorization: str | None, *, required: bool =
 
 
 def get_optional_auth_context(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_master_db),
     authorization: str | None = Header(default=None),
 ) -> AuthContext | None:
     return get_auth_context(db, authorization, required=False)
@@ -354,7 +354,7 @@ def require_permissions(*required_permissions: str):
     validated = tuple(validate_permission_keys(list(required_permissions)))
 
     def dependency(
-        db: Session = Depends(get_db),
+        db: Session = Depends(get_master_db),
         authorization: str | None = Header(default=None),
     ) -> AuthContext:
         context = get_auth_context(db, authorization, required=True)

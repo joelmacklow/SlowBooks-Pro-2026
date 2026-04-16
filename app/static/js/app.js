@@ -9,6 +9,7 @@
 const App = {
     settings: {},
     authState: { authenticated: false, bootstrap_required: false, user: null },
+    _suppressNextHashChange: false,
 
     routes: {
         '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
@@ -855,14 +856,35 @@ const App = {
         try {
             const s = App.settings || {};
             const companyEl = $('#status-company');
+            const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
             if (companyEl && s.company_name && s.company_name !== 'My Company') {
-                companyEl.textContent = `Company: ${s.company_name}`;
+                companyEl.textContent = `Company: ${s.company_name}${selectedCompany ? ` (${selectedCompany})` : ''}`;
             }
         } catch (e) { /* ignore on load */ }
     },
 
     async init() {
-        window.addEventListener('hashchange', () => App.navigate(location.hash));
+        window.addEventListener('hashchange', () => {
+            if (App._suppressNextHashChange) {
+                App._suppressNextHashChange = false;
+                return;
+            }
+            App.navigate(location.hash);
+        });
+        $$('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                const targetHash = link.getAttribute('href');
+                if (!targetHash) return;
+                e.preventDefault();
+                if ((location.hash || '#/') === targetHash) {
+                    App.navigate(targetHash);
+                } else {
+                    App._suppressNextHashChange = true;
+                    location.hash = targetHash;
+                    App.navigate(targetHash);
+                }
+            });
+        });
 
         // Load saved theme
         App.loadTheme();

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import DATABASE_URL
-from app.database import get_db
+from app.database import get_master_db
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
 from app.services.company_service import create_company, list_companies
@@ -50,7 +50,7 @@ def _default_company_entry(db: Session) -> dict:
 
 @router.get("")
 def get_companies(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_master_db),
     auth=Depends(require_permissions("companies.view")),
 ):
     companies = list_companies(db)
@@ -65,7 +65,7 @@ def get_companies(
 @router.post("", status_code=201)
 def new_company(
     data: CompanyCreate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_master_db),
     auth=Depends(require_permissions("companies.manage")),
 ):
     result = create_company(db, data.name, data.database_name, data.description)

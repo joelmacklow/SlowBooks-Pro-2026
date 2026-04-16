@@ -6,9 +6,14 @@
  * reverse — 47 different message types, all packed structs with no padding.
  */
 const API = {
-    authHeaders() {
+    authHeaders(path = '') {
         const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks-auth-token') : null;
-        return token ? { Authorization: `Bearer ${token}` } : {};
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
+        if (selectedCompany && !path.startsWith('/auth/') && !path.startsWith('/companies')) {
+            headers['X-Company-Database'] = selectedCompany;
+        }
+        return headers;
     },
 
     async _parseError(res) {
@@ -19,7 +24,7 @@ const API = {
     async raw(method, path, { body = null, headers = {} } = {}) {
         const opts = {
             method,
-            headers: { ...this.authHeaders(), ...headers },
+            headers: { ...this.authHeaders(path), ...headers },
         };
         if (body !== null) {
             if (typeof FormData !== 'undefined' && body instanceof FormData) {
