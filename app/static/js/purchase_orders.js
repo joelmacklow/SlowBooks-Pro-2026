@@ -176,8 +176,8 @@ const PurchaseOrdersPage = {
                 </div>
                 ${canManagePurchasing ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/purchase-orders')">Cancel</button>
-                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number || '')}')` : ''}" ${po.id ? '' : 'disabled'}>Print / PDF</button>
-                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.emailPurchaseOrder(${po.id})` : ''}" ${po.id ? '' : 'disabled'}>Email PO</button>
+                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number || '')}')` : `PurchaseOrdersPage.submitWithAction(event, null, 'pdf')`}">${po.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
+                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.emailPurchaseOrder(${po.id})` : `PurchaseOrdersPage.submitWithAction(event, null, 'email')`}">${po.id ? 'Email PO' : 'Create & Email'}</button>
                     <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
                 </div>` : ''}
             </form>`;
@@ -252,7 +252,14 @@ const PurchaseOrdersPage = {
         API.open(`/purchase-orders/${id}/pdf`, `purchase-order-${poNumber}.pdf`);
     },
 
-    async save(e, id) {
+    async submitWithAction(e, id, action) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const form = e?.target?.form || e?.target?.closest?.('form');
+        if (!form) return;
+        await PurchaseOrdersPage.save({ preventDefault() {}, target: form }, id, action);
+    },
+
+    async save(e, id, afterAction = null) {
         e.preventDefault();
         const form = e.target;
         if (PurchaseOrdersPage._deliveryLocations.length && !form.ship_to.value) {
@@ -282,8 +289,28 @@ const PurchaseOrdersPage = {
             lines,
         };
         try {
-            if (id) { await API.put(`/purchase-orders/${id}`, data); toast('PO updated'); }
-            else { await API.post('/purchase-orders', data); toast('PO created'); }
+            let savedPo;
+            if (id) {
+                savedPo = await API.put(`/purchase-orders/${id}`, data);
+                toast('PO updated');
+            } else {
+                savedPo = await API.post('/purchase-orders', data);
+                toast('PO created');
+            }
+
+            if (afterAction === 'pdf' && savedPo?.id) {
+                PurchaseOrdersPage._detailState = savedPo;
+                App.navigate('#/purchase-orders/detail');
+                PurchaseOrdersPage.openPdf(savedPo.id, savedPo.po_number || '');
+                return;
+            }
+            if (afterAction === 'email' && savedPo?.id) {
+                PurchaseOrdersPage._detailState = savedPo;
+                App.navigate('#/purchase-orders/detail');
+                await PurchaseOrdersPage.emailPurchaseOrder(savedPo.id);
+                return;
+            }
+
             PurchaseOrdersPage._detailState = null;
             App.navigate('#/purchase-orders');
         } catch (err) { toast(err.message, 'error'); }
