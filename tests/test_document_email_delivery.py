@@ -30,16 +30,22 @@ from app.schemas.email import DocumentEmailRequest, StatementEmailRequest
 
 class FakeSMTP:
     sent_messages = []
+    instances = []
+    fail_login = False
 
     def __init__(self, host, port, timeout=30):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.quit_called = False
+        self.__class__.instances.append(self)
 
     def starttls(self):
         return None
 
     def login(self, user, password):
+        if self.__class__.fail_login:
+            raise RuntimeError('auth failed')
         return None
 
     def sendmail(self, from_email, recipients, message):
@@ -48,6 +54,7 @@ class FakeSMTP:
         )
 
     def quit(self):
+        self.quit_called = True
         return None
 
 
@@ -57,6 +64,8 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
         self.Session = sessionmaker(bind=engine)
         FakeSMTP.sent_messages = []
+        FakeSMTP.instances = []
+        FakeSMTP.fail_login = False
 
     def _seed_smtp(self, db):
         for key, value in {
@@ -134,6 +143,34 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         self.assertEqual(result["status"], "sent")
         self.assertEqual(log.status, "sent")
         self.assertEqual(len(FakeSMTP.sent_messages), 1)
+
+    def test_send_email_sanitizes_headers_and_closes_connection_on_login_failure(self):
+        from app.services import email_service
+
+        original_smtp = email_service.smtplib.SMTP
+        email_service.smtplib.SMTP = FakeSMTP
+        try:
+            with self.Session() as db:
+                self._seed_smtp(db)
+                FakeSMTP.fail_login = True
+
+                success = email_service.send_email(
+                    db,
+                    to_email="customer@example.com\r\nBcc:attacker@example.com",
+                    subject="Statement\r\nInjected",
+                    html_body="<p>Hello</p>",
+                    entity_type="statement",
+                    entity_id=7,
+                )
+                log = db.query(EmailLog).filter_by(entity_type="statement", entity_id=7).one()
+        finally:
+            email_service.smtplib.SMTP = original_smtp
+
+        self.assertFalse(success)
+        self.assertEqual(log.recipient, "customer@example.comBcc:attacker@example.com")
+        self.assertEqual(log.subject, "Statement Injected")
+        self.assertTrue(FakeSMTP.instances)
+        self.assertTrue(FakeSMTP.instances[-1].quit_called)
 
     def test_document_email_routes_cover_estimate_statement_credit_memo_purchase_order_and_payslip(self):
         from app.routes import credit_memos as credit_memos_route

@@ -122,6 +122,7 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
         self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
         self.assertIn("$234.50", CapturingHTML.rendered[-1])
+        self.assertIn("$1,000.00", CapturingHTML.rendered[-1])
 
     def test_payroll_payslip_pdf_uses_nz_payroll_labels_and_company_settings(self):
         pay_run = SimpleNamespace(

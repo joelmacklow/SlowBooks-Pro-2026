@@ -48,7 +48,7 @@
             <button class="tb-btn" onclick="App.navigate('#/reports')">Reports</button>
             <div class="tb-sep"></div>
             <input type="text" id="global-search" class="tb-search" placeholder="Search customers, invoices..."
-                   oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape')this.value='';App.globalSearch('');">
+                   oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape'){this.value='';App.globalSearch('');}">
             <div id="search-results" class="search-dropdown hidden"></div>
             <div class="topbar-right">
                 <span id="auth-user" class="status-section" style="margin-right:8px; font-size:10px; color:var(--text-muted);">Not signed in</span>

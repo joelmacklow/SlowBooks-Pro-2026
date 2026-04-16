@@ -88,6 +88,11 @@ def _send_email_impl(
     from_name = smtp.get("smtp_from_name", "Slowbooks Pro")
     use_tls = smtp.get("smtp_use_tls", "true").lower() == "true"
 
+    if to_email:
+        to_email = to_email.replace("\r", "").replace("\n", "").strip()
+    if subject:
+        subject = subject.replace("\r", "").replace("\n", " ").strip()
+
     if not to_email:
         error = "Recipient email is required"
         _log_email(
@@ -125,6 +130,7 @@ def _send_email_impl(
         part["Content-Disposition"] = f'attachment; filename="{attachment_name}"'
         msg.attach(part)
 
+    server = None
     try:
         if use_tls:
             server = smtplib.SMTP(host, port, timeout=30)
@@ -137,6 +143,7 @@ def _send_email_impl(
 
         server.sendmail(from_email, [to_email], msg.as_string())
         server.quit()
+        server = None
 
         _log_email(
             db,
@@ -148,6 +155,11 @@ def _send_email_impl(
         )
         return None
     except Exception as exc:
+        if server:
+            try:
+                server.quit()
+            except Exception:
+                pass
         error = str(exc)
         _log_email(
             db,

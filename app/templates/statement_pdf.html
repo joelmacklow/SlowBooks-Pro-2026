@@ -96,7 +96,7 @@
         <table>
             <tr><td class="label">Total Invoiced</td><td class="r">{{ invoices | sum(attribute='total') | currency }}</td></tr>
             <tr><td class="label">Total Payments</td><td class="r">{{ payments | sum(attribute='amount') | currency }}</td></tr>
-            <tr><td class="label grand">Balance Due</td><td class="r grand">{{ (invoices | sum(attribute='total') - payments | sum(attribute='amount')) | currency }}</td></tr>
+            <tr><td class="label grand">Balance Due</td><td class="r grand">{{ ((invoices | sum(attribute='total')) - (payments | sum(attribute='amount'))) | currency }}</td></tr>
         </table>
     </div>
 

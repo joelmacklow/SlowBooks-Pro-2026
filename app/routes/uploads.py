@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/svg+xml"}
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
 
 @router.post("/logo")
@@ -28,7 +28,7 @@ async def upload_logo(
     auth=Depends(require_permissions("settings.manage")),
 ):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Only PNG, JPEG, GIF, or SVG images are allowed")
+        raise HTTPException(status_code=400, detail="Only PNG, JPEG, or GIF images are allowed")
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "png"
     filename = f"company_logo.{ext}"

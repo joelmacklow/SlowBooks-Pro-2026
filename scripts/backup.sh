@@ -6,6 +6,8 @@
 # We use pg_dump because PostgreSQL > Pervasive PSQL in every measurable way.
 # ============================================================================
 
+set -eo pipefail
+
 if [ -f ".env" ]; then
     set -a
     . ./.env

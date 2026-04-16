@@ -51,3 +51,26 @@ const noCacheContext = loadUtils();
 
 assert.strictEqual(noCacheContext.formatCurrency(1234.5), '$1,234.50');
 assert.strictEqual(noCacheContext.formatDate('2026-04-13'), 'Apr 13, 2026');
+
+
+assert.strictEqual(noCacheContext.escapeHtml(`O'Reilly & <tag>`), 'O&#39;Reilly &amp; &lt;tag&gt;');
+
+const RealDate = Date;
+class FixedDate extends RealDate {
+    constructor(...args) {
+        if (args.length === 0) {
+            super('2026-04-14T00:00:00Z');
+        } else {
+            super(...args);
+        }
+    }
+
+    toISOString() {
+        return '2026-04-13T12:00:00.000Z';
+    }
+}
+const localDateContext = loadUtils({ Date: FixedDate });
+assert.strictEqual(localDateContext.todayISO(), '2026-04-14');
+
+const indexHtml = fs.readFileSync('index.html', 'utf8');
+assert.ok(indexHtml.includes(`onkeydown="if(event.key==='Escape'){this.value='';App.globalSearch('');}"`));
