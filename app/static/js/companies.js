@@ -3,6 +3,9 @@
  * Feature 16: Company list and creation UI
  */
 const CompaniesPage = {
+    _databaseNameTouched: false,
+    _lastSuggestedDatabaseName: '',
+
     async render() {
         const canManageCompanies = App.hasPermission ? App.hasPermission('companies.manage') : true;
         const companies = await API.get('/companies');
@@ -21,7 +24,7 @@ const CompaniesPage = {
             html += '<div class="card-grid">';
             for (const c of companies) {
                 html += `<div class="card" style="cursor:pointer;" onclick="CompaniesPage.switchTo('${escapeHtml(c.database_name)}')">
-                    <div class="card-header">${escapeHtml(c.name)}</div>
+                    <div class="card-header">${escapeHtml(c.name)}${c.is_default ? ' <span class="badge badge-draft">Default</span>' : ''}</div>
                     <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.database_name)}</div>
                     ${c.description ? `<div style="font-size:11px;margin-top:4px;">${escapeHtml(c.description)}</div>` : ''}
                     <div style="font-size:9px;color:var(--text-light);margin-top:4px;">Last accessed: ${c.last_accessed ? formatDate(c.last_accessed) : 'Never'}</div>
@@ -32,14 +35,41 @@ const CompaniesPage = {
         return html;
     },
 
+    suggestDatabaseName(name) {
+        return String(name || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .replace(/_+/g, '_')
+            .slice(0, 63);
+    },
+
+    handleCompanyNameInput(input) {
+        const databaseInput = input?.form?.database_name;
+        if (!databaseInput) return;
+        const suggestion = CompaniesPage.suggestDatabaseName(input.value);
+        const currentValue = databaseInput.value || '';
+        if (!CompaniesPage._databaseNameTouched || currentValue === '' || currentValue === CompaniesPage._lastSuggestedDatabaseName) {
+            databaseInput.value = suggestion;
+            CompaniesPage._lastSuggestedDatabaseName = suggestion;
+            CompaniesPage._databaseNameTouched = false;
+        }
+    },
+
+    handleDatabaseNameInput(input) {
+        CompaniesPage._databaseNameTouched = true;
+    },
+
     showCreate() {
+        CompaniesPage._databaseNameTouched = false;
+        CompaniesPage._lastSuggestedDatabaseName = '';
         openModal('New Company', `
             <form onsubmit="CompaniesPage.create(event)">
                 <div class="form-grid">
                     <div class="form-group"><label>Company Name *</label>
-                        <input name="name" required></div>
+                        <input name="name" required oninput="CompaniesPage.handleCompanyNameInput(this)"></div>
                     <div class="form-group"><label>Database Name *</label>
-                        <input name="database_name" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, underscores only"></div>
+                        <input name="database_name" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, underscores only" oninput="CompaniesPage.handleDatabaseNameInput(this)"></div>
                     <div class="form-group full-width"><label>Description</label>
                         <textarea name="description"></textarea></div>
                 </div>
