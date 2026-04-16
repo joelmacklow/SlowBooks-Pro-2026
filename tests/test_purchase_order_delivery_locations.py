@@ -165,6 +165,17 @@ class PurchaseOrderDeliveryLocationTests(unittest.TestCase):
 
         self.assertEqual(po.ship_to, "1 Queen Street\nAuckland Auckland 1010")
 
+    def test_po_update_schema_accepts_date_fields(self):
+        from app.schemas.purchase_orders import POUpdate
+
+        payload = POUpdate.model_validate({
+            "date": "2026-04-17",
+            "expected_date": "2026-04-20",
+        })
+
+        self.assertEqual(payload.date, date(2026, 4, 17))
+        self.assertEqual(payload.expected_date, date(2026, 4, 20))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,9 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('>Create<'));
     assert.ok(detailHtml.includes('Create & Print / PDF'));
     assert.ok(detailHtml.includes('Create & Email'));
+    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'add-new\')"'));
+    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'pdf\')"'));
+    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'email\')"'));
 
     navigations.length = 0;
     await context.PurchaseOrdersPage.open(7);
@@ -93,6 +96,8 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('Total'));
     assert.ok(detailHtml.includes('Print / PDF'));
     assert.ok(detailHtml.includes('Email PO'));
+    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.openPdf(7, \'PO-0001\')"'));
+    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.emailPurchaseOrder(7)"'));
     context.PurchaseOrdersPage.openPdf(7, 'PO-0001');
     assert.deepStrictEqual(context.opened, [['/purchase-orders/7/pdf', 'purchase-order-PO-0001.pdf']]);
 })();
