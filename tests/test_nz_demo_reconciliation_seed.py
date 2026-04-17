@@ -63,9 +63,13 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
             self.assertEqual(len(bank_txns), len(customer_payments) + len(bill_payments))
             positive_txns = [txn for txn in bank_txns if Decimal(str(txn.amount)) > 0]
             negative_txns = [txn for txn in bank_txns if Decimal(str(txn.amount)) < 0]
+            reconciled_txns = [txn for txn in bank_txns if txn.reconciled]
+            unreconciled_txns = [txn for txn in bank_txns if not txn.reconciled]
             self.assertEqual(len(positive_txns), len(customer_payments))
             self.assertEqual(len(negative_txns), len(bill_payments))
             self.assertEqual({txn.payee for txn in negative_txns}, {'ABC Furniture', 'PowerDirect', 'Net Connect'})
+            self.assertTrue(reconciled_txns)
+            self.assertTrue(unreconciled_txns)
 
             recon = create_reconciliation(
                 ReconciliationCreate(
@@ -77,8 +81,10 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
             )
             initial = get_reconciliation_transactions(recon.id, db=db)
             self.assertEqual(len(initial['transactions']), len(bank_txns))
+            self.assertGreater(initial['cleared_total'], 0)
+            self.assertGreater(initial['difference'], 0)
 
-            for txn in bank_txns:
+            for txn in unreconciled_txns:
                 toggle_cleared(recon.id, txn.id, db=db)
 
             refreshed = get_reconciliation_transactions(recon.id, db=db)

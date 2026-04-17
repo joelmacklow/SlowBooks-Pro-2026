@@ -60,6 +60,8 @@ class NzDemoBankingSeedTests(unittest.TestCase):
         self.assertIn("Ridgeway University", payees)
         self.assertIn("ABC Furniture", payees)
         self.assertIn("PowerDirect", payees)
+        self.assertTrue(any(txn.reconciled for txn in transactions))
+        self.assertTrue(any(not txn.reconciled for txn in transactions))
 
         seeded_total = sum(Decimal(str(txn.amount)) for txn in transactions)
         self.assertEqual(Decimal(str(bank_account.balance)), seeded_total)

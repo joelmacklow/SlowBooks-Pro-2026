@@ -98,11 +98,11 @@ ESTIMATES = [
 ]
 
 PAYMENTS = [
-    {"customer": "Basket Case", "invoice_number": "2001", "day_offset": 10, "amount": 1200.00, "method": "EFT", "reference": "RCPT-4501"},
-    {"customer": "Bayside Club", "invoice_number": "2002", "day_offset": 15, "amount": 845.25, "method": "EFT", "reference": "RCPT-4502"},
-    {"customer": "Ridgeway University", "invoice_number": "2008", "day_offset": 21, "amount": 2185.00, "method": "EFT", "reference": "RCPT-4503"},
-    {"customer": "City Limousines", "invoice_number": "2005", "day_offset": 20, "amount": 1380.00, "method": "Credit", "reference": "RCPT-4504"},
-    {"customer": "Boom FM", "invoice_number": "2003", "day_offset": 22, "amount": 900.00, "method": "Cash", "reference": "RCPT-4505"},
+    {"customer": "Basket Case", "invoice_number": "2001", "day_offset": 10, "amount": 1200.00, "method": "EFT", "reference": "RCPT-4501", "statement_reconciled": True},
+    {"customer": "Bayside Club", "invoice_number": "2002", "day_offset": 15, "amount": 845.25, "method": "EFT", "reference": "RCPT-4502", "statement_reconciled": False},
+    {"customer": "Ridgeway University", "invoice_number": "2008", "day_offset": 21, "amount": 2185.00, "method": "EFT", "reference": "RCPT-4503", "statement_reconciled": True},
+    {"customer": "City Limousines", "invoice_number": "2005", "day_offset": 20, "amount": 1380.00, "method": "Credit", "reference": "RCPT-4504", "statement_reconciled": False},
+    {"customer": "Boom FM", "invoice_number": "2003", "day_offset": 22, "amount": 900.00, "method": "Cash", "reference": "RCPT-4505", "statement_reconciled": False},
 ]
 
 BILLS = [
@@ -112,9 +112,9 @@ BILLS = [
 ]
 
 BILL_PAYMENTS = [
-    {"vendor": "ABC Furniture", "bill_number": "3001", "day_offset": 11, "amount": 419.75, "method": "EFT", "check_number": "BP-7001"},
-    {"vendor": "PowerDirect", "bill_number": "3002", "day_offset": 13, "amount": 186.30, "method": "EFT", "check_number": "BP-7002"},
-    {"vendor": "Net Connect", "bill_number": "3003", "day_offset": 23, "amount": 129.95, "method": "EFT", "check_number": "BP-7003"},
+    {"vendor": "ABC Furniture", "bill_number": "3001", "day_offset": 11, "amount": 419.75, "method": "EFT", "check_number": "BP-7001", "statement_reconciled": True},
+    {"vendor": "PowerDirect", "bill_number": "3002", "day_offset": 13, "amount": 186.30, "method": "EFT", "check_number": "BP-7002", "statement_reconciled": False},
+    {"vendor": "Net Connect", "bill_number": "3003", "day_offset": 23, "amount": 129.95, "method": "EFT", "check_number": "BP-7003", "statement_reconciled": False},
 ]
 
 BANK_ACCOUNT = {"name": "ANZ Business Account", "bank_name": "ANZ", "last_four": "1208"}
@@ -550,6 +550,8 @@ def seed():
                 BankTransaction.description == description,
             ).first()
             if existing:
+                existing.reconciled = bool(spec["statement_reconciled"])
+                existing.category_account_id = ar_id
                 continue
             db.add(BankTransaction(
                 bank_account_id=bank_account.id,
@@ -558,6 +560,7 @@ def seed():
                 payee=spec["customer"],
                 description=description,
                 category_account_id=ar_id,
+                reconciled=bool(spec["statement_reconciled"]),
             ))
             created_bank_transactions += 1
 
@@ -573,6 +576,8 @@ def seed():
                 BankTransaction.description == description,
             ).first()
             if existing:
+                existing.reconciled = bool(spec["statement_reconciled"])
+                existing.category_account_id = ap_id
                 continue
             db.add(BankTransaction(
                 bank_account_id=bank_account.id,
@@ -581,6 +586,7 @@ def seed():
                 payee=spec["vendor"],
                 description=description,
                 category_account_id=ap_id,
+                reconciled=bool(spec["statement_reconciled"]),
             ))
             created_bank_transactions += 1
 
