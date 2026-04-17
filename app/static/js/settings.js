@@ -205,7 +205,7 @@ const SettingsPage = {
                 <div class="settings-section">
                     <h3>Demo Data</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
-                        Load the built-in NZ demo business for evaluation or training. Safe to rerun; the seed script skips when the demo business already exists.
+                        Load the built-in NZ demo business for evaluation or training, including the seeded ANZ bank account and sample customer/vendor banking transactions. Safe to rerun; the seed script skips when the demo business already exists.
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         <button type="button" class="btn btn-secondary" onclick="SettingsPage.loadDemoData()">Load NZ Demo Data</button>
@@ -263,7 +263,7 @@ const SettingsPage = {
     async loadDemoData() {
         try {
             await API.post('/settings/load-demo-data');
-            toast('NZ demo data loaded');
+            toast('NZ demo data loaded, including the ANZ bank account');
         } catch (err) { toast(err.message, 'error'); }
     },
 
