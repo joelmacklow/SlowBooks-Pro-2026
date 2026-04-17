@@ -32,8 +32,8 @@ const BatchPaymentsPage = {
                         <select name="deposit_to_account_id"><option value="">Undeposited Funds</option>${acctOpts}</select></div>
                     <div class="form-group"><label>Method</label>
                         <select name="method">
-                            <option value="check">Check</option><option value="cash">Cash</option>
-                            <option value="ach">ACH</option><option value="credit_card">Credit Card</option>
+                            <option value="EFT">EFT</option><option value="Cash">Cash</option>
+                            <option value="Credit">Credit</option>
                         </select></div>
                     <div class="form-group"><label>Reference</label>
                         <input name="reference"></div>

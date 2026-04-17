@@ -42,6 +42,13 @@ vm.runInContext(code, context);
     assert.ok(modalHtml.includes('Business Bank Account'));
     assert.ok(modalHtml.includes('Receipt Clearing'));
     assert.ok(!modalHtml.includes('Trade Creditors'));
+    assert.ok(modalHtml.includes('<option>EFT</option>'));
+    assert.ok(modalHtml.includes('<option>Cash</option>'));
+    assert.ok(modalHtml.includes('<option>Credit</option>'));
+    assert.ok(!modalHtml.includes('ACH/EFT'));
+    assert.ok(!modalHtml.includes('<option>Check</option>'));
+    assert.ok(!modalHtml.includes('Check #'));
+    assert.ok(modalHtml.includes('<label>Reference</label>'));
 })().catch(err => {
     console.error(err);
     process.exit(1);

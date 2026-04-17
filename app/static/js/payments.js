@@ -110,11 +110,8 @@ const PaymentsPage = {
                     <div class="form-group"><label>Method</label>
                         <select name="method">
                             <option value="">--</option>
-                            <option>Check</option><option>Cash</option>
-                            <option>Credit Card</option><option>ACH/EFT</option><option>Other</option>
+                            <option>EFT</option><option>Cash</option><option>Credit</option>
                         </select></div>
-                    <div class="form-group"><label>Check #</label>
-                        <input name="check_number"></div>
                     <div class="form-group"><label>Reference</label>
                         <input name="reference"></div>
                     <div class="form-group"><label>Deposit To</label>
@@ -176,7 +173,7 @@ const PaymentsPage = {
             date: form.date.value,
             amount: parseFloat(form.amount.value),
             method: form.method.value || null,
-            check_number: form.check_number.value || null,
+            check_number: null,
             reference: form.reference.value || null,
             deposit_to_account_id: form.deposit_to_account_id.value ? parseInt(form.deposit_to_account_id.value) : null,
             notes: form.notes.value || null,

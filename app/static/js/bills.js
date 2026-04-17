@@ -245,10 +245,10 @@ const BillsPage = {
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Method</label>
                         <select name="method">
-                            <option value="check">Check</option><option value="ach">ACH</option>
-                            <option value="cash">Cash</option><option value="credit_card">Credit Card</option>
+                            <option value="EFT">EFT</option><option value="Cash">Cash</option>
+                            <option value="Credit">Credit</option>
                         </select></div>
-                    <div class="form-group"><label>Check #</label>
+                    <div class="form-group"><label>Reference</label>
                         <input name="check_number"></div>
                 </div>
                 <div class="table-container" style="margin-top:12px;"><table>

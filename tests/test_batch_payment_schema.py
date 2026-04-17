@@ -25,7 +25,7 @@ class BatchPaymentSchemaTests(unittest.TestCase):
         payload = BatchPaymentCreate.model_validate(
             {
                 "date": "2026-04-15",
-                "method": "check",
+                "method": "EFT",
                 "reference": "DEP-100",
                 "deposit_to_account_id": 7,
                 "allocations": [
