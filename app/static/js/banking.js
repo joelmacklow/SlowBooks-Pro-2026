@@ -258,7 +258,7 @@ const BankingPage = {
                 </div>
             </div>
             <div class="card-grid" style="margin-bottom:16px;">
-                <div class="card"><div class="card-header">Statement Balance</div>
+                <div class="card"><div class="card-header">${escapeHtml(data.statement_label || 'Statement Balance')}</div>
                     <div class="card-value">${formatCurrency(data.statement_balance)}</div></div>
                 <div class="card"><div class="card-header">Cleared Balance</div>
                     <div class="card-value" id="recon-cleared">${formatCurrency(data.cleared_total)}</div></div>
@@ -448,11 +448,12 @@ const BankingPage = {
             formData.append('file', $('#statement-file').files[0]);
             const data = await API.postForm(`/bank-import/import/${bankAccountId}`, formData);
             toast(`Imported ${data.imported} transactions (${data.skipped_duplicates} duplicates skipped)`);
-            if (data.statement_date && data.statement_balance !== undefined && data.statement_balance !== null) {
+            if (data.statement_date && data.statement_total !== undefined && data.statement_total !== null) {
                 const recon = await API.post('/banking/reconciliations', {
                     bank_account_id: bankAccountId,
                     statement_date: data.statement_date,
-                    statement_balance: data.statement_balance,
+                    statement_balance: data.statement_total,
+                    import_batch_id: data.import_batch_id || null,
                 });
                 closeModal();
                 await BankingPage.showReconcileView(recon.id);

@@ -60,7 +60,8 @@ class BankTransaction(Base):
 
     # OFX/QFX import fields (Feature 18)
     import_id = Column(String(100), nullable=True)      # OFX FITID for dedup
-    import_source = Column(String(50), nullable=True)    # e.g. "ofx", "qfx"
+    import_source = Column(String(50), nullable=True)    # e.g. "ofx", "qfx", "csv"
+    import_batch_id = Column(String(64), nullable=True)
     match_status = Column(String(20), nullable=True)     # "auto", "manual", "unmatched"
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -77,6 +78,7 @@ class Reconciliation(Base):
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False)
     statement_date = Column(Date, nullable=False)
     statement_balance = Column(Numeric(12, 2), nullable=False)
+    import_batch_id = Column(String(64), nullable=True)
     status = Column(Enum(ReconciliationStatus), default=ReconciliationStatus.IN_PROGRESS)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

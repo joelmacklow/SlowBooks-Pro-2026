@@ -41,6 +41,8 @@ const context = {
             if (path === '/banking/reconciliations/5/transactions' || path === '/banking/reconciliations/6/transactions') return {
                 reconciliation_id: 5,
                 statement_balance: 53.91,
+                statement_label: 'Transactions to clear',
+                import_batch_id: 'batch-1',
                 cleared_total: reconcileTransactions.filter(t => t.reconciled).reduce((sum, t) => sum + t.amount, 0),
                 difference: 53.91 - reconcileTransactions.filter(t => t.reconciled).reduce((sum, t) => sum + t.amount, 0),
                 transactions: reconcileTransactions,
@@ -89,10 +91,10 @@ const context = {
                 return { status: 'coded' };
             }
             if (path === '/banking/reconciliations/5/toggle/10') return { id: 10, reconciled: true };
-            if (path === '/banking/reconciliations') return { id: 6 };
+            if (path === '/banking/reconciliations') return { id: 6, import_batch_id: data ? data.import_batch_id : null };
             return { id: 1 };
         },
-        postForm: async () => ({ imported: 1, skipped_duplicates: 0, total: 1, format: 'csv', statement_date: '2026-04-16', statement_balance: 53.91 }),
+        postForm: async () => ({ imported: 1, skipped_duplicates: 0, total: 1, format: 'csv', statement_date: '2026-04-16', statement_total: 53.91, statement_balance: 1000.00, import_batch_id: 'batch-1' }),
     },
     App: { hasPermission: () => true, navigate() {} },
     openModal: (_title, html) => { modalHtml = html; },
@@ -144,6 +146,7 @@ vm.runInContext(code, context);
 
     await context.BankingPage.showReconcileView(5);
     assert.ok(elements['#page-content'].innerHTML.includes('Find & Match'));
+    assert.ok(elements['#page-content'].innerHTML.includes('Transactions to clear'));
     assert.ok(elements['#page-content'].innerHTML.includes('INV-8746'));
     assert.ok(!elements['#page-content'].innerHTML.includes('Check #'));
     assert.ok(elements['#page-content'].innerHTML.includes('flex-wrap:wrap'));
@@ -175,6 +178,7 @@ vm.runInContext(code, context);
     const reconCreateCall = posts.find(call => call.path === '/banking/reconciliations');
     assert.strictEqual(reconCreateCall.data.statement_date, '2026-04-16');
     assert.strictEqual(reconCreateCall.data.statement_balance, 53.91);
+    assert.strictEqual(reconCreateCall.data.import_batch_id, 'batch-1');
     assert.ok(posts.some(call => call.path === '/banking/reconciliations'));
 })().catch((err) => {
     console.error(err);

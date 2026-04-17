@@ -118,7 +118,9 @@ class BankImportCsvTests(unittest.TestCase):
         self.assertEqual(txns[0].code, "Wheel Align")
         self.assertEqual(txns[0].import_source, "csv")
         self.assertEqual(summary["statement_date"], "2026-04-10")
+        self.assertEqual(summary["statement_total"], 3173.86)
         self.assertEqual(summary["statement_balance"], 3173.86)
+        self.assertTrue(first["import_batch_id"])
         self.assertEqual(Decimal(str(bank_account.balance)), Decimal("3173.86"))
 
 

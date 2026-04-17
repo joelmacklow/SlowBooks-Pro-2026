@@ -63,6 +63,7 @@ class BankTransactionResponse(BaseModel):
     reconciled: bool
     transaction_id: Optional[int]
     match_status: Optional[str]
+    import_batch_id: Optional[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -82,6 +83,7 @@ class ReconciliationCreate(BaseModel):
     bank_account_id: int
     statement_date: date
     statement_balance: Decimal
+    import_batch_id: Optional[str] = None
 
 
 class ReconciliationResponse(BaseModel):
@@ -89,6 +91,7 @@ class ReconciliationResponse(BaseModel):
     bank_account_id: int
     statement_date: date
     statement_balance: Decimal
+    import_batch_id: Optional[str]
     status: ReconciliationStatus
     created_at: datetime
     completed_at: Optional[datetime]

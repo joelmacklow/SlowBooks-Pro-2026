@@ -6,6 +6,7 @@
 import csv
 import hashlib
 import io
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
@@ -161,14 +162,18 @@ def _extract_tag(block: str, tag: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def statement_summary(transactions: list[dict], ending_balance: Decimal | None = None) -> dict:
+def statement_summary(transactions: list[dict], ending_balance: Decimal | None = None, import_batch_id: str | None = None) -> dict:
     statement_date = max((txn.get("date") for txn in transactions), default=None)
+    total = sum((Decimal(str(txn.get("amount") or 0)) for txn in transactions), Decimal("0"))
     summary = {
         "statement_date": statement_date.isoformat() if statement_date else None,
-        "statement_delta": float(sum((Decimal(str(txn.get("amount") or 0)) for txn in transactions), Decimal("0"))),
+        "statement_delta": float(total),
+        "statement_total": float(total),
     }
     if ending_balance is not None:
         summary["statement_balance"] = float(ending_balance)
+    if import_batch_id is not None:
+        summary["import_batch_id"] = import_batch_id
     return summary
 
 
@@ -176,6 +181,7 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
     imported = 0
     skipped = 0
     total_amount = Decimal("0")
+    import_batch_id = uuid.uuid4().hex
     bank_account = db.query(BankAccount).filter(BankAccount.id == bank_account_id).first()
     if not bank_account:
         raise ValueError("Bank account not found")
@@ -211,6 +217,7 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
             code=txn.get("code"),
             import_id=import_id,
             import_source=import_source or txn.get("source") or "ofx",
+            import_batch_id=import_batch_id,
             match_status="unmatched",
         )
         db.add(bt)
@@ -220,4 +227,4 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
     bank_account.balance = Decimal(str(bank_account.balance or 0)) + total_amount
     ending_balance = Decimal(str(bank_account.balance or 0))
     db.commit()
-    return {"imported": imported, "skipped": skipped, "total": len(transactions), "ending_balance": ending_balance}
+    return {"imported": imported, "skipped": skipped, "total": len(transactions), "ending_balance": ending_balance, "import_batch_id": import_batch_id}

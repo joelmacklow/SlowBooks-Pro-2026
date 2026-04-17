@@ -365,13 +365,12 @@ def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db)
     if not recon:
         raise HTTPException(status_code=404, detail="Reconciliation not found")
 
-    txns = (
-        db.query(BankTransaction)
-        .filter(BankTransaction.bank_account_id == recon.bank_account_id)
-        .filter(BankTransaction.date <= recon.statement_date)
-        .order_by(BankTransaction.date, BankTransaction.id)
-        .all()
-    )
+    q = db.query(BankTransaction).filter(BankTransaction.bank_account_id == recon.bank_account_id)
+    if recon.import_batch_id:
+        q = q.filter(BankTransaction.import_batch_id == recon.import_batch_id)
+    else:
+        q = q.filter(BankTransaction.date <= recon.statement_date)
+    txns = q.order_by(BankTransaction.date, BankTransaction.id).all()
 
     cleared_total = sum(float(t.amount) for t in txns if t.reconciled)
     uncleared_total = sum(float(t.amount) for t in txns if not t.reconciled)
@@ -381,9 +380,11 @@ def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db)
     return {
         "reconciliation_id": recon.id,
         "statement_balance": statement_bal,
+        "statement_label": "Transactions to clear" if recon.import_batch_id else "Statement Balance",
         "cleared_total": cleared_total,
         "uncleared_total": uncleared_total,
         "difference": difference,
+        "import_batch_id": recon.import_batch_id,
         "transactions": [_bank_transaction_payload(db, txn) for txn in txns],
     }
 
@@ -458,13 +459,12 @@ def complete_reconciliation(recon_id: int, db: Session = Depends(get_db), auth=D
     if recon.status == ReconciliationStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Already completed")
 
-    txns = (
-        db.query(BankTransaction)
-        .filter(BankTransaction.bank_account_id == recon.bank_account_id)
-        .filter(BankTransaction.date <= recon.statement_date)
-        .filter(BankTransaction.reconciled == True)
-        .all()
-    )
+    q = db.query(BankTransaction).filter(BankTransaction.bank_account_id == recon.bank_account_id)
+    if recon.import_batch_id:
+        q = q.filter(BankTransaction.import_batch_id == recon.import_batch_id)
+    else:
+        q = q.filter(BankTransaction.date <= recon.statement_date)
+    txns = q.filter(BankTransaction.reconciled == True).all()
     cleared_total = sum(t.amount for t in txns)
 
     if abs(cleared_total - recon.statement_balance) > Decimal("0.01"):
