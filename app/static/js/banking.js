@@ -448,6 +448,16 @@ const BankingPage = {
             formData.append('file', $('#statement-file').files[0]);
             const data = await API.postForm(`/bank-import/import/${bankAccountId}`, formData);
             toast(`Imported ${data.imported} transactions (${data.skipped_duplicates} duplicates skipped)`);
+            if (data.statement_date && data.statement_balance !== undefined && data.statement_balance !== null) {
+                const recon = await API.post('/banking/reconciliations', {
+                    bank_account_id: bankAccountId,
+                    statement_date: data.statement_date,
+                    statement_balance: data.statement_balance,
+                });
+                closeModal();
+                await BankingPage.showReconcileView(recon.id);
+                return;
+            }
             closeModal();
             BankingPage.viewRegister(bankAccountId);
         } catch (err) { toast(err.message, 'error'); }

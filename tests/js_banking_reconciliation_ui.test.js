@@ -20,11 +20,16 @@ const reconcileTransactions = [{
 }];
 const elements = {
     '#page-content': { innerHTML: '' },
+    '#statement-file': { files: [{}] },
 };
 
 const context = {
     console,
     Promise,
+    FormData: class {
+        constructor() { this.data = []; }
+        append(key, value) { this.data.push([key, value]); }
+    },
     API: {
         get: async (path) => {
             if (path === '/banking/accounts/1') return { id: 1, name: 'ANZ Business Account', balance: 5774.25, bank_name: 'ANZ', last_four: '1208' };
@@ -33,7 +38,7 @@ const context = {
                 { id: 21, account_number: '090', name: 'Business Bank Account', account_type: 'asset' },
                 { id: 477, account_number: '477', name: 'Wages Expense', account_type: 'expense' },
             ];
-            if (path === '/banking/reconciliations/5/transactions') return {
+            if (path === '/banking/reconciliations/5/transactions' || path === '/banking/reconciliations/6/transactions') return {
                 reconciliation_id: 5,
                 statement_balance: 53.91,
                 cleared_total: reconcileTransactions.filter(t => t.reconciled).reduce((sum, t) => sum + t.amount, 0),
@@ -84,9 +89,10 @@ const context = {
                 return { status: 'coded' };
             }
             if (path === '/banking/reconciliations/5/toggle/10') return { id: 10, reconciled: true };
+            if (path === '/banking/reconciliations') return { id: 6 };
             return { id: 1 };
         },
-        postForm: async () => ({ imported: 1, skipped_duplicates: 0, total: 1, format: 'csv' }),
+        postForm: async () => ({ imported: 1, skipped_duplicates: 0, total: 1, format: 'csv', statement_date: '2026-04-16', statement_balance: 53.91 }),
     },
     App: { hasPermission: () => true, navigate() {} },
     openModal: (_title, html) => { modalHtml = html; },
@@ -164,6 +170,12 @@ vm.runInContext(code, context);
     await context.BankingPage.approveMatch(10, 'invoice', 7, 5);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/approve-match'));
     assert.ok(elements['#page-content'].innerHTML.includes('checked'));
+
+    await context.BankingPage.confirmStatementImport(1);
+    const reconCreateCall = posts.find(call => call.path === '/banking/reconciliations');
+    assert.strictEqual(reconCreateCall.data.statement_date, '2026-04-16');
+    assert.strictEqual(reconCreateCall.data.statement_balance, 53.91);
+    assert.ok(posts.some(call => call.path === '/banking/reconciliations'));
 })().catch((err) => {
     console.error(err);
     process.exit(1);

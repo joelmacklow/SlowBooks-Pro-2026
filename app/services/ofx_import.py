@@ -161,6 +161,17 @@ def _extract_tag(block: str, tag: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def statement_summary(transactions: list[dict], ending_balance: Decimal | None = None) -> dict:
+    statement_date = max((txn.get("date") for txn in transactions), default=None)
+    summary = {
+        "statement_date": statement_date.isoformat() if statement_date else None,
+        "statement_delta": float(sum((Decimal(str(txn.get("amount") or 0)) for txn in transactions), Decimal("0"))),
+    }
+    if ending_balance is not None:
+        summary["statement_balance"] = float(ending_balance)
+    return summary
+
+
 def import_transactions(db: Session, bank_account_id: int, transactions: list[dict], import_source: str | None = None) -> dict:
     imported = 0
     skipped = 0
@@ -207,5 +218,6 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
         total_amount += amount
 
     bank_account.balance = Decimal(str(bank_account.balance or 0)) + total_amount
+    ending_balance = Decimal(str(bank_account.balance or 0))
     db.commit()
-    return {"imported": imported, "skipped": skipped, "total": len(transactions)}
+    return {"imported": imported, "skipped": skipped, "total": len(transactions), "ending_balance": ending_balance}

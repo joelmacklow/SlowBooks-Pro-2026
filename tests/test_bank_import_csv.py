@@ -92,7 +92,7 @@ class BankImportCsvTests(unittest.TestCase):
     def test_import_transactions_stores_reference_and_code_and_skips_duplicates(self):
         from app.models.accounts import Account, AccountType
         from app.models.banking import BankAccount, BankTransaction
-        from app.services.ofx_import import import_transactions, parse_statement_file
+        from app.services.ofx_import import import_transactions, parse_statement_file, statement_summary
 
         content = b"Type,Details,Particulars,Code,Reference,Amount,Date,ForeignCurrencyAmount,ConversionCharge\nDirect Credit,John Bates Wheel Ali,John Bates,Wheel Align,8757+8749,3173.86,10/04/2026,,\n"
         parsed = parse_statement_file(content, filename="statement.csv")
@@ -106,6 +106,7 @@ class BankImportCsvTests(unittest.TestCase):
             db.commit()
 
             first = import_transactions(db, bank_account.id, parsed["transactions"], import_source=parsed["format"])
+            summary = statement_summary(parsed["transactions"], ending_balance=first["ending_balance"])
             second = import_transactions(db, bank_account.id, parsed["transactions"], import_source=parsed["format"])
             txns = db.query(BankTransaction).filter(BankTransaction.bank_account_id == bank_account.id).all()
             db.refresh(bank_account)
@@ -116,6 +117,8 @@ class BankImportCsvTests(unittest.TestCase):
         self.assertEqual(txns[0].reference, "8757+8749")
         self.assertEqual(txns[0].code, "Wheel Align")
         self.assertEqual(txns[0].import_source, "csv")
+        self.assertEqual(summary["statement_date"], "2026-04-10")
+        self.assertEqual(summary["statement_balance"], 3173.86)
         self.assertEqual(Decimal(str(bank_account.balance)), Decimal("3173.86"))
 
 
