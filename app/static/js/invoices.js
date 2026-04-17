@@ -12,6 +12,8 @@ const InvoicesPage = {
     _settings: {},
     _detailState: null,
     _availableCredits: [],
+    _pendingCreditApplications: null,
+    _creditPromptedCustomerId: null,
 
     async render() {
         const invoices = await API.get('/invoices');
@@ -122,6 +124,8 @@ const InvoicesPage = {
         InvoicesPage._availableCredits = inv.customer_id
             ? (await API.get(`/credit-memos?customer_id=${inv.customer_id}&status=issued`)).filter(cm => Number(cm.balance_remaining || 0) > 0)
             : [];
+        InvoicesPage._pendingCreditApplications = null;
+        InvoicesPage._creditPromptedCustomerId = inv.customer_id || null;
     },
 
     _totals(lines) {
@@ -245,12 +249,93 @@ const InvoicesPage = {
         return (InvoicesPage._customers || []).map(c => `<option value="${c.id}" ${selectedId == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
     },
 
-    customerSelected(customerId) {
+    async customerSelected(customerId) {
         const customer = InvoicesPage._customers.find(c => c.id == customerId);
         const termsField = $('#invoice-terms');
         if (customer && termsField && customer.terms) {
             termsField.value = customer.terms;
         }
+        if (!InvoicesPage._detailState?.id) {
+            await InvoicesPage.checkAvailableCredits(customerId);
+        }
+    },
+
+    async checkAvailableCredits(customerId) {
+        const numericCustomerId = customerId ? parseInt(customerId) : null;
+        if (!numericCustomerId) {
+            InvoicesPage._availableCredits = [];
+            InvoicesPage._pendingCreditApplications = null;
+            InvoicesPage._creditPromptedCustomerId = null;
+            return;
+        }
+        InvoicesPage._availableCredits = (await API.get(`/credit-memos?customer_id=${numericCustomerId}&status=issued`))
+            .filter(cm => Number(cm.balance_remaining || 0) > 0);
+        if (!InvoicesPage._availableCredits.length) {
+            InvoicesPage._pendingCreditApplications = null;
+            InvoicesPage._creditPromptedCustomerId = numericCustomerId;
+            return;
+        }
+        if (InvoicesPage._creditPromptedCustomerId === numericCustomerId) return;
+        InvoicesPage._creditPromptedCustomerId = numericCustomerId;
+        InvoicesPage.promptAvailableCredits();
+    },
+
+    promptAvailableCredits() {
+        const credits = InvoicesPage._availableCredits || [];
+        if (!credits.length) return;
+        openModal('Available Credit Notes', `
+            <div style="font-size:11px; margin-bottom:12px;">
+                This customer has available credit notes. Would you like the available credit notes to be applied after saving the invoice?
+            </div>
+            <div class="table-container"><table>
+                <thead><tr><th>Credit Note</th><th class="amount">Remaining</th></tr></thead>
+                <tbody>
+                    ${credits.map(cm => `<tr><td><strong>${escapeHtml(cm.memo_number)}</strong></td><td class="amount">${formatCurrency(cm.balance_remaining)}</td></tr>`).join('')}
+                </tbody>
+            </table></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Skip for Now</button>
+                <button type="button" class="btn btn-secondary" onclick="InvoicesPage.showPartialCreditPrompt()">Set Partial Credit Amounts</button>
+                <button type="button" class="btn btn-primary" onclick="InvoicesPage.prepareFullCreditApplication()">Apply Full Credit on Save</button>
+            </div>`);
+    },
+
+    prepareFullCreditApplication() {
+        InvoicesPage._pendingCreditApplications = { mode: 'full' };
+        closeModal();
+    },
+
+    showPartialCreditPrompt() {
+        const credits = InvoicesPage._availableCredits || [];
+        openModal('Partial Credit Application', `
+            <div style="font-size:11px; margin-bottom:12px;">Enter the amount to apply from each available credit note after saving the invoice.</div>
+            <div class="table-container"><table>
+                <thead><tr><th>Credit Note</th><th class="amount">Remaining</th><th class="amount">Apply</th></tr></thead>
+                <tbody>
+                    ${credits.map(cm => `<tr>
+                        <td><strong>${escapeHtml(cm.memo_number)}</strong></td>
+                        <td class="amount">${formatCurrency(cm.balance_remaining)}</td>
+                        <td><input type="number" step="0.01" class="credit-apply-amount" data-credit-memo-id="${cm.id}" data-max="${Number(cm.balance_remaining || 0)}" value="0" style="width:90px;"></td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="InvoicesPage.preparePartialCreditApplication()">Save Credit Choice</button>
+            </div>`);
+    },
+
+    preparePartialCreditApplication() {
+        const applications = $$('.credit-apply-amount').map(input => {
+            const amount = parseFloat(input.value) || 0;
+            const max = parseFloat(input.dataset.max) || 0;
+            return {
+                credit_memo_id: parseInt(input.dataset.creditMemoId),
+                amount: Math.min(amount, max),
+            };
+        }).filter(item => item.amount > 0);
+        InvoicesPage._pendingCreditApplications = applications.length ? { mode: 'partial', applications } : null;
+        closeModal();
     },
 
     toggleInlineCustomer() {
@@ -393,6 +478,35 @@ const InvoicesPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
+    async _applyPendingCredits(invoice) {
+        if (!invoice?.id || !InvoicesPage._pendingCreditApplications) return invoice;
+        let remainingBalance = Number(invoice.balance_due || invoice.total || 0);
+        let applied = false;
+        if (InvoicesPage._pendingCreditApplications.mode === 'full') {
+            for (const credit of InvoicesPage._availableCredits || []) {
+                if (remainingBalance <= 0) break;
+                const amount = Math.min(Number(credit.balance_remaining || 0), remainingBalance);
+                if (amount <= 0) continue;
+                await API.post(`/credit-memos/${credit.id}/apply`, { invoice_id: invoice.id, amount });
+                remainingBalance -= amount;
+                applied = true;
+            }
+        } else if (InvoicesPage._pendingCreditApplications.mode === 'partial') {
+            for (const credit of InvoicesPage._pendingCreditApplications.applications || []) {
+                if (remainingBalance <= 0) break;
+                const amount = Math.min(Number(credit.amount || 0), remainingBalance);
+                if (amount <= 0) continue;
+                await API.post(`/credit-memos/${credit.credit_memo_id}/apply`, { invoice_id: invoice.id, amount });
+                remainingBalance -= amount;
+                applied = true;
+            }
+        }
+        InvoicesPage._pendingCreditApplications = null;
+        if (!applied) return invoice;
+        toast('Credit applied');
+        return API.get(`/invoices/${invoice.id}`);
+    },
+
     async save(e, id, afterAction = null) {
         e.preventDefault();
         const form = e.target;
@@ -426,6 +540,9 @@ const InvoicesPage = {
             let savedInv;
             if (id) { savedInv = await API.put(`/invoices/${id}`, data); toast('Invoice updated'); }
             else { savedInv = await API.post('/invoices', data); toast('Invoice created'); }
+            if (!id) {
+                savedInv = await InvoicesPage._applyPendingCredits(savedInv);
+            }
 
             if (afterAction === 'pdf' && savedInv?.id) {
                 InvoicesPage._detailState = savedInv;
