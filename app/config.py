@@ -20,9 +20,9 @@ def build_database_url(env: dict | None = None) -> str:
     env = env or os.environ
     host = env.get("POSTGRES_HOST", "localhost")
     port = env.get("POSTGRES_PORT", "5432")
-    dbname = env.get("POSTGRES_DB", "bookkeeper")
-    user = quote_plus(env.get("POSTGRES_USER", "bookkeeper"))
-    password = quote_plus(env.get("POSTGRES_PASSWORD", "bookkeeper"))
+    dbname = env.get("POSTGRES_DB", "slowbooks")
+    user = quote_plus(env.get("POSTGRES_USER", "slowbooks"))
+    password = quote_plus(env.get("POSTGRES_PASSWORD", "replace-with-a-long-random-password"))
     sslmode = env.get("POSTGRES_SSLMODE", "disable")
 
     url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"

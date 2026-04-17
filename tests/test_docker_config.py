@@ -36,21 +36,29 @@ class DockerConfigTests(unittest.TestCase):
             os.environ["DATABASE_URL"] = ""
             os.environ["POSTGRES_HOST"] = "postgres"
             os.environ["POSTGRES_PORT"] = "5432"
-            os.environ["POSTGRES_DB"] = "bookkeeper"
-            os.environ["POSTGRES_USER"] = "bookkeeper"
-            os.environ["POSTGRES_PASSWORD"] = "bookkeeper"
+            os.environ["POSTGRES_DB"] = "slowbooks"
+            os.environ["POSTGRES_USER"] = "slowbooks"
+            os.environ["POSTGRES_PASSWORD"] = "replace-with-a-long-random-password"
             os.environ["POSTGRES_SSLMODE"] = "disable"
 
             config = importlib.reload(config)
 
             self.assertEqual(
                 config.DATABASE_URL,
-                "postgresql://bookkeeper:bookkeeper@postgres:5432/bookkeeper?sslmode=disable",
+                "postgresql://slowbooks:replace-with-a-long-random-password@postgres:5432/slowbooks?sslmode=disable",
             )
         finally:
             os.environ.clear()
             os.environ.update(original)
             importlib.reload(config)
+
+    def test_build_database_url_uses_safer_non_legacy_fallback_defaults(self):
+        import app.config as config
+
+        self.assertEqual(
+            config.build_database_url(env={}),
+            "postgresql://slowbooks:replace-with-a-long-random-password@localhost:5432/slowbooks?sslmode=disable",
+        )
 
     def test_docker_assets_and_env_keys_exist(self):
         root = Path(__file__).resolve().parent.parent
