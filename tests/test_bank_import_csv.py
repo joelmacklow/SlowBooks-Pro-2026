@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+from pathlib import Path
 from decimal import Decimal
 
 from sqlalchemy import create_engine
@@ -14,6 +15,10 @@ weasyprint_stub.HTML = object
 sys.modules.setdefault("weasyprint", weasyprint_stub)
 
 from app.database import Base
+
+
+FIXTURE_DIR = Path(__file__).with_name('fixtures')
+SAMPLE_STATEMENT = FIXTURE_DIR / 'anz_unreconciled_reconciliation_sample.csv'
 
 
 class BankImportCsvTests(unittest.TestCase):
@@ -36,6 +41,19 @@ class BankImportCsvTests(unittest.TestCase):
         self.assertIsNone(parsed["transactions"][0]["code"])
         self.assertEqual(parsed["transactions"][1]["code"], "Wages")
         self.assertEqual(parsed["transactions"][1]["amount"], Decimal("-461.25"))
+
+    def test_fixture_statement_file_covers_seeded_unreconciled_invoice_and_bill_matches(self):
+        from app.services.ofx_import import parse_statement_file
+
+        parsed = parse_statement_file(SAMPLE_STATEMENT.read_bytes(), filename=SAMPLE_STATEMENT.name)
+
+        self.assertEqual(parsed["format"], "csv")
+        self.assertEqual(len(parsed["transactions"]), 5)
+        self.assertEqual(parsed["transactions"][0]["reference"], "INV-2002")
+        self.assertEqual(parsed["transactions"][0]["amount"], Decimal("845.25"))
+        self.assertEqual(parsed["transactions"][3]["reference"], "B-3002")
+        self.assertEqual(parsed["transactions"][3]["code"], "Utilities")
+        self.assertEqual(parsed["transactions"][4]["amount"], Decimal("-129.95"))
 
     def test_import_transactions_stores_reference_and_code_and_skips_duplicates(self):
         from app.models.accounts import Account, AccountType
