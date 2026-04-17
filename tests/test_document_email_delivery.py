@@ -263,6 +263,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
                     customer.id,
                     StatementEmailRequest(recipient="customer@example.com", as_of_date=date(2026, 4, 30)),
                     db=db,
+                    auth={"user_id": 1},
                 )
                 credit_memos_route.email_credit_memo(
                     credit_memo.id,

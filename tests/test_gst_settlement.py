@@ -94,12 +94,12 @@ class GstSettlementTests(unittest.TestCase):
             db.add(bank_txn)
             db.commit()
 
-            report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
+            report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db, auth={'user_id': 1})
             self.assertEqual(report['settlement']['status'], 'awaiting_return_confirmation')
             self.assertEqual(len(report['settlement']['candidates']), 0)
 
             self._confirm_return(db, date(2026, 4, 1), date(2026, 4, 30))
-            report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
+            report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db, auth={'user_id': 1})
             self.assertEqual(report['settlement']['status'], 'unsettled')
             self.assertEqual(len(report['settlement']['candidates']), 1)
 
@@ -108,7 +108,7 @@ class GstSettlementTests(unittest.TestCase):
                 end_date=date(2026, 4, 30),
                 bank_transaction_id=bank_txn.id,
             ), db=db)
-            refreshed_report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
+            refreshed_report = gst_return_report(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db, auth={'user_id': 1})
             gst_account = db.query(Account).filter(Account.account_number == '2200').one()
 
         self.assertEqual(result['status'], 'confirmed')

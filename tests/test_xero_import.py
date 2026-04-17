@@ -61,8 +61,8 @@ class XeroImportTests(unittest.TestCase):
             db.commit()
             accounts = db.query(Account).filter(Account.account_number.in_(['200', '610', '820'])).all()
             transactions = db.query(Transaction).filter(Transaction.source_type == 'xero_import').all()
-            pnl = profit_loss(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
-            bs = balance_sheet(as_of_date=date(2026, 4, 30), db=db)
+            pnl = profit_loss(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db, auth={"user_id": 1})
+            bs = balance_sheet(as_of_date=date(2026, 4, 30), db=db, auth={"user_id": 1})
             readiness = chart_setup_status(db)
 
         self.assertEqual(result['imported_accounts'], 6)

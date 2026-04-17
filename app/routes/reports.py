@@ -164,6 +164,7 @@ def profit_loss(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -207,7 +208,11 @@ def profit_loss(
 
 
 @router.get("/balance-sheet")
-def balance_sheet(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def balance_sheet(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     if not as_of_date:
         as_of_date = date.today()
 
@@ -244,7 +249,11 @@ def balance_sheet(as_of_date: date = Query(default=None), db: Session = Depends(
 
 
 @router.get("/ar-aging")
-def ar_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def ar_aging(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     if not as_of_date:
         as_of_date = date.today()
 
@@ -305,6 +314,7 @@ def gst_return_report(
     box9_adjustments: Decimal = Query(default=Decimal("0.00")),
     box13_adjustments: Decimal = Query(default=Decimal("0.00")),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """GST101A return report."""
     if not start_date:
@@ -332,6 +342,7 @@ def gst_return_report(
 def gst_returns_overview(
     as_of_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     as_of_date = as_of_date or date.today()
     settings = get_settings(db)
@@ -411,6 +422,7 @@ def gst_return_transactions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=250),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -507,6 +519,7 @@ def sales_tax_report(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """Compatibility alias for the NZ GST return report."""
     return gst_return_report(
@@ -515,6 +528,7 @@ def sales_tax_report(
         box9_adjustments=Decimal("0.00"),
         box13_adjustments=Decimal("0.00"),
         db=db,
+        auth=auth,
     )
 
 
@@ -527,6 +541,7 @@ def gst_return_pdf(
     return_due_date: date = Query(default=None),
     phone: str = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -558,6 +573,7 @@ def general_ledger(
     end_date: date = Query(default=None),
     account_id: int = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CReportEngine::RunGLDetail() @ 0x00211400"""
     if not start_date:
@@ -617,6 +633,7 @@ def income_by_customer(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CReportEngine::RunIncomeByCustomer() @ 0x00212000"""
     if not start_date:
@@ -670,7 +687,11 @@ def income_by_customer(
 
 
 @router.get("/ap-aging")
-def ap_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def ap_aging(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     """AP Aging report — mirrors AR aging but for bills."""
     if not as_of_date:
         as_of_date = date.today()
@@ -737,6 +758,7 @@ def customer_statement_pdf(
     customer_id: int,
     as_of_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CStatementPrintLayout::RenderPage() @ 0x00224000"""
     if not as_of_date:
@@ -777,6 +799,7 @@ def email_customer_statement(
     customer_id: int,
     data: StatementEmailRequest,
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     as_of_date = data.as_of_date or date.today()
 

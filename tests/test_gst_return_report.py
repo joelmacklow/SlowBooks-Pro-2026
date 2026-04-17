@@ -92,11 +92,13 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("5.00"),
                 box13_adjustments=Decimal("2.00"),
                 db=db,
+                auth={"user_id": 1},
             )
             alias = sales_tax_report(
                 start_date=date(2026, 4, 1),
                 end_date=date(2026, 4, 30),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["gst_basis"], "invoice")
@@ -157,6 +159,7 @@ class GstReturnReportTests(unittest.TestCase):
                 start_date=date(2026, 4, 1),
                 end_date=date(2026, 4, 30),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["gst_basis"], "payments")
@@ -187,6 +190,7 @@ class GstReturnReportTests(unittest.TestCase):
                 box13_adjustments=Decimal("2.00"),
                 return_due_date=date(2026, 5, 28),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(response.media_type, "application/pdf")
@@ -235,6 +239,7 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("0.00"),
                 box13_adjustments=Decimal("0.00"),
                 db=db,
+                auth={"user_id": 1},
             )
             response = gst_return_pdf(
                 start_date=date(2026, 4, 1),
@@ -242,6 +247,7 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("0.00"),
                 box13_adjustments=Decimal("0.00"),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["return_confirmation"]["status"], "confirmed")
