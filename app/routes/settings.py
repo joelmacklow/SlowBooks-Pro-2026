@@ -7,6 +7,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.config import SMTP_PASSWORD
 from app.database import get_db
 from app.models.settings import Settings, DEFAULT_SETTINGS
 from app.services.auth import require_permissions
@@ -45,6 +46,29 @@ def _settings_for_client(settings: dict) -> dict:
     return result
 
 
+def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
+    result = dict(settings)
+    legacy_row = db.query(Settings).filter(Settings.key == "smtp_password").first()
+    env_ready = bool((SMTP_PASSWORD or "").strip())
+
+    if legacy_row and env_ready:
+        db.delete(legacy_row)
+        db.flush()
+        result["smtp_password_status"] = "env_managed_legacy_removed"
+        result["smtp_password_notice"] = "Legacy stored SMTP password was removed because SMTP_PASSWORD is configured."
+    elif legacy_row:
+        result["smtp_password_status"] = "legacy_db_password_present"
+        result["smtp_password_notice"] = "Legacy stored SMTP password remains in the database until SMTP_PASSWORD is configured."
+    elif env_ready:
+        result["smtp_password_status"] = "env_managed"
+        result["smtp_password_notice"] = "SMTP password is managed via the SMTP_PASSWORD environment variable."
+    else:
+        result["smtp_password_status"] = "not_configured"
+        result["smtp_password_notice"] = "Configure SMTP_PASSWORD in the environment before using authenticated SMTP."
+
+    return result
+
+
 @router.get("/public")
 def get_public_settings(db: Session = Depends(get_db)):
     result = _get_all(db)
@@ -68,7 +92,9 @@ def get_settings(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
 ):
-    return _settings_for_client(_get_all(db))
+    settings = _apply_smtp_secret_status(db, _get_all(db))
+    db.commit()
+    return _settings_for_client(settings)
 
 
 @router.put("")
@@ -89,13 +115,11 @@ def update_settings(
                         _set(db, key, "")
                 continue
             if key == "smtp_password":
-                existing = db.query(Settings).filter(Settings.key == key).first()
-                if existing is None and not str(value or ""):
-                    _set(db, key, "")
                 continue
             _set(db, key, str(value) if value is not None else "")
+    settings = _apply_smtp_secret_status(db, _get_all(db))
     db.commit()
-    return _settings_for_client(_get_all(db))
+    return _settings_for_client(settings)
 
 
 @router.post("/test-email")
