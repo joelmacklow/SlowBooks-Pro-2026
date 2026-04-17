@@ -158,7 +158,7 @@ const SettingsPage = {
                 <div class="settings-section">
                     <h3>Email (SMTP)</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
-                        Configure SMTP for sending invoices by email.
+                        Configure SMTP for sending invoices by email. SMTP passwords are managed via the <code>SMTP_PASSWORD</code> environment variable, not stored in SlowBooks settings.
                     </div>
                     <div class="form-grid">
                         <div class="form-group"><label>SMTP Host</label>
@@ -168,8 +168,8 @@ const SettingsPage = {
                         <div class="form-group"><label>Username</label>
                             <input name="smtp_user" value="${escapeHtml(s.smtp_user || '')}"></div>
                         <div class="form-group"><label>Password</label>
-                            <input name="smtp_password" type="password" value="${escapeHtml(s.smtp_password || '')}"
-                                placeholder="Enter a new SMTP password to set or change"></div>
+                            <input name="smtp_password" type="password" value=""
+                                placeholder="Managed via SMTP_PASSWORD environment variable" autocomplete="new-password"></div>
                         <div class="form-group"><label>From Email</label>
                             <input name="smtp_from_email" type="email" value="${escapeHtml(s.smtp_from_email || '')}"></div>
                         <div class="form-group"><label>From Name</label>

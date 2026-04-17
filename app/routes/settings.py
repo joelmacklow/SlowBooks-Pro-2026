@@ -89,13 +89,9 @@ def update_settings(
                         _set(db, key, "")
                 continue
             if key == "smtp_password":
-                secret = str(value) if value is not None else ""
-                if secret:
-                    _set(db, key, secret)
-                else:
-                    existing = db.query(Settings).filter(Settings.key == key).first()
-                    if existing is None:
-                        _set(db, key, "")
+                existing = db.query(Settings).filter(Settings.key == key).first()
+                if existing is None and not str(value or ""):
+                    _set(db, key, "")
                 continue
             _set(db, key, str(value) if value is not None else "")
     db.commit()

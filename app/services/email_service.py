@@ -39,7 +39,7 @@ _jinja_env.filters["fdate"] = _format_date
 
 def _get_smtp_settings(db: Session) -> dict:
     """Load SMTP settings from the settings table."""
-    keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_password",
+    keys = ["smtp_host", "smtp_port", "smtp_user",
             "smtp_from_email", "smtp_from_name", "smtp_use_tls"]
     rows = db.query(Settings).filter(Settings.key.in_(keys)).all()
     settings = {r.key: r.value for r in rows}
@@ -84,7 +84,7 @@ def _send_email_impl(
     host = smtp.get("smtp_host", "")
     port = int(smtp.get("smtp_port", "587"))
     user = smtp.get("smtp_user", "")
-    password = SMTP_PASSWORD or smtp.get("smtp_password", "")
+    password = SMTP_PASSWORD
     from_email = smtp.get("smtp_from_email", user)
     from_name = smtp.get("smtp_from_name", "Slowbooks Pro")
     use_tls = smtp.get("smtp_use_tls", "true").lower() == "true"
@@ -109,6 +109,19 @@ def _send_email_impl(
 
     if not host or not from_email:
         error = "SMTP not configured"
+        _log_email(
+            db,
+            entity_type=entity_type or "",
+            entity_id=entity_id or 0,
+            recipient=to_email,
+            subject=subject,
+            status="failed",
+            error_message=error,
+        )
+        return error
+
+    if user and not password:
+        error = "SMTP password must be provided via the SMTP_PASSWORD environment variable"
         _log_email(
             db,
             entity_type=entity_type or "",

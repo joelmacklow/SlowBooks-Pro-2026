@@ -107,8 +107,10 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         from app.services import email_service
 
         original_smtp = email_service.smtplib.SMTP
+        original_password = email_service.SMTP_PASSWORD
         original_generate_invoice_pdf = invoices_route.generate_invoice_pdf
         email_service.smtplib.SMTP = FakeSMTP
+        email_service.SMTP_PASSWORD = "env-secret"
         invoices_route.generate_invoice_pdf = lambda *_args, **_kwargs: b"%PDF-invoice"
 
         try:
@@ -138,6 +140,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
                 log = db.query(EmailLog).filter_by(entity_type="invoice", entity_id=invoice.id).one()
         finally:
             email_service.smtplib.SMTP = original_smtp
+            email_service.SMTP_PASSWORD = original_password
             invoices_route.generate_invoice_pdf = original_generate_invoice_pdf
 
         self.assertEqual(result["status"], "sent")
@@ -148,8 +151,10 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         from app.services import email_service
 
         original_smtp = email_service.smtplib.SMTP
+        original_password = email_service.SMTP_PASSWORD
         email_service.smtplib.SMTP = FakeSMTP
         try:
+            email_service.SMTP_PASSWORD = "env-secret"
             with self.Session() as db:
                 self._seed_smtp(db)
                 FakeSMTP.fail_login = True
@@ -165,6 +170,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
                 log = db.query(EmailLog).filter_by(entity_type="statement", entity_id=7).one()
         finally:
             email_service.smtplib.SMTP = original_smtp
+            email_service.SMTP_PASSWORD = original_password
 
         self.assertFalse(success)
         self.assertEqual(log.recipient, "customer@example.comBcc:attacker@example.com")
@@ -205,6 +211,29 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
 
         self.assertEqual(login_calls, [("mailer@example.com", "env-secret")])
 
+    def test_send_email_rejects_missing_env_password_for_authenticated_smtp(self):
+        from app.services import email_service
+
+        original_password = email_service.SMTP_PASSWORD
+        try:
+            email_service.SMTP_PASSWORD = ""
+            with self.Session() as db:
+                self._seed_smtp(db)
+                success = email_service.send_email(
+                    db,
+                    to_email="customer@example.com",
+                    subject="Test",
+                    html_body="<p>Hello</p>",
+                    entity_type="statement",
+                    entity_id=9,
+                )
+                log = db.query(EmailLog).filter_by(entity_type="statement", entity_id=9).one()
+        finally:
+            email_service.SMTP_PASSWORD = original_password
+
+        self.assertFalse(success)
+        self.assertIn("environment variable", log.error_message.lower())
+
     def test_document_email_routes_cover_estimate_statement_credit_memo_purchase_order_and_payslip(self):
         from app.routes import credit_memos as credit_memos_route
         from app.routes import estimates as estimates_route
@@ -214,12 +243,14 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         from app.services import email_service
 
         original_smtp = email_service.smtplib.SMTP
+        original_password = email_service.SMTP_PASSWORD
         original_generate_estimate_pdf = estimates_route.generate_estimate_pdf
         original_generate_statement_pdf = reports_route.generate_statement_pdf
         original_generate_credit_memo_pdf = credit_memos_route.generate_credit_memo_pdf
         original_generate_purchase_order_pdf = purchase_orders_route.generate_purchase_order_pdf
         original_generate_payslip_pdf = payroll_route.generate_payroll_payslip_pdf
         email_service.smtplib.SMTP = FakeSMTP
+        email_service.SMTP_PASSWORD = "env-secret"
         estimates_route.generate_estimate_pdf = lambda *_args, **_kwargs: b"%PDF-estimate"
         reports_route.generate_statement_pdf = lambda *_args, **_kwargs: b"%PDF-statement"
         credit_memos_route.generate_credit_memo_pdf = lambda *_args, **_kwargs: b"%PDF-credit-memo"
@@ -318,6 +349,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
                 entity_types = [row.entity_type for row in db.query(EmailLog).order_by(EmailLog.id).all()]
         finally:
             email_service.smtplib.SMTP = original_smtp
+            email_service.SMTP_PASSWORD = original_password
             estimates_route.generate_estimate_pdf = original_generate_estimate_pdf
             reports_route.generate_statement_pdf = original_generate_statement_pdf
             credit_memos_route.generate_credit_memo_pdf = original_generate_credit_memo_pdf

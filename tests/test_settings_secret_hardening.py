@@ -58,7 +58,11 @@ class SettingsSecretHardeningTests(unittest.TestCase):
                 {"smtp_password": "smtp-secret"},
                 db=db,
             )
-            original = db.query(Settings).filter(Settings.key == "smtp_password").one().value
+            original_row = db.query(Settings).filter(Settings.key == "smtp_password").first()
+            self.assertIsNone(original_row)
+
+            db.add(Settings(key="smtp_password", value="legacy-secret"))
+            db.commit()
             second = update_settings(
                 {"company_name": "Updated Co", "smtp_password": ""},
                 db=db,
@@ -68,7 +72,7 @@ class SettingsSecretHardeningTests(unittest.TestCase):
         self.assertEqual(first["smtp_password"], "")
         self.assertEqual(second["smtp_password"], "")
         self.assertEqual(second["company_name"], "Updated Co")
-        self.assertEqual(stored, original)
+        self.assertEqual(stored, "legacy-secret")
 
     def test_get_settings_masks_existing_smtp_password(self):
         with self.Session() as db:
