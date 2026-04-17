@@ -127,6 +127,8 @@ class BankingReconciliationMatchingTests(unittest.TestCase):
 
             payment = db.query(Payment).one()
             bill_payment = db.query(BillPayment).one()
+            inflow_txn = db.query(BankTransaction).filter(BankTransaction.id == inflow.id).one()
+            outflow_txn = db.query(BankTransaction).filter(BankTransaction.id == outflow.id).one()
             coded_txn = db.query(BankTransaction).filter(BankTransaction.id == uncoded.id).one()
             invoice_row = db.query(Invoice).filter(Invoice.id == invoice.id).one()
             bill_row = db.query(Bill).filter(Bill.id == bill.id).one()
@@ -137,7 +139,10 @@ class BankingReconciliationMatchingTests(unittest.TestCase):
         self.assertEqual(bill_payment.check_number, 'B-3001')
         self.assertEqual(Decimal(str(invoice_row.balance_due)), Decimal('0.00'))
         self.assertEqual(Decimal(str(bill_row.balance_due)), Decimal('0.00'))
+        self.assertTrue(inflow_txn.reconciled)
+        self.assertTrue(outflow_txn.reconciled)
         self.assertEqual(coded_txn.match_status, 'coded')
+        self.assertTrue(coded_txn.reconciled)
         self.assertEqual(coded_txn.category_account_id, wages_id)
         self.assertEqual(journal_account_ids, {bank_gl_id, wages_id})
 

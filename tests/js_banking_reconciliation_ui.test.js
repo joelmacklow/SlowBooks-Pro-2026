@@ -6,6 +6,18 @@ const code = `${fs.readFileSync('app/static/js/banking.js', 'utf8')}\nthis.Banki
 
 let modalHtml = '';
 const posts = [];
+const reconcileTransactions = [{
+    id: 10,
+    date: '2026-04-16',
+    payee: 'Learn Innovatio',
+    description: 'Learning Inn',
+    reference: 'Inv 8746',
+    code: 'Wheel Align',
+    amount: 53.91,
+    reconciled: false,
+    matched_label: null,
+    suggestions: [{ kind: 'invoice', target_id: 7, document_number: 'INV-8746', label: 'Invoice INV-8746 · Learn Innovations Limited' }],
+}];
 const elements = {
     '#page-content': { innerHTML: '' },
 };
@@ -24,20 +36,9 @@ const context = {
             if (path === '/banking/reconciliations/5/transactions') return {
                 reconciliation_id: 5,
                 statement_balance: 53.91,
-                cleared_total: 0,
-                difference: 53.91,
-                transactions: [{
-                    id: 10,
-                    date: '2026-04-16',
-                    payee: 'Learn Innovatio',
-                    description: 'Learning Inn',
-                    reference: 'Inv 8746',
-                    code: 'Wheel Align',
-                    amount: 53.91,
-                    reconciled: false,
-                    matched_label: null,
-                    suggestions: [{ kind: 'invoice', target_id: 7, document_number: 'INV-8746', label: 'Invoice INV-8746 · Learn Innovations Limited' }],
-                }],
+                cleared_total: reconcileTransactions.filter(t => t.reconciled).reduce((sum, t) => sum + t.amount, 0),
+                difference: 53.91 - reconcileTransactions.filter(t => t.reconciled).reduce((sum, t) => sum + t.amount, 0),
+                transactions: reconcileTransactions,
             };
             if (path === '/banking/transactions/10/suggestions') return {
                 direction: 'inflow',
@@ -72,8 +73,16 @@ const context = {
         },
         post: async (path, data) => {
             posts.push({ path, data });
-            if (path === '/banking/transactions/10/approve-match') return { status: 'matched' };
-            if (path === '/banking/transactions/10/code') return { status: 'coded' };
+            if (path === '/banking/transactions/10/approve-match') {
+                reconcileTransactions[0].reconciled = true;
+                reconcileTransactions[0].matched_label = 'Invoice INV-8746';
+                return { status: 'matched' };
+            }
+            if (path === '/banking/transactions/10/code') {
+                reconcileTransactions[0].reconciled = true;
+                reconcileTransactions[0].matched_label = 'Coded to Wages Expense';
+                return { status: 'coded' };
+            }
             if (path === '/banking/reconciliations/5/toggle/10') return { id: 10, reconciled: true };
             return { id: 1 };
         },
@@ -148,9 +157,13 @@ vm.runInContext(code, context);
     elements['#bank-code-description-10'] = { value: 'Weekly wages' };
     await context.BankingPage.codeTransaction(10, 5);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/code'));
+    assert.ok(elements['#page-content'].innerHTML.includes('checked'));
+    reconcileTransactions[0].reconciled = false;
+    reconcileTransactions[0].matched_label = null;
 
     await context.BankingPage.approveMatch(10, 'invoice', 7, 5);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/approve-match'));
+    assert.ok(elements['#page-content'].innerHTML.includes('checked'));
 })().catch((err) => {
     console.error(err);
     process.exit(1);

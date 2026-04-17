@@ -205,6 +205,7 @@ def approve_bank_transaction_match(txn_id: int, data: BankTransactionMatchApprov
         bank_txn.transaction_id = payment.transaction_id if payment else None
         bank_txn.category_account_id = get_ar_account_id(db)
         bank_txn.match_status = "manual"
+        bank_txn.reconciled = True
         db.commit()
         return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": f"Invoice {invoice.invoice_number}"}
 
@@ -236,6 +237,7 @@ def approve_bank_transaction_match(txn_id: int, data: BankTransactionMatchApprov
         bank_txn.transaction_id = payment.transaction_id if payment else None
         bank_txn.category_account_id = get_ap_account_id(db)
         bank_txn.match_status = "manual"
+        bank_txn.reconciled = True
         db.commit()
         return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": f"Bill {bill.bill_number}"}
 
@@ -281,6 +283,7 @@ def code_bank_transaction(txn_id: int, data: BankTransactionCodeApproval, db: Se
     bank_txn.transaction_id = txn.id
     bank_txn.category_account_id = target_account.id
     bank_txn.match_status = "coded"
+    bank_txn.reconciled = True
     db.commit()
     return {"status": "coded", "transaction_id": bank_txn.id, "matched_label": f"Coded to {target_account.name}"}
 
