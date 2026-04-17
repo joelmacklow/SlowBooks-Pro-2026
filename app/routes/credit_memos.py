@@ -101,6 +101,22 @@ def _credit_memo_has_applications(cm: CreditMemo) -> bool:
     return Decimal(str(cm.amount_applied or 0)) > 0 or bool(cm.applications)
 
 
+def _credit_memo_response(cm: CreditMemo) -> CreditMemoResponse:
+    resp = CreditMemoResponse.model_validate(cm)
+    if cm.customer:
+        resp.customer_name = cm.customer.name
+    resp.applications = [
+        {
+            "id": application.id,
+            "invoice_id": application.invoice_id,
+            "invoice_number": application.invoice.invoice_number if application.invoice else None,
+            "amount": application.amount,
+        }
+        for application in cm.applications
+    ]
+    return resp
+
+
 @router.get("", response_model=list[CreditMemoResponse])
 def list_credit_memos(customer_id: int = None, status: str = None, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.view"))):
     q = db.query(CreditMemo)
@@ -111,10 +127,7 @@ def list_credit_memos(customer_id: int = None, status: str = None, db: Session =
     memos = q.order_by(CreditMemo.date.desc()).all()
     results = []
     for m in memos:
-        resp = CreditMemoResponse.model_validate(m)
-        if m.customer:
-            resp.customer_name = m.customer.name
-        results.append(resp)
+        results.append(_credit_memo_response(m))
     return results
 
 
@@ -123,10 +136,7 @@ def get_credit_memo(cm_id: int, db: Session = Depends(get_db), auth=Depends(requ
     cm = db.query(CreditMemo).filter(CreditMemo.id == cm_id).first()
     if not cm:
         raise HTTPException(status_code=404, detail="Credit memo not found")
-    resp = CreditMemoResponse.model_validate(cm)
-    if cm.customer:
-        resp.customer_name = cm.customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.post("", response_model=CreditMemoResponse, status_code=201)
@@ -168,9 +178,7 @@ def create_credit_memo(data: CreditMemoCreate, db: Session = Depends(get_db), au
 
     db.commit()
     db.refresh(cm)
-    resp = CreditMemoResponse.model_validate(cm)
-    resp.customer_name = customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.put("/{cm_id}", response_model=CreditMemoResponse)
@@ -235,10 +243,7 @@ def update_credit_memo(cm_id: int, data: CreditMemoUpdate, db: Session = Depends
 
     db.commit()
     db.refresh(cm)
-    resp = CreditMemoResponse.model_validate(cm)
-    if cm.customer:
-        resp.customer_name = cm.customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.get("/{cm_id}/pdf")

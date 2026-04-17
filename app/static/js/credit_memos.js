@@ -106,6 +106,7 @@ const CreditMemosPage = {
         }
         const totals = CreditMemosPage._totals(memo.lines || []);
         const customerOptions = CreditMemosPage._customers.map(c => `<option value="${c.id}" ${memo.customer_id==c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+        const applications = memo.applications || [];
         return `
             <div class="page-header">
                 <div>
@@ -157,6 +158,18 @@ const CreditMemosPage = {
                         </div>
                     </div>
                 </div>
+                ${memo.id && applications.length ? `<div class="settings-section">
+                    <h3>Applied To Invoices</h3>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Invoice</th><th class="amount">Applied Amount</th></tr></thead>
+                        <tbody>
+                            ${applications.map(application => `<tr>
+                                <td><strong>${escapeHtml(application.invoice_number || `Invoice #${application.invoice_id}`)}</strong></td>
+                                <td class="amount">${formatCurrency(application.amount)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>
+                </div>` : ''}
                 ${canManageSales ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/credit-memos')">Cancel</button>
                     ${memo.id ? '' : `<button type="button" class="btn btn-secondary" onclick="CreditMemosPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}

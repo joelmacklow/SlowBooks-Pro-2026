@@ -32,6 +32,14 @@ class CreditApplicationCreate(BaseModel):
     amount: float
 
 
+class CreditApplicationResponse(BaseModel):
+    id: int
+    invoice_id: int
+    invoice_number: Optional[str] = None
+    amount: float
+    model_config = {"from_attributes": True}
+
+
 class CreditMemoCreate(BaseModel):
     customer_id: int
     date: date
@@ -64,5 +72,6 @@ class CreditMemoResponse(BaseModel):
     balance_remaining: float = 0
     notes: Optional[str] = None
     lines: list[CreditMemoLineResponse] = []
+    applications: list[CreditApplicationResponse] = []
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
