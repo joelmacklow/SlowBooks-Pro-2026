@@ -15,6 +15,7 @@ from app.services.chart_setup_status import (
     mark_chart_setup_ready,
 )
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
+from app.services.closing_date import hash_closing_date_password
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -35,6 +36,12 @@ def _set(db: Session, key: str, value: str):
     else:
         row = Settings(key=key, value=value)
         db.add(row)
+
+
+def _settings_for_client(settings: dict) -> dict:
+    result = dict(settings)
+    result["closing_date_password"] = ""
+    return result
 
 
 @router.get("/public")
@@ -60,7 +67,7 @@ def get_settings(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
 ):
-    return _get_all(db)
+    return _settings_for_client(_get_all(db))
 
 
 @router.put("")
@@ -71,9 +78,18 @@ def update_settings(
 ):
     for key, value in data.items():
         if key in DEFAULT_SETTINGS:
+            if key == "closing_date_password":
+                secret = str(value) if value is not None else ""
+                if secret:
+                    _set(db, key, hash_closing_date_password(secret))
+                else:
+                    existing = db.query(Settings).filter(Settings.key == key).first()
+                    if existing is None:
+                        _set(db, key, "")
+                continue
             _set(db, key, str(value) if value is not None else "")
     db.commit()
-    return _get_all(db)
+    return _settings_for_client(_get_all(db))
 
 
 @router.post("/test-email")

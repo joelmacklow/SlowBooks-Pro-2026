@@ -151,7 +151,7 @@ const SettingsPage = {
                             <input name="closing_date" type="date" value="${escapeHtml(s.closing_date || '')}"></div>
                         <div class="form-group"><label>Password (optional)</label>
                             <input name="closing_date_password" type="password" value="${escapeHtml(s.closing_date_password || '')}"
-                                placeholder="Leave blank for no password"></div>
+                                placeholder="Enter a new password to set or change the override"></div>
                     </div>
                 </div>
 
