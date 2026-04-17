@@ -18,6 +18,7 @@ from app.models.accounts import Account
 from app.models.contacts import Customer, Vendor
 from app.models.items import Item, ItemType
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
+from app.models.banking import BankAccount, BankTransaction
 from app.models.payments import Payment, PaymentAllocation
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
 from app.services.accounting import (
@@ -89,6 +90,22 @@ PAYMENTS = [
     ("Ridgeway University", 21, 2185.00, "cash",  "4503", 7),
     ("City Limousines",   20, 1380.00, "check", "4504", 4),
     ("Boom FM",   22, 900.00, "check", "4505", 2),
+]
+
+BANK_ACCOUNT = {
+    "name": "ANZ Business Account",
+    "bank_name": "ANZ",
+    "last_four": "1208",
+}
+
+BANK_TRANSACTIONS = [
+    {"payee": "Basket Case", "day_offset": 2, "amount": 850.00, "description": "Customer payment received"},
+    {"payee": "Bayside Club", "day_offset": 6, "amount": 735.25, "description": "Retainer payment received"},
+    {"payee": "ABC Furniture", "day_offset": 9, "amount": -420.00, "description": "Office seating purchase"},
+    {"payee": "PowerDirect", "day_offset": 13, "amount": -186.40, "description": "Electricity account payment"},
+    {"payee": "Ridgeway University", "day_offset": 18, "amount": 2185.00, "description": "Workshop payment received"},
+    {"payee": "MCO Cleaning Services", "day_offset": 19, "amount": -145.00, "description": "Office cleaning services"},
+    {"payee": "Net Connect", "day_offset": 23, "amount": -129.90, "description": "Internet and phone services"},
 ]
 
 
@@ -345,6 +362,40 @@ def seed():
 
         db.flush()
         print(f"  {len(PAYMENTS)} payments created")
+
+        # --- Bank account + bank transactions ---
+        default_bank_account = get_account_by_number(db, "090")
+        income_account_id = get_default_income_account_id(db)
+        expense_account = get_account_by_number(db, "429")
+
+        bank_account = BankAccount(
+            name=BANK_ACCOUNT["name"],
+            account_id=default_bank_account.id if default_bank_account else None,
+            bank_name=BANK_ACCOUNT["bank_name"],
+            last_four=BANK_ACCOUNT["last_four"],
+            balance=Decimal("0"),
+            is_active=True,
+        )
+        db.add(bank_account)
+        db.flush()
+
+        running_balance = Decimal("0")
+        customer_names = {customer["name"] for customer in CUSTOMERS}
+        for entry in BANK_TRANSACTIONS:
+            amount = Decimal(str(entry["amount"])).quantize(Decimal("0.01"))
+            running_balance += amount
+            db.add(BankTransaction(
+                bank_account_id=bank_account.id,
+                date=base_date + timedelta(days=entry["day_offset"] - 1),
+                amount=amount,
+                payee=entry["payee"],
+                description=entry["description"],
+                category_account_id=income_account_id if entry["payee"] in customer_names else (expense_account.id if expense_account else None),
+            ))
+
+        bank_account.balance = running_balance
+        db.flush()
+        print(f"  1 ANZ bank account created with {len(BANK_TRANSACTIONS)} bank transactions")
 
         db.commit()
 
