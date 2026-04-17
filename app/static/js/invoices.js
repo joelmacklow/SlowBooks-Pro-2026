@@ -11,6 +11,7 @@ const InvoicesPage = {
     _items: [],
     _settings: {},
     _detailState: null,
+    _availableCredits: [],
 
     async render() {
         const invoices = await API.get('/invoices');
@@ -118,6 +119,9 @@ const InvoicesPage = {
         if (!inv.lines || inv.lines.length === 0) inv.lines = [{ item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }];
         InvoicesPage.lineCount = inv.lines.length;
         InvoicesPage._detailState = inv;
+        InvoicesPage._availableCredits = inv.customer_id
+            ? (await API.get(`/credit-memos?customer_id=${inv.customer_id}&status=issued`)).filter(cm => Number(cm.balance_remaining || 0) > 0)
+            : [];
     },
 
     _totals(lines) {
@@ -138,6 +142,7 @@ const InvoicesPage = {
         const totals = InvoicesPage._totals(inv.lines || []);
         const canCreateCustomers = App.hasPermission ? App.hasPermission('contacts.manage') : true;
         const customerOptions = InvoicesPage.customerOptionsHtml(inv.customer_id);
+        const availableCredits = (InvoicesPage._availableCredits || []).filter(cm => Number(cm.balance_remaining || 0) > 0);
         return `
             <div class="page-header">
                 <div>
@@ -210,6 +215,19 @@ const InvoicesPage = {
                         </div>
                     </div>
                 </div>
+                ${inv.id && inv.customer_id && availableCredits.length ? `<div class="settings-section">
+                    <h3>Available Credit Notes</h3>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Credit Note</th><th class="amount">Remaining</th><th></th></tr></thead>
+                        <tbody>
+                            ${availableCredits.map(cm => `<tr>
+                                <td><strong>${escapeHtml(cm.memo_number)}</strong></td>
+                                <td class="amount">${formatCurrency(cm.balance_remaining)}</td>
+                                <td class="actions"><button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.applyCreditMemo(${cm.id}, ${Number(cm.balance_remaining || 0)}, ${inv.id})">Apply Credit</button></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>
+                </div>` : ''}
                 ${canManageSales ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/invoices')">Cancel</button>
                     ${inv.id ? '' : `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
@@ -361,6 +379,17 @@ const InvoicesPage = {
             const inv = await API.post(`/invoices/${id}/duplicate`);
             toast(`Duplicated as Invoice #${inv.invoice_number}`);
             await InvoicesPage.open(inv.id);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async applyCreditMemo(cmId, amount, invoiceId) {
+        try {
+            await API.post(`/credit-memos/${cmId}/apply`, {
+                invoice_id: invoiceId,
+                amount,
+            });
+            toast('Credit applied');
+            await InvoicesPage.open(invoiceId);
         } catch (err) { toast(err.message, 'error'); }
     },
 
