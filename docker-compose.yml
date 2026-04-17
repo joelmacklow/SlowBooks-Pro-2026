@@ -2,15 +2,13 @@ services:
   postgres:
     image: postgres:18
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bookkeeper}
-      POSTGRES_USER: ${POSTGRES_USER:-bookkeeper}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookkeeper}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-slowbooks}
+      POSTGRES_USER: ${POSTGRES_USER:-slowbooks}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in your .env or environment}
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bookkeeper} -d ${POSTGRES_DB:-bookkeeper}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-slowbooks} -d ${POSTGRES_DB:-slowbooks}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -22,13 +20,13 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-bookkeeper}
-      POSTGRES_USER: ${POSTGRES_USER:-bookkeeper}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookkeeper}
+      POSTGRES_DB: ${POSTGRES_DB:-slowbooks}
+      POSTGRES_USER: ${POSTGRES_USER:-slowbooks}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in your .env or environment}
       POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
       APP_HOST: 0.0.0.0
       APP_PORT: ${APP_PORT:-3001}
-      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_DEBUG: ${APP_DEBUG:-false}
     ports:
       - "${APP_PORT:-3001}:3001"
     working_dir: /app

@@ -73,6 +73,11 @@ class DockerConfigTests(unittest.TestCase):
         self.assertNotIn("./data/postgres:/var/lib/postgresql/data", compose_text)
         self.assertIn("volumes:\n  postgres_data:", compose_text)
         self.assertIn("./:/app:Z", compose_text)
+        self.assertNotIn('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookkeeper}', compose_text)
+        self.assertNotIn('APP_DEBUG: ${APP_DEBUG:-true}', compose_text)
+        self.assertNotIn('      - "${POSTGRES_PORT:-5432}:5432"', compose_text)
+        self.assertIn('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in your .env or environment}', compose_text)
+        self.assertIn('APP_DEBUG: ${APP_DEBUG:-false}', compose_text)
 
         for key in (
             "DATABASE_URL=",
@@ -84,6 +89,20 @@ class DockerConfigTests(unittest.TestCase):
             "POSTGRES_SSLMODE=",
         ):
             self.assertIn(key, env_example)
+        self.assertIn("POSTGRES_PASSWORD=replace-with-a-long-random-password", env_example)
+        self.assertIn("APP_DEBUG=false", env_example)
+        self.assertNotIn("POSTGRES_PASSWORD=bookkeeper", env_example)
+
+    def test_docs_call_for_explicit_password_setup_and_non_published_postgres(self):
+        root = Path(__file__).resolve().parent.parent
+        readme = (root / "README.md").read_text()
+        install = (root / "INSTALL.md").read_text()
+
+        self.assertIn("set POSTGRES_PASSWORD to a long random secret", readme)
+        self.assertIn("Postgres is not published to the host by default", readme)
+        self.assertIn("APP_DEBUG=false", readme)
+        self.assertIn("set POSTGRES_PASSWORD to a long random secret", install)
+        self.assertIn("Postgres is not published to the host by default", install)
 
     def test_bootstrap_database_script_can_import_app_when_run_as_script(self):
         root = Path(__file__).resolve().parent.parent
