@@ -21,6 +21,7 @@ class BankingReconciliationMatchingTests(unittest.TestCase):
     def setUp(self):
         from app.models import (  # noqa: F401
             Account, BankAccount, BankTransaction, Bill, BillLine, BillPayment, BillPaymentAllocation,
+            CreditApplication, CreditMemo, CreditMemoLine,
             Customer, Invoice, InvoiceLine, Payment, PaymentAllocation, Settings, Transaction, TransactionLine, Vendor,
         )
 
@@ -145,6 +146,88 @@ class BankingReconciliationMatchingTests(unittest.TestCase):
         self.assertTrue(coded_txn.reconciled)
         self.assertEqual(coded_txn.category_account_id, wages_id)
         self.assertEqual(journal_account_ids, {bank_gl_id, wages_id})
+
+    def test_invoice_overpayment_creates_credit_note_for_excess(self):
+        from app.models.accounts import Account, AccountType
+        from app.models.banking import BankAccount, BankTransaction
+        from app.models.contacts import Customer
+        from app.models.credit_memos import CreditMemo, CreditMemoStatus
+        from app.models.invoices import Invoice, InvoiceStatus
+        from app.models.payments import Payment
+        from app.routes.banking import approve_bank_transaction_match
+        from app.schemas.banking import BankTransactionMatchApproval
+
+        with self.Session() as db:
+            bank_gl = Account(name='Business Bank Account', account_number='090', account_type=AccountType.ASSET, is_active=True)
+            ar = Account(name='Accounts Receivable', account_number='610', account_type=AccountType.ASSET, is_active=True)
+            db.add_all([bank_gl, ar])
+            db.commit()
+            self._set_role(db, 'system_account_accounts_receivable_id', ar.id)
+
+            bank_account = BankAccount(name='ANZ', account_id=bank_gl.id, bank_name='ANZ', last_four='1208', balance=Decimal('0'), is_active=True)
+            db.add(bank_account)
+            db.commit()
+
+            customer = Customer(name='Aroha Ltd')
+            db.add(customer)
+            db.commit()
+            customer_id = customer.id
+
+            invoice = Invoice(
+                invoice_number='INV-5001',
+                customer_id=customer_id,
+                status=InvoiceStatus.SENT,
+                date=date(2026, 4, 2),
+                subtotal=Decimal('100.00'),
+                tax_rate=Decimal('0'),
+                tax_amount=Decimal('0'),
+                total=Decimal('100.00'),
+                amount_paid=Decimal('0'),
+                balance_due=Decimal('100.00'),
+            )
+            db.add(invoice)
+            db.commit()
+            invoice_id = invoice.id
+
+            inflow = BankTransaction(
+                bank_account_id=bank_account.id,
+                date=date(2026, 4, 16),
+                amount=Decimal('150.00'),
+                payee='Aroha Ltd',
+                description='Invoice overpayment',
+                reference='INV-5001',
+                code='Aroha',
+                reconciled=False,
+                match_status='unmatched',
+            )
+            db.add(inflow)
+            db.commit()
+
+            result = approve_bank_transaction_match(
+                inflow.id,
+                BankTransactionMatchApproval(match_kind='invoice', target_id=invoice_id),
+                db=db,
+                auth=None,
+            )
+
+            payment = db.query(Payment).one()
+            allocation_amounts = [Decimal(str(allocation.amount)) for allocation in payment.allocations]
+            credit_memo = db.query(CreditMemo).one()
+            invoice_row = db.query(Invoice).filter(Invoice.id == invoice.id).one()
+            inflow_txn = db.query(BankTransaction).filter(BankTransaction.id == inflow.id).one()
+
+        self.assertEqual(payment.amount, Decimal('150.00'))
+        self.assertEqual(len(allocation_amounts), 1)
+        self.assertEqual(allocation_amounts[0], Decimal('100.00'))
+        self.assertEqual(Decimal(str(invoice_row.balance_due)), Decimal('0.00'))
+        self.assertEqual(credit_memo.customer_id, customer_id)
+        self.assertEqual(credit_memo.original_invoice_id, invoice_id)
+        self.assertEqual(credit_memo.status, CreditMemoStatus.ISSUED)
+        self.assertEqual(Decimal(str(credit_memo.total)), Decimal('50.00'))
+        self.assertEqual(Decimal(str(credit_memo.balance_remaining)), Decimal('50.00'))
+        self.assertIsNone(credit_memo.transaction_id)
+        self.assertTrue(inflow_txn.reconciled)
+        self.assertIn('Credit Note', result['matched_label'])
 
 
 if __name__ == '__main__':

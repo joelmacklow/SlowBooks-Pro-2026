@@ -6,6 +6,7 @@
 # ============================================================================
 
 from datetime import datetime
+from sqlalchemy import func as sqlfunc
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,7 @@ from app.database import get_db
 from app.models.accounts import Account, AccountType
 from app.models.banking import BankAccount, BankTransaction, Reconciliation, ReconciliationStatus
 from app.models.bills import Bill, BillPayment, BillStatus
+from app.models.credit_memos import CreditMemo, CreditMemoLine, CreditMemoStatus
 from app.models.invoices import Invoice, InvoiceStatus
 from app.models.payments import Payment
 from app.models.transactions import Transaction, TransactionLine
@@ -89,6 +91,47 @@ def _assert_transaction_matchable(bank_txn: BankTransaction) -> None:
         raise HTTPException(status_code=400, detail="Bank transaction is already linked to an accounting transaction")
     if bank_txn.match_status == "coded":
         raise HTTPException(status_code=400, detail="Bank transaction is already coded")
+
+
+def _next_credit_memo_number(db: Session) -> str:
+    last = db.query(sqlfunc.max(CreditMemo.memo_number)).scalar()
+    if last and last.replace("CM-", "").isdigit():
+        num = int(last.replace("CM-", "")) + 1
+        return f"CM-{num:04d}"
+    return "CM-0001"
+
+
+def _create_overpayment_credit_note(db: Session, invoice: Invoice, excess_amount: Decimal, statement_reference: str | None, statement_code: str | None) -> CreditMemo:
+    memo_number = _next_credit_memo_number(db)
+    memo = CreditMemo(
+        memo_number=memo_number,
+        customer_id=invoice.customer_id,
+        original_invoice_id=invoice.id,
+        status=CreditMemoStatus.ISSUED,
+        date=invoice.date,
+        subtotal=excess_amount,
+        tax_rate=Decimal("0"),
+        tax_amount=Decimal("0"),
+        total=excess_amount,
+        amount_applied=Decimal("0"),
+        balance_remaining=excess_amount,
+        notes=f"Created from bank statement overpayment ({statement_reference or statement_code or f'bank-{invoice.id}'})",
+        transaction_id=None,
+    )
+    db.add(memo)
+    db.flush()
+    db.add(CreditMemoLine(
+        credit_memo_id=memo.id,
+        item_id=None,
+        description=f"Overpayment credit for invoice {invoice.invoice_number}",
+        quantity=Decimal("1"),
+        rate=excess_amount,
+        amount=excess_amount,
+        gst_code="NO_GST",
+        gst_rate=Decimal("0"),
+        line_order=0,
+    ))
+    return memo
 
 
 # Bank Accounts
@@ -183,8 +226,9 @@ def approve_bank_transaction_match(txn_id: int, data: BankTransactionMatchApprov
         invoice = db.query(Invoice).filter(Invoice.id == data.target_id).first()
         if not invoice or invoice.status not in (InvoiceStatus.SENT, InvoiceStatus.PARTIAL):
             raise HTTPException(status_code=404, detail="Outstanding invoice not found")
-        if Decimal(str(invoice.balance_due or 0)) < amount:
-            raise HTTPException(status_code=400, detail="Statement amount exceeds invoice balance")
+        invoice_balance = Decimal(str(invoice.balance_due or 0))
+        allocation_amount = min(invoice_balance, amount)
+        excess_amount = amount - allocation_amount
 
         created = create_payment_entry(
             PaymentCreate(
@@ -196,18 +240,24 @@ def approve_bank_transaction_match(txn_id: int, data: BankTransactionMatchApprov
                 reference=bank_txn.reference or bank_txn.code or f"bank-{bank_txn.id}",
                 deposit_to_account_id=bank_account.account_id,
                 notes=f"Matched from bank statement line {bank_txn.id}",
-                allocations=[PaymentAllocationCreate(invoice_id=invoice.id, amount=amount)],
+                allocations=[PaymentAllocationCreate(invoice_id=invoice.id, amount=allocation_amount)],
             ),
             db=db,
             auth=True,
         )
         payment = db.query(Payment).filter(Payment.id == created.id).first()
+        credit_memo = None
+        if excess_amount > Decimal("0.01"):
+            credit_memo = _create_overpayment_credit_note(db, invoice, excess_amount, bank_txn.reference, bank_txn.code)
         bank_txn.transaction_id = payment.transaction_id if payment else None
         bank_txn.category_account_id = get_ar_account_id(db)
         bank_txn.match_status = "manual"
         bank_txn.reconciled = True
         db.commit()
-        return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": f"Invoice {invoice.invoice_number}"}
+        matched_label = f"Invoice {invoice.invoice_number}"
+        if credit_memo:
+            matched_label = f"Invoice {invoice.invoice_number} + Credit Note {credit_memo.memo_number}"
+        return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": matched_label}
 
     if data.match_kind == "bill":
         if amount >= 0:
