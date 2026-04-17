@@ -57,10 +57,38 @@ def _session_factory_for_company(database_name: str | None):
     return _session_factory_cache[database_name]
 
 
-def get_db(x_company_database: str | None = Header(default=None, alias="X-Company-Database")):
+def _authorized_company_database(
+    x_company_database: str | None,
+    authorization: str | None,
+) -> str | None:
+    if not x_company_database:
+        return None
+
+    from app.services.auth import CURRENT_COMPANY_SCOPE, get_auth_context
+
+    master_db = SessionLocal()
+    try:
+        context = get_auth_context(
+            master_db,
+            authorization,
+            requested_company_scope=x_company_database,
+            required=False,
+        )
+    finally:
+        master_db.close()
+
+    if not context or context.membership.company_scope == CURRENT_COMPANY_SCOPE:
+        return None
+    return context.membership.company_scope
+
+
+def get_db(
+    x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+    authorization: str | None = Header(default=None),
+):
     # Reconstructed from CQBDatabase::AcquireConnection() at offset 0x0004A7C2
     # Original used connection pooling via Pervasive.SQL Workgroup Engine
-    db = _session_factory_for_company(x_company_database)()
+    db = _session_factory_for_company(_authorized_company_database(x_company_database, authorization))()
     try:
         yield db
     finally:
