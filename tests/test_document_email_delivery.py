@@ -172,6 +172,39 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         self.assertTrue(FakeSMTP.instances)
         self.assertTrue(FakeSMTP.instances[-1].quit_called)
 
+    def test_send_email_prefers_env_smtp_password_over_db_value(self):
+        from app.services import email_service
+
+        original_smtp = email_service.smtplib.SMTP
+        original_password = email_service.SMTP_PASSWORD
+        original_login = FakeSMTP.login
+        login_calls = []
+
+        def record_login(self, user, password):
+            login_calls.append((user, password))
+            return None
+
+        email_service.smtplib.SMTP = FakeSMTP
+        FakeSMTP.login = record_login
+        email_service.SMTP_PASSWORD = "env-secret"
+        try:
+            with self.Session() as db:
+                self._seed_smtp(db)
+                email_service.send_email(
+                    db,
+                    to_email="customer@example.com",
+                    subject="Test",
+                    html_body="<p>Hello</p>",
+                    entity_type="statement",
+                    entity_id=8,
+                )
+        finally:
+            email_service.smtplib.SMTP = original_smtp
+            email_service.SMTP_PASSWORD = original_password
+            FakeSMTP.login = original_login
+
+        self.assertEqual(login_calls, [("mailer@example.com", "env-secret")])
+
     def test_document_email_routes_cover_estimate_statement_credit_memo_purchase_order_and_payslip(self):
         from app.routes import credit_memos as credit_memos_route
         from app.routes import estimates as estimates_route

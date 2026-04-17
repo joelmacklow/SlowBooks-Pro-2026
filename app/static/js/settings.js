@@ -168,7 +168,8 @@ const SettingsPage = {
                         <div class="form-group"><label>Username</label>
                             <input name="smtp_user" value="${escapeHtml(s.smtp_user || '')}"></div>
                         <div class="form-group"><label>Password</label>
-                            <input name="smtp_password" type="password" value="${escapeHtml(s.smtp_password || '')}"></div>
+                            <input name="smtp_password" type="password" value="${escapeHtml(s.smtp_password || '')}"
+                                placeholder="Enter a new SMTP password to set or change"></div>
                         <div class="form-group"><label>From Email</label>
                             <input name="smtp_from_email" type="email" value="${escapeHtml(s.smtp_from_email || '')}"></div>
                         <div class="form-group"><label>From Name</label>

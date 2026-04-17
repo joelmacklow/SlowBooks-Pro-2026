@@ -52,6 +52,31 @@ class SettingsSecretHardeningTests(unittest.TestCase):
 
         self.assertEqual(settings["closing_date_password"], "")
 
+    def test_update_settings_masks_smtp_password_and_preserves_stored_value_on_blank(self):
+        with self.Session() as db:
+            first = update_settings(
+                {"smtp_password": "smtp-secret"},
+                db=db,
+            )
+            original = db.query(Settings).filter(Settings.key == "smtp_password").one().value
+            second = update_settings(
+                {"company_name": "Updated Co", "smtp_password": ""},
+                db=db,
+            )
+            stored = db.query(Settings).filter(Settings.key == "smtp_password").one().value
+
+        self.assertEqual(first["smtp_password"], "")
+        self.assertEqual(second["smtp_password"], "")
+        self.assertEqual(second["company_name"], "Updated Co")
+        self.assertEqual(stored, original)
+
+    def test_get_settings_masks_existing_smtp_password(self):
+        with self.Session() as db:
+            update_settings({"smtp_password": "smtp-secret"}, db=db)
+            settings = get_settings(db=db, auth={"user_id": 1})
+
+        self.assertEqual(settings["smtp_password"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

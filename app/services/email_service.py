@@ -14,6 +14,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, pass_context
 from sqlalchemy.orm import Session
 
+from app.config import SMTP_PASSWORD
 from app.models.email_log import EmailLog
 from app.models.settings import Settings
 from app.services.formatting import format_currency, format_date
@@ -83,7 +84,7 @@ def _send_email_impl(
     host = smtp.get("smtp_host", "")
     port = int(smtp.get("smtp_port", "587"))
     user = smtp.get("smtp_user", "")
-    password = smtp.get("smtp_password", "")
+    password = SMTP_PASSWORD or smtp.get("smtp_password", "")
     from_email = smtp.get("smtp_from_email", user)
     from_name = smtp.get("smtp_from_name", "Slowbooks Pro")
     use_tls = smtp.get("smtp_use_tls", "true").lower() == "true"

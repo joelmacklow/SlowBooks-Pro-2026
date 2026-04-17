@@ -41,6 +41,7 @@ def _set(db: Session, key: str, value: str):
 def _settings_for_client(settings: dict) -> dict:
     result = dict(settings)
     result["closing_date_password"] = ""
+    result["smtp_password"] = ""
     return result
 
 
@@ -82,6 +83,15 @@ def update_settings(
                 secret = str(value) if value is not None else ""
                 if secret:
                     _set(db, key, hash_closing_date_password(secret))
+                else:
+                    existing = db.query(Settings).filter(Settings.key == key).first()
+                    if existing is None:
+                        _set(db, key, "")
+                continue
+            if key == "smtp_password":
+                secret = str(value) if value is not None else ""
+                if secret:
+                    _set(db, key, secret)
                 else:
                     existing = db.query(Settings).filter(Settings.key == key).first()
                     if existing is None:
