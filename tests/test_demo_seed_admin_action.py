@@ -70,6 +70,7 @@ class DemoSeedAdminActionTests(unittest.TestCase):
         from fastapi import HTTPException
         from app.routes.auth import create_user, login
         from app.routes.settings import load_chart_template
+        from app.models.settings import Settings
         from app.schemas.auth import LoginRequest, UserCreateRequest
         from app.services.auth import require_permissions
 
@@ -91,9 +92,12 @@ class DemoSeedAdminActionTests(unittest.TestCase):
 
             with mock.patch("app.routes.settings.run_chart_template_load", return_value={"status": "loaded", "template_key": "xero"}) as load_mock:
                 result = load_chart_template('xero', db=db, auth=owner_auth)
+                markers = {row.key: row.value for row in db.query(Settings).filter(Settings.key.in_(["chart_setup_source", "chart_setup_ready_at"])).all()}
 
             load_mock.assert_called_once_with(db, 'xero')
             self.assertEqual(result["template_key"], "xero")
+            self.assertEqual(markers["chart_setup_source"], "template:xero")
+            self.assertTrue(markers["chart_setup_ready_at"])
 
 
 if __name__ == "__main__":

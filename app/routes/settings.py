@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.settings import Settings, DEFAULT_SETTINGS
 from app.services.auth import require_permissions
+from app.services.chart_setup_status import (
+    CHART_SETUP_SOURCE_TEMPLATE_PREFIX,
+    mark_chart_setup_ready,
+)
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
@@ -107,7 +111,10 @@ def load_chart_template(
 ):
     from fastapi import HTTPException
     try:
-        return run_chart_template_load(db, template_key)
+        result = run_chart_template_load(db, template_key)
+        mark_chart_setup_ready(db, f"{CHART_SETUP_SOURCE_TEMPLATE_PREFIX}{template_key}")
+        db.commit()
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

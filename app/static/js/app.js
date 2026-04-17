@@ -27,6 +27,7 @@ const App = {
         '/check-register': { page: 'check-register', label: 'Check Register',     permission: 'banking.view', render: () => CheckRegisterPage.render() },
         '/cc-charges':    { page: 'cc-charges',      label: 'Credit Card Charges', permission: 'banking.view', render: () => CCChargesPage.render() },
         '/journal':       { page: 'journal',         label: 'Journal Entries',    permission: 'accounts.manage', render: () => JournalPage.render() },
+        '/opening-balances': { page: 'opening-balances', label: 'Opening Balances', permission: 'accounts.manage', render: () => OpeningBalancesPage.render() },
         '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  permission: 'accounts.view', render: () => App.renderAccounts() },
         '/reports':       { page: 'reports',         label: 'Report Center',      permission: 'accounts.manage', render: () => ReportsPage.render() },
         '/reports/gst-return': { page: 'gst-return', label: 'GST Returns',       permission: 'accounts.manage', render: () => ReportsPage.renderGstReturnsScreen() },

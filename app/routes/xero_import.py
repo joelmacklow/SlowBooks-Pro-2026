@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.xero_import import XeroImportDryRunResponse, XeroImportExecuteResponse
 from app.services.auth import require_permissions
+from app.services.chart_setup_status import CHART_SETUP_SOURCE_XERO_IMPORT, mark_chart_setup_ready
 from app.services.xero_import import detect_file_type, dry_run_import, execute_import
 
 router = APIRouter(prefix="/api/xero-import", tags=["xero_import"])
@@ -39,4 +40,7 @@ async def import_xero_bundle(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions('accounts.manage')),
 ):
-    return execute_import(db, _load_files(files))
+    result = execute_import(db, _load_files(files))
+    mark_chart_setup_ready(db, CHART_SETUP_SOURCE_XERO_IMPORT)
+    db.commit()
+    return result

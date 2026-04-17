@@ -27,17 +27,23 @@ class ChartTemplateLoaderTests(unittest.TestCase):
         from app.models.accounts import Account
         from app.models.settings import Settings
         from app.services.chart_template_loader import load_chart_template
+        from app.services.chart_setup_status import mark_chart_setup_ready, chart_setup_status
 
         with self.Session() as db:
             result = load_chart_template(db, 'xero')
+            mark_chart_setup_ready(db, 'template:xero')
+            db.commit()
             account_numbers = {row.account_number for row in db.query(Account).all()}
             system_settings = {row.key: row.value for row in db.query(Settings).all()}
+            readiness = chart_setup_status(db)
 
         self.assertEqual(result['status'], 'loaded')
         self.assertEqual(result['template_key'], 'xero')
         self.assertIn('090', account_numbers)
         self.assertIn('820', account_numbers)
         self.assertIn('system_account_gst_control_id', system_settings)
+        self.assertTrue(readiness['is_ready'])
+        self.assertEqual(readiness['source'], 'template:xero')
 
     def test_loads_mas_template_on_clean_ledger(self):
         from app.models.accounts import Account

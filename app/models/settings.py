@@ -83,4 +83,6 @@ DEFAULT_SETTINGS = {
     "system_account_esct_payable_id": "",
     "system_account_child_support_payable_id": "",
     "system_account_payroll_clearing_id": "",
+    "chart_setup_source": "",
+    "chart_setup_ready_at": "",
 }

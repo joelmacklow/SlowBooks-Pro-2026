@@ -52,14 +52,18 @@ class XeroImportTests(unittest.TestCase):
         from app.models.accounts import Account
         from app.models.transactions import Transaction
         from app.routes.reports import balance_sheet, profit_loss
+        from app.services.chart_setup_status import CHART_SETUP_SOURCE_XERO_IMPORT, chart_setup_status, mark_chart_setup_ready
         from app.services.xero_import import execute_import
 
         with self.Session() as db:
             result = execute_import(db, self._bundle())
+            mark_chart_setup_ready(db, CHART_SETUP_SOURCE_XERO_IMPORT)
+            db.commit()
             accounts = db.query(Account).filter(Account.account_number.in_(['200', '610', '820'])).all()
             transactions = db.query(Transaction).filter(Transaction.source_type == 'xero_import').all()
             pnl = profit_loss(start_date=date(2026, 4, 1), end_date=date(2026, 4, 30), db=db)
             bs = balance_sheet(as_of_date=date(2026, 4, 30), db=db)
+            readiness = chart_setup_status(db)
 
         self.assertEqual(result['imported_accounts'], 6)
         self.assertEqual(result['imported_transactions'], 1)
@@ -69,6 +73,8 @@ class XeroImportTests(unittest.TestCase):
         self.assertEqual(pnl['net_income'], 100.0)
         self.assertEqual(bs['total_assets'], 115.0)
         self.assertEqual(bs['total_liabilities'], 15.0)
+        self.assertTrue(readiness['is_ready'])
+        self.assertEqual(readiness['source'], CHART_SETUP_SOURCE_XERO_IMPORT)
 
     def test_import_blocks_when_verification_fails(self):
         from fastapi import HTTPException

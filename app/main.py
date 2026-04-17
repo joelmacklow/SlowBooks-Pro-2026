@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse
 from app.routes import (
     dashboard, accounts, customers, vendors, items,
     invoices, estimates, payments, banking, reports, settings, iif, auth,
-    journal, deposits, cc_charges,
+    journal, deposits, cc_charges, opening_balances,
 )
 # Phase 1: Foundation
 from app.routes import audit, search
@@ -66,6 +66,7 @@ app.include_router(banking.router)
 app.include_router(journal.router)
 app.include_router(deposits.router)
 app.include_router(cc_charges.router)
+app.include_router(opening_balances.router)
 app.include_router(reports.router)
 app.include_router(settings.router)
 app.include_router(iif.router)
