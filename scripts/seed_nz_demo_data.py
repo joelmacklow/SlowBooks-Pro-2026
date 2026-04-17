@@ -552,6 +552,8 @@ def seed():
             if existing:
                 existing.reconciled = bool(spec["statement_reconciled"])
                 existing.category_account_id = ar_id
+                existing.reference = spec["reference"]
+                existing.code = spec["invoice_number"]
                 continue
             db.add(BankTransaction(
                 bank_account_id=bank_account.id,
@@ -559,6 +561,8 @@ def seed():
                 amount=amount,
                 payee=spec["customer"],
                 description=description,
+                reference=spec["reference"],
+                code=spec["invoice_number"],
                 category_account_id=ar_id,
                 reconciled=bool(spec["statement_reconciled"]),
             ))
@@ -578,6 +582,8 @@ def seed():
             if existing:
                 existing.reconciled = bool(spec["statement_reconciled"])
                 existing.category_account_id = ap_id
+                existing.reference = spec["check_number"]
+                existing.code = spec["bill_number"]
                 continue
             db.add(BankTransaction(
                 bank_account_id=bank_account.id,
@@ -585,6 +591,8 @@ def seed():
                 amount=amount,
                 payee=spec["vendor"],
                 description=description,
+                reference=spec["check_number"],
+                code=spec["bill_number"],
                 category_account_id=ap_id,
                 reconciled=bool(spec["statement_reconciled"]),
             ))

@@ -44,6 +44,8 @@ class BankTransactionCreate(BaseModel):
     payee: Optional[str] = None
     description: Optional[str] = None
     check_number: Optional[str] = None
+    reference: Optional[str] = None
+    code: Optional[str] = None
     category_account_id: Optional[int] = None
 
 
@@ -55,11 +57,25 @@ class BankTransactionResponse(BaseModel):
     payee: Optional[str]
     description: Optional[str]
     check_number: Optional[str]
+    reference: Optional[str]
+    code: Optional[str]
     category_account_id: Optional[int]
     reconciled: bool
+    transaction_id: Optional[int]
+    match_status: Optional[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BankTransactionMatchApproval(BaseModel):
+    match_kind: str
+    target_id: int
+
+
+class BankTransactionCodeApproval(BaseModel):
+    account_id: int
+    description: Optional[str] = None
 
 
 class ReconciliationCreate(BaseModel):

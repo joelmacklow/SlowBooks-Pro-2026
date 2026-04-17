@@ -8,23 +8,87 @@
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
 
 from app.database import get_db
 from app.models.accounts import Account, AccountType
 from app.models.banking import BankAccount, BankTransaction, Reconciliation, ReconciliationStatus
+from app.models.bills import Bill, BillPayment, BillStatus
+from app.models.invoices import Invoice, InvoiceStatus
+from app.models.payments import Payment
 from app.models.transactions import Transaction, TransactionLine
+from app.routes.bill_payments import create_bill_payment as create_bill_payment_entry
+from app.routes.payments import create_payment as create_payment_entry
 from app.schemas.banking import (
     BankAccountCreate, BankAccountUpdate, BankAccountResponse,
     BankTransactionCreate, BankTransactionResponse,
     ReconciliationCreate, ReconciliationResponse,
+    BankTransactionMatchApproval, BankTransactionCodeApproval,
 )
-from app.services.closing_date import check_closing_date
+from app.schemas.bills import BillPaymentAllocationCreate, BillPaymentCreate
+from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
+from app.services.accounting import create_journal_entry, get_ap_account_id, get_ar_account_id
 from app.services.auth import require_permissions
+from app.services.closing_date import check_closing_date
+from app.services.reconciliation_matching import search_candidates, suggestion_candidates, transaction_direction
 
 router = APIRouter(prefix="/api/banking", tags=["banking"])
+
+
+def _bank_transaction_payload(db: Session, bank_txn: BankTransaction) -> dict:
+    matched_label = None
+    if bank_txn.match_status == "coded" and bank_txn.category_account:
+        matched_label = f"Coded to {bank_txn.category_account.name}"
+    elif bank_txn.transaction_id:
+        source_type = bank_txn.transaction.source_type if bank_txn.transaction else ""
+        if source_type == "payment":
+            matched_label = "Matched to customer payment"
+        elif source_type == "bill_payment":
+            matched_label = "Matched to bill payment"
+        else:
+            matched_label = "Matched transaction"
+
+    suggestions = []
+    if bank_txn.transaction_id is None and bank_txn.match_status != "coded":
+        suggestions = suggestion_candidates(db, bank_txn)
+
+    return {
+        "id": bank_txn.id,
+        "date": bank_txn.date.isoformat(),
+        "payee": bank_txn.payee or "",
+        "description": bank_txn.description or "",
+        "reference": bank_txn.reference or "",
+        "code": bank_txn.code or "",
+        "amount": float(bank_txn.amount),
+        "reconciled": bank_txn.reconciled,
+        "match_status": bank_txn.match_status or "unmatched",
+        "matched_label": matched_label,
+        "suggestions": suggestions,
+    }
+
+
+def _get_bank_transaction_or_404(db: Session, txn_id: int) -> BankTransaction:
+    bank_txn = db.query(BankTransaction).filter(BankTransaction.id == txn_id).first()
+    if not bank_txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return bank_txn
+
+
+def _linked_bank_account_or_400(db: Session, bank_txn: BankTransaction) -> BankAccount:
+    bank_account = db.query(BankAccount).filter(BankAccount.id == bank_txn.bank_account_id).first()
+    if not bank_account:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    if not bank_account.account_id:
+        raise HTTPException(status_code=400, detail="Bank account must be linked to a chart-of-accounts asset account before matching or coding")
+    return bank_account
+
+
+def _assert_transaction_matchable(bank_txn: BankTransaction) -> None:
+    if bank_txn.transaction_id:
+        raise HTTPException(status_code=400, detail="Bank transaction is already linked to an accounting transaction")
+    if bank_txn.match_status == "coded":
+        raise HTTPException(status_code=400, detail="Bank transaction is already coded")
 
 
 # Bank Accounts
@@ -68,7 +132,27 @@ def list_bank_transactions(bank_account_id: int = None, db: Session = Depends(ge
     q = db.query(BankTransaction)
     if bank_account_id:
         q = q.filter(BankTransaction.bank_account_id == bank_account_id)
-    return q.order_by(BankTransaction.date.desc()).all()
+    return q.order_by(BankTransaction.date.desc(), BankTransaction.id.desc()).all()
+
+
+@router.get("/transactions/{txn_id}/suggestions")
+def get_bank_transaction_suggestions(txn_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    return {
+        "transaction": _bank_transaction_payload(db, bank_txn),
+        "direction": transaction_direction(bank_txn),
+        "suggestions": suggestion_candidates(db, bank_txn),
+    }
+
+
+@router.get("/transactions/{txn_id}/search")
+def search_bank_transaction_matches(txn_id: int, query: str = Query(default=""), db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    return {
+        "direction": transaction_direction(bank_txn),
+        "query": query,
+        "candidates": search_candidates(db, bank_txn, query=query),
+    }
 
 
 @router.post("/transactions", response_model=BankTransactionResponse, status_code=201)
@@ -78,12 +162,127 @@ def create_bank_transaction(data: BankTransactionCreate, db: Session = Depends(g
     if not ba:
         raise HTTPException(status_code=404, detail="Bank account not found")
 
-    txn = BankTransaction(**data.model_dump())
-    ba.balance += data.amount
+    txn = BankTransaction(**data.model_dump(), match_status="unmatched")
+    ba.balance = Decimal(str(ba.balance or 0)) + Decimal(str(data.amount))
     db.add(txn)
     db.commit()
     db.refresh(txn)
     return txn
+
+
+@router.post("/transactions/{txn_id}/approve-match")
+def approve_bank_transaction_match(txn_id: int, data: BankTransactionMatchApproval, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    _assert_transaction_matchable(bank_txn)
+    bank_account = _linked_bank_account_or_400(db, bank_txn)
+
+    amount = Decimal(str(bank_txn.amount or 0))
+    if data.match_kind == "invoice":
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Only payment-in statement lines can be matched to invoices")
+        invoice = db.query(Invoice).filter(Invoice.id == data.target_id).first()
+        if not invoice or invoice.status not in (InvoiceStatus.SENT, InvoiceStatus.PARTIAL):
+            raise HTTPException(status_code=404, detail="Outstanding invoice not found")
+        if Decimal(str(invoice.balance_due or 0)) < amount:
+            raise HTTPException(status_code=400, detail="Statement amount exceeds invoice balance")
+
+        created = create_payment_entry(
+            PaymentCreate(
+                customer_id=invoice.customer_id,
+                date=bank_txn.date,
+                amount=amount,
+                method="EFT",
+                check_number=None,
+                reference=bank_txn.reference or bank_txn.code or f"bank-{bank_txn.id}",
+                deposit_to_account_id=bank_account.account_id,
+                notes=f"Matched from bank statement line {bank_txn.id}",
+                allocations=[PaymentAllocationCreate(invoice_id=invoice.id, amount=amount)],
+            ),
+            db=db,
+            auth=True,
+        )
+        payment = db.query(Payment).filter(Payment.id == created.id).first()
+        bank_txn.transaction_id = payment.transaction_id if payment else None
+        bank_txn.category_account_id = get_ar_account_id(db)
+        bank_txn.match_status = "manual"
+        db.commit()
+        return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": f"Invoice {invoice.invoice_number}"}
+
+    if data.match_kind == "bill":
+        if amount >= 0:
+            raise HTTPException(status_code=400, detail="Only payment-out statement lines can be matched to bills")
+        bill = db.query(Bill).filter(Bill.id == data.target_id).first()
+        if not bill or bill.status not in (BillStatus.UNPAID, BillStatus.PARTIAL):
+            raise HTTPException(status_code=404, detail="Outstanding bill not found")
+        payment_amount = abs(amount)
+        if Decimal(str(bill.balance_due or 0)) < payment_amount:
+            raise HTTPException(status_code=400, detail="Statement amount exceeds bill balance")
+
+        created = create_bill_payment_entry(
+            BillPaymentCreate(
+                vendor_id=bill.vendor_id,
+                date=bank_txn.date,
+                amount=float(payment_amount),
+                method="EFT",
+                check_number=bank_txn.reference or bank_txn.code or f"bank-{bank_txn.id}",
+                pay_from_account_id=bank_account.account_id,
+                notes=f"Matched from bank statement line {bank_txn.id}",
+                allocations=[BillPaymentAllocationCreate(bill_id=bill.id, amount=float(payment_amount))],
+            ),
+            db=db,
+            auth=True,
+        )
+        payment = db.query(BillPayment).filter(BillPayment.id == created.id).first()
+        bank_txn.transaction_id = payment.transaction_id if payment else None
+        bank_txn.category_account_id = get_ap_account_id(db)
+        bank_txn.match_status = "manual"
+        db.commit()
+        return {"status": "matched", "transaction_id": bank_txn.id, "matched_label": f"Bill {bill.bill_number}"}
+
+    raise HTTPException(status_code=400, detail="Unsupported match kind")
+
+
+@router.post("/transactions/{txn_id}/code")
+def code_bank_transaction(txn_id: int, data: BankTransactionCodeApproval, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    _assert_transaction_matchable(bank_txn)
+    bank_account = _linked_bank_account_or_400(db, bank_txn)
+    target_account = db.query(Account).filter(Account.id == data.account_id, Account.is_active == True).first()
+    if not target_account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if target_account.id == bank_account.account_id:
+        raise HTTPException(status_code=400, detail="Choose a different account from the linked bank account")
+
+    check_closing_date(db, bank_txn.date)
+    amount = Decimal(str(bank_txn.amount or 0))
+    absolute_amount = abs(amount)
+    description = data.description or bank_txn.description or bank_txn.payee or f"Bank statement line {bank_txn.id}"
+
+    if amount >= 0:
+        journal_lines = [
+            {"account_id": bank_account.account_id, "debit": absolute_amount, "credit": Decimal("0"), "description": description},
+            {"account_id": target_account.id, "debit": Decimal("0"), "credit": absolute_amount, "description": description},
+        ]
+    else:
+        journal_lines = [
+            {"account_id": target_account.id, "debit": absolute_amount, "credit": Decimal("0"), "description": description},
+            {"account_id": bank_account.account_id, "debit": Decimal("0"), "credit": absolute_amount, "description": description},
+        ]
+
+    txn = create_journal_entry(
+        db,
+        bank_txn.date,
+        description,
+        journal_lines,
+        source_type="bank_transaction_code",
+        source_id=bank_txn.id,
+        reference=bank_txn.reference or bank_txn.code or str(bank_txn.id),
+    )
+    bank_txn.transaction_id = txn.id
+    bank_txn.category_account_id = target_account.id
+    bank_txn.match_status = "coded"
+    db.commit()
+    return {"status": "coded", "transaction_id": bank_txn.id, "matched_label": f"Coded to {target_account.name}"}
 
 
 # Reconciliations — CReconcileEngine @ 0x001F0400
@@ -97,7 +296,6 @@ def list_reconciliations(bank_account_id: int = None, db: Session = Depends(get_
 
 @router.post("/reconciliations", response_model=ReconciliationResponse, status_code=201)
 def create_reconciliation(data: ReconciliationCreate, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
-    """Start a reconciliation — CReconcileEngine::Begin() @ 0x001F0500"""
     ba = db.query(BankAccount).filter(BankAccount.id == data.bank_account_id).first()
     if not ba:
         raise HTTPException(status_code=404, detail="Bank account not found")
@@ -110,7 +308,6 @@ def create_reconciliation(data: ReconciliationCreate, db: Session = Depends(get_
 
 @router.get("/reconciliations/{recon_id}/transactions")
 def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
-    """Get unreconciled transactions for this bank account"""
     recon = db.query(Reconciliation).filter(Reconciliation.id == recon_id).first()
     if not recon:
         raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -119,7 +316,7 @@ def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db)
         db.query(BankTransaction)
         .filter(BankTransaction.bank_account_id == recon.bank_account_id)
         .filter(BankTransaction.date <= recon.statement_date)
-        .order_by(BankTransaction.date)
+        .order_by(BankTransaction.date, BankTransaction.id)
         .all()
     )
 
@@ -134,24 +331,12 @@ def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db)
         "cleared_total": cleared_total,
         "uncleared_total": uncleared_total,
         "difference": difference,
-        "transactions": [
-            {
-                "id": t.id,
-                "date": t.date.isoformat(),
-                "payee": t.payee or "",
-                "description": t.description or "",
-                "amount": float(t.amount),
-                "check_number": t.check_number,
-                "reconciled": t.reconciled,
-            }
-            for t in txns
-        ],
+        "transactions": [_bank_transaction_payload(db, txn) for txn in txns],
     }
 
 
 @router.post("/reconciliations/{recon_id}/toggle/{txn_id}")
 def toggle_cleared(recon_id: int, txn_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
-    """Toggle a transaction's cleared status — CReconcileEngine::ToggleItem()"""
     recon = db.query(Reconciliation).filter(Reconciliation.id == recon_id).first()
     if not recon:
         raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -214,7 +399,6 @@ def check_register(account_id: int = None, db: Session = Depends(get_db), auth=D
 
 @router.post("/reconciliations/{recon_id}/complete")
 def complete_reconciliation(recon_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
-    """CReconcileEngine::Finish() @ 0x001F0A00 — validates difference is 0"""
     recon = db.query(Reconciliation).filter(Reconciliation.id == recon_id).first()
     if not recon:
         raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -233,7 +417,7 @@ def complete_reconciliation(recon_id: int, db: Session = Depends(get_db), auth=D
     if abs(cleared_total - recon.statement_balance) > Decimal("0.01"):
         raise HTTPException(
             status_code=400,
-            detail=f"Difference is ${float(recon.statement_balance - cleared_total):.2f} — must be $0.00 to complete"
+            detail=f"Difference is ${float(recon.statement_balance - cleared_total):.2f} — must be $0.00 to complete",
         )
 
     recon.status = ReconciliationStatus.COMPLETED

@@ -47,7 +47,7 @@ const BankingPage = {
                 <div class="btn-group">
                     <button class="btn btn-secondary" onclick="App.navigate('#/banking')">Back</button>
                     ${App.hasPermission && !App.hasPermission('banking.manage') ? '' : `<button class="btn btn-primary" onclick="BankingPage.showTxnForm(${bankAccountId})">+ Transaction</button>
-                    <button class="btn btn-secondary" onclick="BankingPage.showOFXImport(${bankAccountId})">Import OFX/QFX</button>
+                    <button class="btn btn-secondary" onclick="BankingPage.showStatementImport(${bankAccountId})">Import Statement</button>
                     <button class="btn btn-secondary" onclick="BankingPage.startReconcile(${bankAccountId})">Reconcile</button>` }
                 </div>
             </div>
@@ -61,7 +61,7 @@ const BankingPage = {
         } else {
             html += `<div class="table-container"><table>
                 <thead><tr>
-                    <th>Date</th><th>Payee</th><th>Description</th><th>Check #</th>
+                    <th>Date</th><th>Payee</th><th>Description</th><th>Reference</th><th>Code</th>
                     <th class="amount">Amount</th><th>Reconciled</th>
                 </tr></thead><tbody>`;
             for (const t of txns) {
@@ -70,7 +70,8 @@ const BankingPage = {
                     <td>${formatDate(t.date)}</td>
                     <td>${escapeHtml(t.payee || '')}</td>
                     <td>${escapeHtml(t.description || '')}</td>
-                    <td>${escapeHtml(t.check_number || '')}</td>
+                    <td>${escapeHtml(t.reference || '')}</td>
+                    <td>${escapeHtml(t.code || '')}</td>
                     <td class="amount" style="${cls}">${formatCurrency(t.amount)}</td>
                     <td>${t.reconciled ? 'R' : ''}</td>
                 </tr>`;
@@ -127,7 +128,7 @@ const BankingPage = {
     async showTxnForm(bankAccountId) {
         const accounts = await API.get('/accounts');
         const catOpts = accounts
-            .filter(a => ['expense','income','asset','liability'].includes(a.account_type))
+            .filter(a => ['expense','income','asset','liability','equity'].includes(a.account_type))
             .map(a => `<option value="${a.id}">${a.account_number} - ${escapeHtml(a.name)}</option>`).join('');
 
         openModal('New Transaction', `
@@ -139,8 +140,10 @@ const BankingPage = {
                         <input name="amount" type="number" step="0.01" required></div>
                     <div class="form-group"><label>Payee</label>
                         <input name="payee"></div>
-                    <div class="form-group"><label>Check #</label>
-                        <input name="check_number"></div>
+                    <div class="form-group"><label>Reference</label>
+                        <input name="reference"></div>
+                    <div class="form-group"><label>Code</label>
+                        <input name="code"></div>
                     <div class="form-group full-width"><label>Description</label>
                         <input name="description"></div>
                     <div class="form-group"><label>Category</label>
@@ -162,7 +165,9 @@ const BankingPage = {
             amount: parseFloat(form.amount.value),
             payee: form.payee.value || null,
             description: form.description.value || null,
-            check_number: form.check_number.value || null,
+            reference: form.reference.value || null,
+            code: form.code.value || null,
+            check_number: null,
             category_account_id: form.category_account_id.value ? parseInt(form.category_account_id.value) : null,
         };
         try {
@@ -173,7 +178,6 @@ const BankingPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    // Reconciliation — CReconcileWizard @ 0x001F1200
     async startReconcile(bankAccountId) {
         openModal('Begin Reconciliation', `
             <form onsubmit="BankingPage.createReconciliation(event, ${bankAccountId})">
@@ -207,22 +211,42 @@ const BankingPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
+    renderMatchActions(transaction, reconId) {
+        if (transaction.matched_label) {
+            return `<div style="font-size:11px; color:var(--success); font-weight:700;">${escapeHtml(transaction.matched_label)}</div>`;
+        }
+        const suggestionHtml = (transaction.suggestions || []).slice(0, 2).map(candidate => `
+            <button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.approveMatch(${transaction.id}, '${candidate.kind}', ${candidate.target_id}, ${reconId})">
+                ${escapeHtml(candidate.document_number || candidate.label)}
+            </button>`).join('');
+        return `
+            <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+                ${suggestionHtml || '<span style="font-size:11px; color:var(--text-muted);">No likely matches yet</span>'}
+                <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.showMatchModal(${reconId}, ${transaction.id})">Find & Match</button>
+            </div>`;
+    },
+
     async showReconcileView(reconId) {
         const data = await API.get(`/banking/reconciliations/${reconId}/transactions`);
-        let rows = data.transactions.map(t => {
-            const cls = t.reconciled ? 'style="background:var(--primary-light);"' : '';
+        BankingPage._reconcileContext = { reconId, data };
+        const diffColor = Math.abs(data.difference) < 0.01 ? 'var(--success)' : 'var(--danger)';
+        const rows = data.transactions.map(t => {
             const amtCls = t.amount >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
-            return `<tr ${cls}>
+            const rowStyle = t.reconciled ? 'style="background:var(--primary-light);"' : '';
+            return `<tr ${rowStyle}>
                 <td><input type="checkbox" ${t.reconciled ? 'checked' : ''}
                     onchange="BankingPage.toggleCleared(${reconId}, ${t.id}, this)"></td>
                 <td>${formatDate(t.date)}</td>
-                <td>${escapeHtml(t.payee || t.description || '')}</td>
-                <td>${escapeHtml(t.check_number || '')}</td>
+                <td>
+                    <div>${escapeHtml(t.payee || '')}</div>
+                    <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(t.description || '')}</div>
+                </td>
+                <td>${escapeHtml(t.reference || '')}</td>
+                <td>${escapeHtml(t.code || '')}</td>
                 <td class="amount" style="${amtCls}">${formatCurrency(t.amount)}</td>
+                <td>${BankingPage.renderMatchActions(t, reconId)}</td>
             </tr>`;
         }).join('');
-
-        const diffColor = Math.abs(data.difference) < 0.01 ? 'var(--success)' : 'var(--danger)';
 
         $('#page-content').innerHTML = `
             <div class="page-header">
@@ -241,17 +265,19 @@ const BankingPage = {
                 <div class="card"><div class="card-header">Difference</div>
                     <div class="card-value" id="recon-diff" style="color:${diffColor}">${formatCurrency(data.difference)}</div></div>
             </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
+                Suggested matches use amount, direction, payee/description, reference, and code. Every match still requires your approval.
+            </div>
             <div class="table-container"><table>
-                <thead><tr><th style="width:30px;"></th><th>Date</th><th>Payee / Description</th><th>Check #</th><th class="amount">Amount</th></tr></thead>
-                <tbody>${rows || '<tr><td colspan="5" style="text-align:center;">No transactions</td></tr>'}</tbody>
+                <thead><tr><th style="width:30px;"></th><th>Date</th><th>Payee / Description</th><th>Reference</th><th>Code</th><th class="amount">Amount</th><th>Find & Match</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" style="text-align:center;">No transactions</td></tr>'}</tbody>
             </table></div>`;
     },
 
     async toggleCleared(reconId, txnId, checkbox) {
         try {
             await API.post(`/banking/reconciliations/${reconId}/toggle/${txnId}`);
-            // Refresh the view to update totals
-            BankingPage.showReconcileView(reconId);
+            await BankingPage.showReconcileView(reconId);
         } catch (err) {
             checkbox.checked = !checkbox.checked;
             toast(err.message, 'error');
@@ -267,60 +293,159 @@ const BankingPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    // Feature 18: OFX/QFX Import
-    async showOFXImport(bankAccountId) {
-        openModal('Import OFX/QFX File', `
-            <form onsubmit="BankingPage.previewOFX(event, ${bankAccountId})">
+    async showMatchModal(reconId, txnId) {
+        const [suggestionData, accounts] = await Promise.all([
+            API.get(`/banking/transactions/${txnId}/suggestions`),
+            API.get('/accounts?active_only=true'),
+        ]);
+        BankingPage._matchModalAccounts = accounts;
+        const txn = suggestionData.transaction;
+        const directionLabel = suggestionData.direction === 'inflow' ? 'outstanding invoices' : 'outstanding bills';
+        const suggestionHtml = (suggestionData.suggestions || []).map(candidate => `
+            <div class="card" style="padding:10px; margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+                    <div>
+                        <div style="font-weight:700;">${escapeHtml(candidate.label)}</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Open ${formatCurrency(candidate.open_amount)} · ${escapeHtml((candidate.reasons || []).join(', '))}</div>
+                    </div>
+                    <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.approveMatch(${txnId}, '${candidate.kind}', ${candidate.target_id}, ${reconId})">Approve</button>
+                </div>
+            </div>`).join('') || '<div style="font-size:11px; color:var(--text-muted);">No likely matches found.</div>';
+        const accountOptions = accounts.map(account => `<option value="${account.id}">${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`).join('');
+        openModal('Find & Match Statement Line', `
+            <div style="margin-bottom:12px;">
+                <strong>${escapeHtml(txn.payee || 'Statement line')}</strong><br>
+                <span style="font-size:11px; color:var(--text-muted);">${formatDate(txn.date)} · ${escapeHtml(txn.description || '')}</span><br>
+                <span style="font-size:11px; color:var(--text-muted);">Reference: ${escapeHtml(txn.reference || '—')} · Code: ${escapeHtml(txn.code || '—')}</span><br>
+                <span style="font-size:11px; color:var(--text-muted);">Amount: ${formatCurrency(txn.amount)}</span>
+            </div>
+            <div class="settings-section" style="margin-bottom:12px;">
+                <h3>Likely ${escapeHtml(directionLabel)}</h3>
+                ${suggestionHtml}
+            </div>
+            <div class="settings-section" style="margin-bottom:12px;">
+                <h3>Search ${escapeHtml(directionLabel)}</h3>
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <input id="bank-match-query-${txnId}" placeholder="Search payee, amount, reference, description, or code" style="flex:1;">
+                    <button class="btn btn-secondary" type="button" onclick="BankingPage.searchMatches(${txnId}, ${reconId})">Search</button>
+                </div>
+                <div id="bank-match-results-${txnId}" style="font-size:11px; color:var(--text-muted);">Search outstanding ${escapeHtml(directionLabel)} to review more choices.</div>
+            </div>
+            <div class="settings-section">
+                <h3>Code to account</h3>
+                <div class="form-grid">
+                    <div class="form-group full-width"><label>Account</label>
+                        <select id="bank-code-account-${txnId}"><option value="">Select account...</option>${accountOptions}</select></div>
+                    <div class="form-group full-width"><label>Description</label>
+                        <input id="bank-code-description-${txnId}" value="${escapeHtml(txn.description || txn.payee || '')}"></div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" type="button" onclick="BankingPage.codeTransaction(${txnId}, ${reconId})">Code transaction</button>
+                    <button class="btn btn-secondary" type="button" onclick="closeModal()">Close</button>
+                </div>
+            </div>`);
+    },
+
+    async searchMatches(txnId, reconId) {
+        const queryEl = $(`#bank-match-query-${txnId}`);
+        const resultsEl = $(`#bank-match-results-${txnId}`);
+        const query = queryEl ? queryEl.value : '';
+        try {
+            const data = await API.get(`/banking/transactions/${txnId}/search?query=${encodeURIComponent(query)}`);
+            const rows = (data.candidates || []).map(candidate => `
+                <div class="card" style="padding:10px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+                        <div>
+                            <div style="font-weight:700;">${escapeHtml(candidate.label)}</div>
+                            <div style="font-size:11px; color:var(--text-muted);">Open ${formatCurrency(candidate.open_amount)} · ${escapeHtml((candidate.reasons || []).join(', '))}</div>
+                        </div>
+                        <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.approveMatch(${txnId}, '${candidate.kind}', ${candidate.target_id}, ${reconId})">Approve</button>
+                    </div>
+                </div>`).join('');
+            resultsEl.innerHTML = rows || '<div style="font-size:11px; color:var(--text-muted);">No matches found.</div>';
+        } catch (err) {
+            resultsEl.innerHTML = `<div style="font-size:11px; color:var(--danger);">${escapeHtml(err.message)}</div>`;
+        }
+    },
+
+    async approveMatch(txnId, kind, targetId, reconId) {
+        try {
+            await API.post(`/banking/transactions/${txnId}/approve-match`, { match_kind: kind, target_id: targetId });
+            toast('Statement line matched');
+            closeModal();
+            await BankingPage.showReconcileView(reconId);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async codeTransaction(txnId, reconId) {
+        const accountEl = $(`#bank-code-account-${txnId}`);
+        const descEl = $(`#bank-code-description-${txnId}`);
+        if (!accountEl || !accountEl.value) {
+            toast('Select an account to code this transaction', 'error');
+            return;
+        }
+        try {
+            await API.post(`/banking/transactions/${txnId}/code`, {
+                account_id: parseInt(accountEl.value),
+                description: descEl ? descEl.value || null : null,
+            });
+            toast('Statement line coded');
+            closeModal();
+            await BankingPage.showReconcileView(reconId);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async showStatementImport(bankAccountId) {
+        openModal('Import Bank Statement', `
+            <form onsubmit="BankingPage.previewStatement(event, ${bankAccountId})">
                 <div class="form-group">
-                    <label>Select OFX or QFX file from your bank</label>
-                    <input type="file" name="file" accept=".ofx,.qfx" required id="ofx-file">
+                    <label>Select OFX, QFX, or CSV file from your bank</label>
+                    <input type="file" name="file" accept=".ofx,.qfx,.csv,text/csv" required id="statement-file">
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Preview Import</button>
                 </div>
             </form>
-            <div id="ofx-preview" style="margin-top:12px;"></div>`);
+            <div id="statement-preview" style="margin-top:12px;"></div>`);
     },
 
-    async previewOFX(e, bankAccountId) {
+    async previewStatement(e, bankAccountId) {
         e.preventDefault();
-        const file = $('#ofx-file').files[0];
+        const file = $('#statement-file').files[0];
         if (!file) return;
         const formData = new FormData();
         formData.append('file', file);
         try {
-            const resp = await fetch('/api/bank-import/preview', { method: 'POST', body: formData });
-            const data = await resp.json();
-            if (!resp.ok) throw new Error(data.detail || 'Parse failed');
-            BankingPage._ofxData = data;
-            let rows = data.transactions.map((t, i) => `<tr>
-                <td>${escapeHtml(t.date || '')}</td>
+            const data = await API.postForm('/bank-import/preview', formData);
+            let rows = (data.transactions || []).map((t) => `<tr>
+                <td>${formatDate(t.date)}</td>
                 <td>${escapeHtml(t.payee || '')}</td>
+                <td>${escapeHtml(t.description || '')}</td>
+                <td>${escapeHtml(t.reference || '')}</td>
+                <td>${escapeHtml(t.code || '')}</td>
                 <td class="amount" style="${t.amount >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">${formatCurrency(t.amount)}</td>
-                <td>${escapeHtml(t.fitid || '')}</td>
             </tr>`).join('');
-            $('#ofx-preview').innerHTML = `
+            $('#statement-preview').innerHTML = `
                 <div style="margin-bottom:8px; font-size:11px;">
-                    <strong>${data.transactions.length}</strong> transactions found.
-                    ${data.account_id ? `Account: ${escapeHtml(data.account_id)}` : ''}
+                    <strong>${data.transactions.length}</strong> transactions found via ${escapeHtml((data.format || '').toUpperCase()) || 'statement import'}.
                 </div>
                 <div class="table-container" style="max-height:300px; overflow-y:auto;"><table>
-                    <thead><tr><th>Date</th><th>Payee</th><th class="amount">Amount</th><th>FITID</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Payee</th><th>Description</th><th>Reference</th><th>Code</th><th class="amount">Amount</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>
                 <div class="form-actions" style="margin-top:12px;">
-                    <button class="btn btn-primary" onclick="BankingPage.confirmOFXImport(${bankAccountId})">Import ${data.transactions.length} Transactions</button>
+                    <button class="btn btn-primary" type="button" onclick="BankingPage.confirmStatementImport(${bankAccountId})">Import ${data.transactions.length} Transactions</button>
                 </div>`;
         } catch (err) {
-            $('#ofx-preview').innerHTML = `<div style="color:var(--danger); font-size:11px;">${escapeHtml(err.message)}</div>`;
+            $('#statement-preview').innerHTML = `<div style="color:var(--danger); font-size:11px;">${escapeHtml(err.message)}</div>`;
         }
     },
 
-    async confirmOFXImport(bankAccountId) {
+    async confirmStatementImport(bankAccountId) {
         try {
             const formData = new FormData();
-            formData.append('file', $('#ofx-file').files[0]);
+            formData.append('file', $('#statement-file').files[0]);
             const data = await API.postForm(`/bank-import/import/${bankAccountId}`, formData);
             toast(`Imported ${data.imported} transactions (${data.skipped_duplicates} duplicates skipped)`);
             closeModal();

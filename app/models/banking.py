@@ -52,6 +52,8 @@ class BankTransaction(Base):
     payee = Column(String(200), nullable=True)
     description = Column(String(500), nullable=True)
     check_number = Column(String(50), nullable=True)
+    reference = Column(String(100), nullable=True)
+    code = Column(String(100), nullable=True)
     category_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     reconciled = Column(Boolean, default=False)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
