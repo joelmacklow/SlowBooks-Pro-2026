@@ -18,6 +18,7 @@ from app.models.accounts import Account
 from app.models.banking import BankAccount, BankTransaction
 from app.models.bills import Bill, BillLine, BillPayment, BillPaymentAllocation, BillStatus
 from app.models.contacts import Customer, Vendor
+from app.models.credit_memos import CreditApplication, CreditMemo, CreditMemoLine, CreditMemoStatus
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
 from app.models.items import Item, ItemType
@@ -109,12 +110,21 @@ BILLS = [
     {"bill_number": "3001", "vendor": "ABC Furniture", "day_offset": 4, "terms": "Net 30", "ref_number": "AF-001", "lines": [("Office seating refresh", 1, 365.00)]},
     {"bill_number": "3002", "vendor": "PowerDirect", "day_offset": 8, "terms": "Net 30", "ref_number": "PD-2201", "lines": [("Electricity account", 1, 162.00)]},
     {"bill_number": "3003", "vendor": "Net Connect", "day_offset": 16, "terms": "Net 30", "ref_number": "NC-7781", "lines": [("Internet and phone services", 1, 113.00)]},
+    {"bill_number": "3004", "vendor": "MCO Cleaning Services", "day_offset": 19, "terms": "Net 14", "ref_number": "MCO-0419", "lines": [("Office cleaning services", 1, 200.00)]},
+    {"bill_number": "3005", "vendor": "PC Complete", "day_offset": 21, "terms": "Net 30", "ref_number": "PCC-0421", "lines": [("Printer maintenance", 1, 250.00)]},
 ]
 
 BILL_PAYMENTS = [
     {"vendor": "ABC Furniture", "bill_number": "3001", "day_offset": 11, "amount": 419.75, "method": "EFT", "check_number": "BP-7001", "statement_reconciled": True},
     {"vendor": "PowerDirect", "bill_number": "3002", "day_offset": 13, "amount": 186.30, "method": "EFT", "check_number": "BP-7002", "statement_reconciled": False},
     {"vendor": "Net Connect", "bill_number": "3003", "day_offset": 23, "amount": 129.95, "method": "EFT", "check_number": "BP-7003", "statement_reconciled": False},
+    {"vendor": "MCO Cleaning Services", "bill_number": "3004", "day_offset": 24, "amount": 115.00, "method": "EFT", "check_number": "BP-7004", "statement_reconciled": False},
+]
+
+CREDIT_MEMOS = [
+    {"memo_number": "CM-2001", "customer": "City Agency", "original_invoice_number": "2004", "day_offset": 18, "notes": "Service recovery credit", "lines": [("Training Session", 1, 100.00)], "applications": [{"invoice_number": "2004", "amount": 115.00}]},
+    {"memo_number": "CM-2002", "customer": "DIISR - Small Business Services", "original_invoice_number": None, "day_offset": 22, "notes": "Promotional credit note", "lines": [("Content Pack", 1, 200.00)], "applications": []},
+    {"memo_number": "CM-2003", "customer": "Basket Case", "original_invoice_number": "2009", "day_offset": 26, "notes": "Travel charge correction", "lines": [("Travel Recovery", 1, 100.00)], "applications": [{"invoice_number": "2009", "amount": 57.50}]},
 ]
 
 BANK_ACCOUNT = {"name": "ANZ Business Account", "bank_name": "ANZ", "last_four": "1208"}
@@ -153,6 +163,63 @@ def build_lines(lines_data, item_map):
     tax_amount = (subtotal * GST_RATE).quantize(Decimal("0.01"))
     total = subtotal + tax_amount
     return subtotal, tax_amount, total, built
+
+
+def refresh_invoice_status(invoice):
+    invoice.balance_due = Decimal(str(invoice.total or 0)) - Decimal(str(invoice.amount_paid or 0))
+    if invoice.balance_due <= 0:
+        invoice.status = InvoiceStatus.PAID
+    elif Decimal(str(invoice.amount_paid or 0)) > 0:
+        invoice.status = InvoiceStatus.PARTIAL
+    else:
+        invoice.status = InvoiceStatus.SENT
+
+
+def refresh_credit_memo_status(memo):
+    if Decimal(str(memo.balance_remaining or 0)) <= 0:
+        memo.status = CreditMemoStatus.APPLIED
+    else:
+        memo.status = CreditMemoStatus.ISSUED
+
+
+def post_credit_memo_journal(db, memo, customer, built_lines, total, tax_amount, default_income_account_id, gst_account_id):
+    ar_id = get_ar_account_id(db)
+    journal_lines = []
+    for line_data in built_lines:
+        item = db.query(Item).filter(Item.id == line_data["item_id"]).first() if line_data.get("item_id") else None
+        income_account_id = item.income_account_id if item and item.income_account_id else default_income_account_id
+        if not income_account_id:
+            continue
+        journal_lines.append({
+            "account_id": income_account_id,
+            "debit": line_data["amount"],
+            "credit": Decimal("0"),
+            "description": line_data["description"] or "",
+        })
+    if tax_amount > 0 and gst_account_id:
+        journal_lines.append({
+            "account_id": gst_account_id,
+            "debit": tax_amount,
+            "credit": Decimal("0"),
+            "description": "GST credit",
+        })
+    if ar_id and journal_lines:
+        journal_lines.append({
+            "account_id": ar_id,
+            "debit": Decimal("0"),
+            "credit": total,
+            "description": f"Credit Memo {memo.memo_number}",
+        })
+        txn = create_journal_entry(
+            db,
+            memo.date,
+            f"Credit Memo {memo.memo_number} - {customer.name}",
+            journal_lines,
+            source_type="credit_memo",
+            source_id=memo.id,
+            reference=memo.memo_number,
+        )
+        memo.transaction_id = txn.id
 
 
 def seed():
@@ -365,11 +432,7 @@ def seed():
             if alloc_amount > 0:
                 db.add(PaymentAllocation(payment_id=payment.id, invoice_id=invoice.id, amount=alloc_amount))
                 invoice.amount_paid = Decimal(str(invoice.amount_paid or 0)) + alloc_amount
-                invoice.balance_due = Decimal(str(invoice.total or 0)) - invoice.amount_paid
-                if invoice.balance_due <= 0:
-                    invoice.status = InvoiceStatus.PAID
-                elif invoice.amount_paid > 0:
-                    invoice.status = InvoiceStatus.PARTIAL
+                refresh_invoice_status(invoice)
 
             if ar_id and default_bank_account_id:
                 txn = create_journal_entry(
@@ -516,6 +579,71 @@ def seed():
                 payment.transaction_id = txn.id
             created_bill_payments += 1
         print(f"  {created_bill_payments} bill payments created ({len(BILL_PAYMENTS) - created_bill_payments} existing)")
+
+        credit_memo_map = {}
+        created_credit_memos = 0
+        for spec in CREDIT_MEMOS:
+            customer = customer_map[spec["customer"]]
+            existing = db.query(CreditMemo).filter(CreditMemo.memo_number == spec["memo_number"]).first()
+            if existing:
+                credit_memo_map[spec["memo_number"]] = existing
+                continue
+            memo_date = base_date + timedelta(days=spec["day_offset"] - 1)
+            subtotal, tax_amount, total, built_lines = build_lines(spec["lines"], item_map)
+            memo = CreditMemo(
+                memo_number=spec["memo_number"],
+                customer_id=customer.id,
+                original_invoice_id=invoice_map[spec["original_invoice_number"]].id if spec.get("original_invoice_number") else None,
+                date=memo_date,
+                subtotal=subtotal,
+                tax_rate=GST_RATE,
+                tax_amount=tax_amount,
+                total=total,
+                amount_applied=Decimal("0"),
+                balance_remaining=total,
+                notes=spec.get("notes"),
+                status=CreditMemoStatus.ISSUED,
+            )
+            db.add(memo)
+            db.flush()
+            for line_data in built_lines:
+                db.add(CreditMemoLine(
+                    credit_memo_id=memo.id,
+                    item_id=line_data["item_id"],
+                    description=line_data["description"],
+                    quantity=line_data["quantity"],
+                    rate=line_data["rate"],
+                    amount=line_data["amount"],
+                    gst_code="GST15",
+                    gst_rate=GST_RATE,
+                    line_order=line_data["line_order"],
+                ))
+            post_credit_memo_journal(db, memo, customer, built_lines, total, tax_amount, default_income_account_id, gst_account_id)
+            credit_memo_map[spec["memo_number"]] = memo
+            created_credit_memos += 1
+        print(f"  {created_credit_memos} credit notes created ({len(CREDIT_MEMOS) - created_credit_memos} existing)")
+
+        created_credit_applications = 0
+        for spec in CREDIT_MEMOS:
+            memo = credit_memo_map[spec["memo_number"]]
+            for application_spec in spec.get("applications", []):
+                invoice = invoice_map[application_spec["invoice_number"]]
+                amount = money(application_spec["amount"])
+                existing = db.query(CreditApplication).filter(
+                    CreditApplication.credit_memo_id == memo.id,
+                    CreditApplication.invoice_id == invoice.id,
+                    CreditApplication.amount == amount,
+                ).first()
+                if existing:
+                    continue
+                db.add(CreditApplication(credit_memo_id=memo.id, invoice_id=invoice.id, amount=amount))
+                memo.amount_applied = Decimal(str(memo.amount_applied or 0)) + amount
+                memo.balance_remaining = Decimal(str(memo.total or 0)) - memo.amount_applied
+                refresh_credit_memo_status(memo)
+                invoice.amount_paid = Decimal(str(invoice.amount_paid or 0)) + amount
+                refresh_invoice_status(invoice)
+                created_credit_applications += 1
+        print(f"  {created_credit_applications} credit applications created")
 
         bank_account = db.query(BankAccount).filter(BankAccount.name == BANK_ACCOUNT["name"]).first()
         if not bank_account:

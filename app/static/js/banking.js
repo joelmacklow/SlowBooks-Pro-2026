@@ -220,7 +220,7 @@ const BankingPage = {
                 ${escapeHtml(candidate.document_number || candidate.label)}
             </button>`).join('');
         return `
-            <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
                 ${suggestionHtml || '<span style="font-size:11px; color:var(--text-muted);">No likely matches yet</span>'}
                 <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.showMatchModal(${reconId}, ${transaction.id})">Find & Match</button>
             </div>`;

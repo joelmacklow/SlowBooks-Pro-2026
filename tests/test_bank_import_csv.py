@@ -23,7 +23,12 @@ SAMPLE_STATEMENT = FIXTURE_DIR / 'anz_unreconciled_reconciliation_sample.csv'
 
 class BankImportCsvTests(unittest.TestCase):
     def setUp(self):
-        from app.models import Account, BankAccount, BankTransaction  # noqa: F401
+        from app.models import (  # noqa: F401
+            Account, BankAccount, BankTransaction, Bill, BillLine, BillPayment, BillPaymentAllocation,
+            CreditApplication, CreditMemo, CreditMemoLine, Customer, Estimate, EstimateLine, GstCode,
+            Invoice, InvoiceLine, Item, Payment, PaymentAllocation, Reconciliation, Settings,
+            Transaction, TransactionLine, Vendor,
+        )
 
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(bind=engine)
@@ -49,11 +54,40 @@ class BankImportCsvTests(unittest.TestCase):
 
         self.assertEqual(parsed["format"], "csv")
         self.assertEqual(len(parsed["transactions"]), 5)
-        self.assertEqual(parsed["transactions"][0]["reference"], "INV-2002")
-        self.assertEqual(parsed["transactions"][0]["amount"], Decimal("845.25"))
-        self.assertEqual(parsed["transactions"][3]["reference"], "B-3002")
-        self.assertEqual(parsed["transactions"][3]["code"], "Utilities")
-        self.assertEqual(parsed["transactions"][4]["amount"], Decimal("-129.95"))
+        self.assertEqual(parsed["transactions"][0]["reference"], "INV-2001")
+        self.assertEqual(parsed["transactions"][0]["amount"], Decimal("1422.00"))
+        self.assertEqual(parsed["transactions"][3]["reference"], "B-3004")
+        self.assertEqual(parsed["transactions"][3]["code"], "Cleaning")
+        self.assertEqual(parsed["transactions"][4]["amount"], Decimal("-287.50"))
+
+    def test_fixture_rows_reference_only_open_seed_documents(self):
+        import scripts.seed_database as seed_database
+        import scripts.seed_irs_mock_data as seed_demo
+        from app.models.bills import Bill, BillStatus
+        from app.models.invoices import Invoice, InvoiceStatus
+        from app.services.ofx_import import parse_statement_file
+
+        seed_database.SessionLocal = self.Session
+        seed_demo.SessionLocal = self.Session
+
+        seed_database.seed()
+        seed_demo.seed()
+
+        parsed = parse_statement_file(SAMPLE_STATEMENT.read_bytes(), filename=SAMPLE_STATEMENT.name)
+        fixture_refs = {txn["reference"] for txn in parsed["transactions"]}
+
+        with self.Session() as db:
+            open_invoices = {
+                f"INV-{invoice.invoice_number}"
+                for invoice in db.query(Invoice).filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL])).all()
+            }
+            open_bills = {
+                f"B-{bill.bill_number}"
+                for bill in db.query(Bill).filter(Bill.status.in_([BillStatus.UNPAID, BillStatus.PARTIAL])).all()
+            }
+
+        self.assertEqual(fixture_refs, {"INV-2001", "INV-2004", "INV-2006", "B-3004", "B-3005"})
+        self.assertTrue(fixture_refs.issubset(open_invoices | open_bills))
 
     def test_import_transactions_stores_reference_and_code_and_skips_duplicates(self):
         from app.models.accounts import Account, AccountType

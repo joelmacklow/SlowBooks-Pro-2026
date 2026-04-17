@@ -131,6 +131,8 @@ vm.runInContext(code, context);
     assert.ok(elements['#page-content'].innerHTML.includes('Find & Match'));
     assert.ok(elements['#page-content'].innerHTML.includes('INV-8746'));
     assert.ok(!elements['#page-content'].innerHTML.includes('Check #'));
+    assert.ok(elements['#page-content'].innerHTML.includes('flex-wrap:wrap'));
+    assert.ok(!elements['#page-content'].innerHTML.includes('flex-direction:column'));
 
     await context.BankingPage.showMatchModal(5, 10);
     assert.ok(modalHtml.includes('Search payee, amount, reference, description, or code'));

@@ -1,6 +1,6 @@
 Type,Details,Particulars,Code,Reference,Amount,Date,ForeignCurrencyAmount,ConversionCharge
-Direct Credit,Bayside Club,Monthly Advisory Retainer,Advisory,INV-2002,845.25,15/01/2026,,
-Direct Credit,City Limousines,Payroll Filing Setup,Transport,INV-2005,1380.00,20/01/2026,,
-Direct Credit,Boom FM,Training Session,Content,INV-2003,900.00,22/01/2026,,
-Bill Payment,PowerDirect,Electricity account,Utilities,B-3002,-186.30,13/01/2026,,
-Bill Payment,Net Connect,Internet and phone services,Telco,B-3003,-129.95,23/01/2026,,
+Direct Credit,Basket Case,Website Refresh,Design,INV-2001,1422.00,10/02/2026,,
+Direct Credit,City Agency,Compliance Review,Service Credit,INV-2004,1334.00,12/02/2026,,
+Direct Credit,DIISR - Small Business Services,Monthly Advisory Retainer,Retainer,INV-2006,1495.00,14/02/2026,,
+Bill Payment,MCO Cleaning Services,Office cleaning services,Cleaning,B-3004,-115.00,24/02/2026,,
+Bill Payment,PC Complete,Printer maintenance,Repairs,B-3005,-287.50,26/02/2026,,

@@ -24,6 +24,7 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
             TransactionLine, Settings, GstCode, BankAccount, Reconciliation,
             BankTransaction, Company, PayRun, PayStub, Employee,
             Bill, BillLine, BillPayment, BillPaymentAllocation,
+            CreditMemo, CreditMemoLine, CreditApplication,
         )
 
         engine = create_engine("sqlite:///:memory:")
@@ -57,8 +58,8 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
             bank_account = db.query(BankAccount).filter(BankAccount.name == 'ANZ Business Account').one()
             bank_txns = db.query(BankTransaction).filter(BankTransaction.bank_account_id == bank_account.id).order_by(BankTransaction.date.asc(), BankTransaction.id.asc()).all()
 
-            self.assertEqual(len(bills), 3)
-            self.assertEqual(len(bill_payments), 3)
+            self.assertEqual(len(bills), 5)
+            self.assertEqual(len(bill_payments), 4)
             self.assertEqual(len(customer_payments), 5)
             self.assertEqual(len(bank_txns), len(customer_payments) + len(bill_payments))
             positive_txns = [txn for txn in bank_txns if Decimal(str(txn.amount)) > 0]
@@ -67,7 +68,7 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
             unreconciled_txns = [txn for txn in bank_txns if not txn.reconciled]
             self.assertEqual(len(positive_txns), len(customer_payments))
             self.assertEqual(len(negative_txns), len(bill_payments))
-            self.assertEqual({txn.payee for txn in negative_txns}, {'ABC Furniture', 'PowerDirect', 'Net Connect'})
+            self.assertEqual({txn.payee for txn in negative_txns}, {'ABC Furniture', 'PowerDirect', 'Net Connect', 'MCO Cleaning Services'})
             self.assertTrue(reconciled_txns)
             self.assertTrue(unreconciled_txns)
 
@@ -111,10 +112,10 @@ class NzDemoReconciliationSeedTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(Invoice).count(), 10)
             self.assertEqual(db.query(Payment).count(), 5)
-            self.assertEqual(db.query(Bill).count(), 3)
-            self.assertEqual(db.query(BillPayment).count(), 3)
+            self.assertEqual(db.query(Bill).count(), 5)
+            self.assertEqual(db.query(BillPayment).count(), 4)
             self.assertEqual(db.query(BankAccount).count(), 1)
-            self.assertEqual(db.query(BankTransaction).count(), 8)
+            self.assertEqual(db.query(BankTransaction).count(), 9)
 
 
 if __name__ == '__main__':
