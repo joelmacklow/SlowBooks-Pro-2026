@@ -67,6 +67,14 @@ class InvoiceUpdate(BaseModel):
     lines: Optional[list[InvoiceLineCreate]] = None
 
 
+
+class InvoiceCreditApplicationResponse(BaseModel):
+    credit_memo_id: int
+    credit_memo_number: Optional[str] = None
+    amount: Decimal
+    model_config = {"from_attributes": True}
+
+
 class InvoiceResponse(BaseModel):
     id: int
     invoice_number: str
@@ -94,6 +102,7 @@ class InvoiceResponse(BaseModel):
     balance_due: Decimal
     notes: Optional[str]
     lines: list[InvoiceLineResponse] = []
+    applied_credits: list[InvoiceCreditApplicationResponse] = []
     customer_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime

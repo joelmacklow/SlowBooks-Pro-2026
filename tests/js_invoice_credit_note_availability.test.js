@@ -34,6 +34,7 @@ const context = {
                 amount_paid: 0,
                 balance_due: 115,
                 notes: 'Invoice notes',
+                applied_credits: [{ credit_memo_id: 3, credit_memo_number: 'CM-1001', amount: 57.5 }],
                 lines: [{ item_id: 2, description: 'Pens', quantity: 2, rate: 50, amount: 100, gst_code: 'GST15', gst_rate: 0.15 }],
             };
             if (path === '/credit-memos?customer_id=5&status=issued') return [
@@ -83,6 +84,8 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('CM-1001'));
     assert.ok(detailHtml.includes('$57.50'));
     assert.ok(detailHtml.includes('Apply Credit'));
+    assert.ok(detailHtml.includes('Applied Credit Notes'));
+    assert.ok(detailHtml.includes('CM-1001'));
 
     await context.InvoicesPage.applyCreditMemo(3, 57.5, 1);
     assert.strictEqual(JSON.stringify(posts), JSON.stringify([[

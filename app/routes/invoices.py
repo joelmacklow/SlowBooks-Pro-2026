@@ -18,6 +18,7 @@ from app.database import get_db
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
 from app.models.items import Item
 from app.models.contacts import Customer
+from app.models.credit_memos import CreditApplication
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceUpdate, InvoiceResponse
 from app.services.pdf_service import generate_invoice_pdf
@@ -41,6 +42,23 @@ def _next_invoice_number(db: Session) -> str:
     if last and last.isdigit():
         return str(int(last) + 1).zfill(len(last))
     return "1001"
+
+
+
+
+def _invoice_response(inv: Invoice) -> InvoiceResponse:
+    resp = InvoiceResponse.model_validate(inv)
+    if inv.customer:
+        resp.customer_name = inv.customer.name
+    resp.applied_credits = [
+        {
+            "credit_memo_id": application.credit_memo_id,
+            "credit_memo_number": application.credit_memo.memo_number if application.credit_memo else None,
+            "amount": application.amount,
+        }
+        for application in inv.credit_applications
+    ]
+    return resp
 
 
 def _post_invoice_journal(db: Session, invoice: Invoice, customer: Customer, lines, gst_totals):
@@ -107,10 +125,7 @@ def list_invoices(status: str = None, customer_id: int = None, db: Session = Dep
     invoices = q.order_by(Invoice.date.desc()).all()
     results = []
     for inv in invoices:
-        resp = InvoiceResponse.model_validate(inv)
-        if inv.customer:
-            resp.customer_name = inv.customer.name
-        results.append(resp)
+        results.append(_invoice_response(inv))
     return results
 
 
@@ -119,10 +134,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(req
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    resp = InvoiceResponse.model_validate(inv)
-    if inv.customer:
-        resp.customer_name = inv.customer.name
-    return resp
+    return _invoice_response(inv)
 
 
 @router.post("", response_model=InvoiceResponse, status_code=201)
@@ -198,9 +210,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), auth=Depe
 
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    resp.customer_name = customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceResponse)
@@ -273,10 +283,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
 
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.get("/{invoice_id}/pdf")
@@ -320,10 +327,7 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(re
     invoice.balance_due = Decimal("0")
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.post("/{invoice_id}/send", response_model=InvoiceResponse)
@@ -337,10 +341,7 @@ def mark_invoice_sent(invoice_id: int, db: Session = Depends(get_db), auth=Depen
     invoice.status = InvoiceStatus.SENT
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.post("/{invoice_id}/email")

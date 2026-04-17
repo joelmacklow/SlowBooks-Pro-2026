@@ -147,6 +147,7 @@ const InvoicesPage = {
         const canCreateCustomers = App.hasPermission ? App.hasPermission('contacts.manage') : true;
         const customerOptions = InvoicesPage.customerOptionsHtml(inv.customer_id);
         const availableCredits = (InvoicesPage._availableCredits || []).filter(cm => Number(cm.balance_remaining || 0) > 0);
+        const appliedCredits = inv.applied_credits || [];
         return `
             <div class="page-header">
                 <div>
@@ -228,6 +229,18 @@ const InvoicesPage = {
                                 <td><strong>${escapeHtml(cm.memo_number)}</strong></td>
                                 <td class="amount">${formatCurrency(cm.balance_remaining)}</td>
                                 <td class="actions"><button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.applyCreditMemo(${cm.id}, ${Number(cm.balance_remaining || 0)}, ${inv.id})">Apply Credit</button></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>
+                </div>` : ''}
+                ${inv.id && appliedCredits.length ? `<div class="settings-section">
+                    <h3>Applied Credit Notes</h3>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Credit Note</th><th class="amount">Applied Amount</th></tr></thead>
+                        <tbody>
+                            ${appliedCredits.map(application => `<tr>
+                                <td><strong>${escapeHtml(application.credit_memo_number || `Credit Note #${application.credit_memo_id}`)}</strong></td>
+                                <td class="amount">${formatCurrency(application.amount)}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table></div>
