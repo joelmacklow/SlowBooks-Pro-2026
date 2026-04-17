@@ -78,10 +78,10 @@ vm.runInContext(code, context);
 
 (async () => {
     await context.InvoicesPage.showForm();
-    assert.ok(modalHtml.includes('+ New Customer'));
+    assert.ok(context.InvoicesPage.renderDetailScreen().includes('+ New Customer'));
 
     await context.EstimatesPage.showForm();
-    assert.ok(modalHtml.includes('+ New Customer'));
+    assert.ok(context.EstimatesPage.renderDetailScreen().includes('+ New Customer'));
 
     const paymentsHtml = await context.PaymentsPage.render();
     assert.ok(paymentsHtml.includes('[VOID]'));

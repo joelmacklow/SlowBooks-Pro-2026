@@ -18,7 +18,9 @@ const App = {
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      permission: 'contacts.view', render: () => VendorsPage.render() },
         '/items':         { page: 'items',           label: 'Item List',          permission: 'items.view', render: () => ItemsPage.render() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    permission: 'sales.view', render: () => InvoicesPage.render() },
+        '/invoices/detail': { page: 'invoices',      label: 'Invoice',            permission: 'sales.view', render: () => InvoicesPage.renderDetailScreen() },
         '/estimates':     { page: 'estimates',       label: 'Create Estimates',   permission: 'sales.view', render: () => EstimatesPage.render() },
+        '/estimates/detail': { page: 'estimates',    label: 'Estimate',           permission: 'sales.view', render: () => EstimatesPage.renderDetailScreen() },
         '/payments':      { page: 'payments',        label: 'Receive Payments',   permission: 'sales.view', render: () => PaymentsPage.render() },
         '/banking':       { page: 'banking',         label: 'Bank Accounts',      permission: 'banking.view', render: () => BankingPage.render() },
         '/deposits':      { page: 'deposits',        label: 'Make Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
@@ -40,6 +42,7 @@ const App = {
         '/purchase-orders/detail': { page: 'purchase-orders', label: 'Purchase Order', permission: 'purchasing.view', render: () => PurchaseOrdersPage.renderDetailScreen() },
         '/bills':         { page: 'bills',           label: 'Bills',              permission: 'purchasing.view', render: () => BillsPage.render() },
         '/credit-memos':  { page: 'credit-memos',    label: 'Credit Memos',       permission: 'sales.view', render: () => CreditMemosPage.render() },
+        '/credit-memos/detail': { page: 'credit-memos', label: 'Credit Memo',    permission: 'sales.view', render: () => CreditMemosPage.renderDetailScreen() },
         // Phase 3: Productivity
         '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', permission: 'sales.view', render: () => RecurringPage.render() },
         '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     permission: 'sales.manage', render: () => BatchPaymentsPage.render() },
