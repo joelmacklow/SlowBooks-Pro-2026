@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+import hmac
+import ipaddress
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.config import BOOTSTRAP_ADMIN_TOKEN
 from app.database import get_db
 from app.schemas.auth import (
     AuthMetaResponse,
@@ -32,8 +36,40 @@ from app.services.auth import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    candidate = host.strip().lower()
+    if candidate == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+def _enforce_bootstrap_request_trust(request: Request | None, bootstrap_token: str | None = None) -> None:
+    if request is None:
+        return
+    client_host = request.client.host if request.client else None
+    if _is_loopback_host(client_host):
+        return
+    if BOOTSTRAP_ADMIN_TOKEN and hmac.compare_digest((bootstrap_token or "").strip(), BOOTSTRAP_ADMIN_TOKEN):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Initial admin bootstrap is only allowed from loopback or with a valid bootstrap token",
+    )
+
+
 @router.post("/bootstrap-admin", response_model=AuthSessionResponse)
-def bootstrap_admin(data: BootstrapAdminRequest, db: Session = Depends(get_db)):
+def bootstrap_admin(
+    data: BootstrapAdminRequest,
+    db: Session = Depends(get_db),
+    request: Request = None,
+    x_bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
+):
+    _enforce_bootstrap_request_trust(request, x_bootstrap_token)
     token, user = bootstrap_admin_user(db, data.email, data.password, data.full_name)
     return AuthSessionResponse(token=token, user=user)
 

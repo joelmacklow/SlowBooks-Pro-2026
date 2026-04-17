@@ -43,6 +43,7 @@ DATABASE_URL = resolve_database_url()
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "3001"))
 APP_DEBUG = os.getenv("APP_DEBUG", "false").lower() == "true"
+BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "")
 
 # CCompanyInfo fields — originally at .QBW header offset 0x40
 COMPANY_NAME = os.getenv("COMPANY_NAME", "My Company")
