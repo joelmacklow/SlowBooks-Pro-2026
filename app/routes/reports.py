@@ -1615,7 +1615,7 @@ def send_overdue_statements(
                 "customer_name": candidate["customer_name"],
                 "recipient": recipient.recipient,
                 "status": "failed",
-                "detail": str(exc),
+                "detail": "Email delivery failed",
             })
 
     return {

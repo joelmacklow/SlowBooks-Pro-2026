@@ -156,6 +156,19 @@ class BackupPathHardeningTests(unittest.TestCase):
 
         self.assertEqual(resolved, expected)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX permission semantics required")
+    def test_ensure_backup_file_permissions_accepts_filename_and_tightens_mode(self):
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
+            expected = Path(tmpdir) / 'slowbooks_20260415_010102.sql'
+            expected.write_text('backup-data', encoding='utf-8')
+            os.chmod(expected, 0o644)
+
+            resolved = backup_service.ensure_backup_file_permissions(expected.name)
+            self.assertEqual(resolved, expected)
+            self.assertEqual(stat.S_IMODE(expected.stat().st_mode), 0o600)
+
 
 if __name__ == '__main__':
     unittest.main()
