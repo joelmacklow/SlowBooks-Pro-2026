@@ -110,6 +110,7 @@ class RateLimitHardeningTests(unittest.TestCase):
             for _ in range(10):
                 response = backups_route.download_backup(
                     backup_file.name,
+                    db=db,
                     auth={"user_id": 1},
                     request=make_request("127.0.0.1"),
                 )
@@ -118,6 +119,7 @@ class RateLimitHardeningTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as download_ctx:
                 backups_route.download_backup(
                     backup_file.name,
+                    db=db,
                     auth={"user_id": 1},
                     request=make_request("127.0.0.1"),
                 )

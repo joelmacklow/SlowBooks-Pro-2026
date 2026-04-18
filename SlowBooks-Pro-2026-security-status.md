@@ -66,7 +66,13 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 - **Evidence:** `tests/test_operational_security_contract.py`
 - **Result:** key operational controls are now protected by focused regression coverage instead of relying on manual review alone.
 
-### 11. Insecure deployment defaults — materially reduced
+### 11. Backup control-surface auditability — materially reduced
+- **Original risk:** sensitive backup operations could happen without a clear review trail.
+- **Current state:** successful backup create/download/restore actions now write explicit audit-log entries with filename and actor context.
+- **Evidence:** `app/routes/backups.py`, `tests/test_backup_audit_logging.py`
+- **Result:** high-value backup operations are now easier to review and investigate.
+
+### 12. Insecure deployment defaults — materially reduced
 - **Original risk:** public Postgres exposure, weak default credentials, and debug-default posture (`TM-008`)
 - **Current state:** bundled Postgres is no longer published by default, compose now requires explicit `POSTGRES_PASSWORD`, docs use non-legacy credential examples, and debug defaults are false.
 - **Evidence:** `docker-compose.yml`, `.env.example`, `README.md`, `INSTALL.md`, `app/config.py`

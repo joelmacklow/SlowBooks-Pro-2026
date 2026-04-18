@@ -58,13 +58,13 @@ class BackupPathHardeningTests(unittest.TestCase):
         from app.routes import backups as backups_route
         from app.services import backup_service
 
-        with TemporaryDirectory() as tmpdir, \
+        with TemporaryDirectory() as tmpdir, self.Session() as db, \
              mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
             backup_file = Path(tmpdir) / 'slowbooks_20260415_020203.sql'
             backup_file.write_text('backup-data', encoding='utf-8')
             os.chmod(backup_file, 0o644)
 
-            response = backups_route.download_backup(backup_file.name, auth={'user_id': 1})
+            response = backups_route.download_backup(backup_file.name, db=db, auth={'user_id': 1})
 
             self.assertEqual(response.path, str(backup_file))
             self.assertEqual(stat.S_IMODE(backup_file.stat().st_mode), 0o600)
@@ -109,12 +109,12 @@ class BackupPathHardeningTests(unittest.TestCase):
         from app.routes import backups as backups_route
         from app.services import backup_service
 
-        with TemporaryDirectory() as tmpdir, \
+        with TemporaryDirectory() as tmpdir, self.Session() as db, \
              mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
             backup_file = Path(tmpdir) / 'slowbooks_20260415_020205.sql'
             backup_file.write_text('backup-data', encoding='utf-8')
 
-            response = backups_route.download_backup(backup_file.name, auth={'user_id': 1})
+            response = backups_route.download_backup(backup_file.name, db=db, auth={'user_id': 1})
 
         self.assertEqual(response.headers['cache-control'], 'no-store, no-cache, must-revalidate, private')
         self.assertEqual(response.headers['pragma'], 'no-cache')
@@ -125,9 +125,9 @@ class BackupPathHardeningTests(unittest.TestCase):
         from fastapi import HTTPException
         from app.routes import backups as backups_route
 
-        with TemporaryDirectory() as tmpdir:
+        with TemporaryDirectory() as tmpdir, self.Session() as db:
             with self.assertRaises(HTTPException) as ctx:
-                backups_route.download_backup('../secrets.txt', auth={'user_id': 1})
+                backups_route.download_backup('../secrets.txt', db=db, auth={'user_id': 1})
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn('invalid', str(ctx.exception.detail).lower())
