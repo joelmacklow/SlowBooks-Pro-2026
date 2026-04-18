@@ -39,6 +39,7 @@ const App = {
         '/reports/general-ledger': { page: 'reports', label: 'General Ledger',    permission: 'accounts.manage', render: () => ReportsPage.renderGeneralLedgerScreen() },
         '/reports/income-by-customer': { page: 'reports', label: 'Income by Customer', permission: 'accounts.manage', render: () => ReportsPage.renderIncomeByCustomerScreen() },
         '/reports/customer-statement': { page: 'reports', label: 'Customer Statement', permission: 'accounts.manage', render: () => ReportsPage.renderCustomerStatementScreen() },
+        '/reports/overdue-statements': { page: 'reports', label: 'Overdue Statements', permission: 'accounts.manage', render: () => ReportsPage.renderOverdueStatementsScreen() },
         '/reports/gst-return': { page: 'gst-return', label: 'GST Returns',       permission: 'accounts.manage', render: () => ReportsPage.renderGstReturnsScreen() },
         '/reports/gst-return/detail': { page: 'gst-return', label: 'GST Return', permission: 'accounts.manage', render: () => ReportsPage.renderGstReturnDetailScreen() },
         '/settings':      { page: 'settings',        label: 'Company Settings',   permission: 'settings.manage', render: () => SettingsPage.render() },

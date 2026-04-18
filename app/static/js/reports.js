@@ -51,6 +51,10 @@ const ReportsPage = {
                     <div class="card-header">Customer Statement</div>
                     <p style="font-size:13px; color:var(--gray-500);">Invoice/payment history PDF</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.overdueStatements()">
+                    <div class="card-header">Overdue Statements</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Batch send statements to overdue customers</p>
+                </div>
             </div>`;
     },
 
@@ -1075,9 +1079,26 @@ const ReportsPage = {
         return ReportsPage._reportStates["customer-statement"];
     },
 
+    _ensureOverdueStatementsState() {
+        ReportsPage._reportStates = ReportsPage._reportStates || {};
+        if (!ReportsPage._reportStates["overdue-statements"]) {
+            ReportsPage._reportStates["overdue-statements"] = {
+                as_of_date: todayISO(),
+                selected_customer_ids: [],
+                items: [],
+            };
+        }
+        return ReportsPage._reportStates["overdue-statements"];
+    },
+
     async customerStatement() {
         ReportsPage._ensureStatementState();
         return App.navigate('#/reports/customer-statement');
+    },
+
+    async overdueStatements() {
+        ReportsPage._ensureOverdueStatementsState();
+        return App.navigate('#/reports/overdue-statements');
     },
 
     changeStatementCustomer(value) {
@@ -1092,6 +1113,31 @@ const ReportsPage = {
         const state = ReportsPage._ensureStatementState();
         state.as_of_date = value;
         App.navigate('#/reports/customer-statement');
+    },
+
+    changeOverdueStatementsDate(value) {
+        const state = ReportsPage._ensureOverdueStatementsState();
+        state.as_of_date = value;
+        state.selected_customer_ids = [];
+        App.navigate('#/reports/overdue-statements');
+    },
+
+    toggleOverdueStatementSelection(customerId) {
+        const state = ReportsPage._ensureOverdueStatementsState();
+        const id = String(customerId);
+        if (state.selected_customer_ids.includes(id)) {
+            state.selected_customer_ids = state.selected_customer_ids.filter(item => item !== id);
+        } else {
+            state.selected_customer_ids.push(id);
+        }
+        App.navigate('#/reports/overdue-statements');
+    },
+
+    toggleAllOverdueStatements() {
+        const state = ReportsPage._ensureOverdueStatementsState();
+        const ids = (state.items || []).map(item => String(item.customer_id));
+        state.selected_customer_ids = state.selected_customer_ids.length === ids.length ? [] : ids;
+        App.navigate('#/reports/overdue-statements');
     },
 
     updateStatementRecipient(value) {
@@ -1178,6 +1224,91 @@ const ReportsPage = {
                        <p style="margin:0; color:var(--text-muted); font-size:11px;">Use View / Print PDF to open the statement in the browser PDF viewer, or email the same PDF directly from this screen.</p>`
                     : '<div class="empty-state"><p>Select a customer to generate a statement PDF.</p></div>'}
             </div>`;
+    },
+
+    async sendSelectedOverdueStatements() {
+        const state = ReportsPage._ensureOverdueStatementsState();
+        const selectedItems = (state.items || []).filter(item => state.selected_customer_ids.includes(String(item.customer_id)));
+        if (!selectedItems.length) {
+            toast('Select at least one overdue customer first', 'error');
+            return;
+        }
+        try {
+            const result = await API.post('/reports/overdue-statements/send', {
+                as_of_date: state.as_of_date,
+                recipients: selectedItems.map(item => ({
+                    customer_id: item.customer_id,
+                    recipient: item.recipient,
+                })),
+            });
+            state.last_results = result.results || [];
+            toast(`Sent ${result.sent_count} overdue statements`);
+            App.navigate('#/reports/overdue-statements');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    },
+
+    async renderOverdueStatementsScreen() {
+        const state = ReportsPage._ensureOverdueStatementsState();
+        const data = await API.get(`/reports/overdue-statements/candidates?as_of_date=${state.as_of_date}`);
+        state.items = data.items || [];
+        const selected = new Set(state.selected_customer_ids);
+        const allSelected = state.items.length > 0 && state.items.every(item => selected.has(String(item.customer_id)));
+        const rows = state.items.map(item => `
+            <tr>
+                <td><input type="checkbox" ${selected.has(String(item.customer_id)) ? 'checked' : ''} onchange="ReportsPage.toggleOverdueStatementSelection(${item.customer_id})"></td>
+                <td>${escapeHtml(item.customer_name)}</td>
+                <td>${escapeHtml(item.recipient)}</td>
+                <td class="amount">${item.overdue_invoice_count}</td>
+                <td>${formatDate(item.oldest_due_date)}</td>
+                <td class="amount">${formatCurrency(item.overdue_balance)}</td>
+            </tr>
+        `).join("") || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No overdue statement candidates</td></tr>';
+        const resultsHtml = (state.last_results || []).length ? `
+            <div class="settings-section">
+                <h3>Last batch results</h3>
+                <div class="table-container"><table>
+                    <thead><tr><th>Customer</th><th>Recipient</th><th>Status</th><th>Detail</th></tr></thead>
+                    <tbody>
+                        ${(state.last_results || []).map(row => `
+                            <tr>
+                                <td>${escapeHtml(row.customer_name || String(row.customer_id))}</td>
+                                <td>${escapeHtml(row.recipient || '')}</td>
+                                <td>${escapeHtml(row.status)}</td>
+                                <td>${escapeHtml(row.detail || '')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table></div>
+            </div>` : '';
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports</div>
+                    <h2>Overdue Statements</h2>
+                </div>
+                <button class="btn btn-secondary" onclick="App.navigate('#/reports')">Back to Reports</button>
+            </div>
+            <div class="settings-section">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>As of Date</label>
+                        <input type="date" value="${state.as_of_date}" onchange="ReportsPage.changeOverdueStatementsDate(this.value)">
+                    </div>
+                </div>
+                <div class="form-actions" style="justify-content:flex-start;">
+                    <button class="btn btn-secondary" onclick="ReportsPage.toggleAllOverdueStatements()">${allSelected ? 'Clear Selection' : 'Select All'}</button>
+                    <button class="btn btn-primary" onclick="ReportsPage.sendSelectedOverdueStatements()" ${(state.selected_customer_ids || []).length ? '' : 'disabled'}>Send Selected Statements</button>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div class="table-container"><table>
+                    <thead><tr><th></th><th>Customer</th><th>Email</th><th class="amount">Invoices</th><th>Oldest Due</th><th class="amount">Overdue Balance</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table></div>
+            </div>
+            ${resultsHtml}`;
     },
 
     async arAging() {

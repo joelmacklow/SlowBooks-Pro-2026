@@ -24,6 +24,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
     def setUp(self):
         import app.models  # noqa: F401
         from app.models.contacts import Customer
+        from app.models.invoices import Invoice, InvoiceStatus
         from app.models.settings import Settings
         from app.routes import reports as reports_route
         from app.routes.auth import bootstrap_admin, create_user, login
@@ -70,6 +71,16 @@ class ReportAuthHardeningTests(unittest.TestCase):
                 db.add(Settings(key=key, value=value))
             customer = Customer(name="Aroha Ltd", email="customer@example.com")
             db.add(customer)
+            db.flush()
+            db.add(Invoice(
+                invoice_number="INV-1001",
+                customer_id=customer.id,
+                status=InvoiceStatus.SENT,
+                date=date(2026, 4, 1),
+                due_date=date(2026, 4, 15),
+                total=Decimal("115.00"),
+                balance_due=Decimal("115.00"),
+            ))
             db.commit()
 
             self.owner_token = owner.token
@@ -111,6 +122,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             (self.reports_route.gst_returns_overview, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.gst_return_transactions, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "page": 1, "page_size": 10}),
             (self.reports_route.sales_tax_report, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
+            (self.reports_route.overdue_statement_candidates, {"as_of_date": date(2026, 4, 30)}),
         ]
 
         for func, kwargs in route_calls:
@@ -132,6 +144,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             self.reports_route.income_by_customer_pdf,
             self.reports_route.customer_statement_pdf,
             self.reports_route.email_customer_statement,
+            self.reports_route.send_overdue_statements,
         ]:
             self._assert_accounts_manage_gate(func)
 
@@ -171,6 +184,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 stmt_email_auth = self._auth_dependency(self.reports_route.email_customer_statement)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                batch_stmt_auth = self._auth_dependency(self.reports_route.send_overdue_statements)(
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
 
@@ -240,6 +256,20 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db,
                     auth=stmt_email_auth,
                 )
+                batch_stmt = self.reports_route.send_overdue_statements(
+                    self.reports_route.BatchOverdueStatementRequest(
+                        as_of_date=date(2026, 4, 30),
+                        recipients=[
+                            self.reports_route.OverdueStatementRecipient(
+                                customer_id=self.customer_id,
+                                recipient="customer@example.com",
+                            )
+                        ],
+                    ),
+                    db=db,
+                    auth=batch_stmt_auth,
+                    request=None,
+                )
 
         self.assertEqual(profit_loss_pdf.media_type, "application/pdf")
         self.assertEqual(balance_sheet_pdf.media_type, "application/pdf")
@@ -252,6 +282,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
         self.assertEqual(ibc_pdf.media_type, "application/pdf")
         self.assertEqual(stmt_pdf.media_type, "application/pdf")
         self.assertEqual(stmt_email["status"], "sent")
+        self.assertEqual(batch_stmt["sent_count"], 1)
 
 
 if __name__ == "__main__":
