@@ -68,13 +68,14 @@ const AuthPage = {
             </div>
             <div class="settings-section" style="max-width:480px; margin:0 auto;">
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                    No users exist yet. Create the first admin to activate protected payroll and admin features.
+                    No users exist yet. Create the first admin to activate protected payroll and admin features. If you are setting up remotely, paste the bootstrap token from the terminal or container logs.
                 </div>
                 <form onsubmit="AuthPage.bootstrapAdmin(event)">
                     <div class="form-grid">
                         <div class="form-group full-width"><label>Full Name</label><input name="full_name" required></div>
                         <div class="form-group full-width"><label>Email</label><input name="email" type="email" required></div>
                         <div class="form-group full-width"><label>Password</label><input name="password" type="password" minlength="8" required></div>
+                        <div class="form-group full-width"><label>Bootstrap Token</label><input name="bootstrap_token" type="text" autocomplete="off" placeholder="Required for remote setup; check the container logs"></div>
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Create First Admin</button>
@@ -105,12 +106,17 @@ const AuthPage = {
     async bootstrapAdmin(e) {
         e.preventDefault();
         const form = new FormData(e.target);
+        const bootstrapToken = String(form.get('bootstrap_token') || '').trim();
         try {
-            const response = await API.post('/auth/bootstrap-admin', {
-                full_name: form.get('full_name'),
-                email: form.get('email'),
-                password: form.get('password'),
+            const responseRaw = await API.raw('POST', '/auth/bootstrap-admin', {
+                body: {
+                    full_name: form.get('full_name'),
+                    email: form.get('email'),
+                    password: form.get('password'),
+                },
+                headers: bootstrapToken ? { 'X-Bootstrap-Token': bootstrapToken } : {},
             });
+            const response = await responseRaw.json();
             localStorage.setItem('slowbooks-auth-token', response.token);
             App.setAuthState({ authenticated: true, bootstrap_required: false, user: response.user });
             await App.loadSettings();

@@ -3,6 +3,18 @@ set -eu
 
 mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true
 
+if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
+BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
+import secrets
+print(secrets.token_urlsafe(24))
+PY
+)"
+export BOOTSTRAP_ADMIN_TOKEN
+printf '%s\n' 'BOOTSTRAP_ADMIN_TOKEN was not set; generated a startup token for first-admin setup.'
+fi
+
+printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
+
 python - <<'PY'
 import sys
 import time
