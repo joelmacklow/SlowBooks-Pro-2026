@@ -125,6 +125,16 @@ class TrialBalanceReportTests(unittest.TestCase):
         self.assertEqual(response.media_type, "application/pdf")
         self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="TrialBalance_2026-04-30.pdf"')
 
+    def test_trial_balance_pdf_uses_narrowed_column_widths(self):
+        from app.routes import reports as reports_route
+
+        with self.Session() as db:
+            report = reports_route.trial_balance(as_of_date=date(2026, 4, 30), db=db, auth={"user_id": 1})
+
+        tables = reports_route._report_tables_trial_balance(report, {"locale": "en-NZ", "currency": "NZD"})
+        widths = [column.get("width") for column in tables[0]["columns"]]
+        self.assertEqual(widths, ["12%", "30%", "16%", "12%", "12%"])
+
 
 if __name__ == "__main__":
     unittest.main()

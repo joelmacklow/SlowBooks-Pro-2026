@@ -182,11 +182,11 @@ def _report_tables_trial_balance(report: dict, company: dict) -> list[dict]:
     )
     return [{
         "columns": [
-            {"label": "Account Code", "width": "16%"},
-            {"label": "Account", "width": "36%"},
-            {"label": "Account Type", "width": "18%"},
-            {"label": "Debit", "align": "right", "width": "15%"},
-            {"label": "Credit", "align": "right", "width": "15%"},
+            {"label": "Account Code", "width": "12%"},
+            {"label": "Account", "width": "30%"},
+            {"label": "Account Type", "width": "16%"},
+            {"label": "Debit", "align": "right", "width": "12%"},
+            {"label": "Credit", "align": "right", "width": "12%"},
         ],
         "rows": rows,
         "empty_message": "No balances for this date.",
