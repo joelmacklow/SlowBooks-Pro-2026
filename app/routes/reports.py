@@ -361,6 +361,7 @@ def _report_tables_income_by_customer(report: dict, company: dict) -> list[dict]
         )
     )
     return [{
+        "style": "width: 92%;",
         "columns": [
             {"label": "Customer", "width": "32%"},
             {"label": "Invoices", "align": "right", "width": "12%"},
@@ -396,6 +397,7 @@ def _report_tables_general_ledger(report: dict, company: dict) -> list[dict]:
         )
         tables.append({
             "title": f'{account["account_number"] or ""} - {account["account_name"]}'.strip(" -"),
+            "style": "width: 92%;",
             "columns": [
                 {"label": "Date", "width": "16%"},
                 {"label": "Description", "width": "36%"},
