@@ -8,6 +8,7 @@
 
 from pathlib import Path
 from io import BytesIO
+from datetime import date
 
 from jinja2 import Environment, FileSystemLoader, pass_context
 from weasyprint import HTML
@@ -72,5 +73,25 @@ def generate_payroll_payslip_pdf(pay_run, stub, employee, company_settings: dict
         stub=stub,
         employee=employee,
         company=company_settings,
+    )
+    return HTML(string=html_str).write_pdf()
+
+
+def generate_report_pdf(
+    *,
+    title: str,
+    company_settings: dict,
+    subtitle: str = "",
+    tables: list[dict] | None = None,
+    landscape: bool = False,
+) -> bytes:
+    template = _jinja_env.get_template("report_pdf.html")
+    html_str = template.render(
+        title=title,
+        company=company_settings,
+        subtitle=subtitle,
+        tables=tables or [],
+        landscape=landscape,
+        generated_on=date.today(),
     )
     return HTML(string=html_str).write_pdf()

@@ -4,6 +4,7 @@ import types
 import unittest
 from datetime import date
 from decimal import Decimal
+from unittest import mock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -108,6 +109,20 @@ class TrialBalanceReportTests(unittest.TestCase):
         self.assertEqual(may_rows["Sales"]["credit_balance"], 150.0)
         self.assertEqual(may_report["total_debit"], 172.5)
         self.assertEqual(may_report["total_credit"], 172.5)
+
+    def test_trial_balance_pdf_returns_inline_pdf(self):
+        from app.routes import reports as reports_route
+
+        with mock.patch.object(reports_route, "generate_report_pdf", return_value=b"%PDF-trial-balance"):
+            with self.Session() as db:
+                response = reports_route.trial_balance_pdf(
+                    as_of_date=date(2026, 4, 30),
+                    db=db,
+                    auth={"user_id": 1},
+                )
+
+        self.assertEqual(response.media_type, "application/pdf")
+        self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="TrialBalance_2026-04-30.pdf"')
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@ from app.models.contacts import Customer
 from app.schemas.email import StatementEmailRequest
 from pydantic import BaseModel
 from app.services.email_service import render_document_email, send_document_email
-from app.services.pdf_service import generate_statement_pdf
+from app.services.pdf_service import generate_report_pdf, generate_statement_pdf
+from app.services.formatting import format_currency, format_date
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
@@ -71,6 +72,239 @@ def _decimal_text(value) -> str:
 
 def _period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.day} {start_date.strftime('%b %Y')} - {end_date.day} {end_date.strftime('%b %Y')}"
+
+
+def _pdf_cell(text, align: str = "left", colspan: int = 1) -> dict:
+    return {
+        "text": text,
+        "align": align,
+        "colspan": colspan,
+    }
+
+
+def _pdf_row(*cells, class_name: str = "") -> dict:
+    return {
+        "cells": list(cells),
+        "class_name": class_name,
+    }
+
+
+def _report_pdf_response(pdf_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+def _company_settings(db: Session) -> dict:
+    return get_settings(db)
+
+
+def _report_tables_profit_loss(report: dict, company: dict) -> list[dict]:
+    rows = [_pdf_row(_pdf_cell("Income", colspan=2), class_name="section-row")]
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(entry["amount"], company), align="right"),
+        )
+        for entry in report["income"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Income"), _pdf_cell(format_currency(report["total_income"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Cost of Goods Sold", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"),
+        )
+        for entry in report["cogs"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Gross Profit"), _pdf_cell(format_currency(report["gross_profit"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Expenses", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"),
+        )
+        for entry in report["expenses"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Expenses"), _pdf_cell(format_currency(report["total_expenses"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Net Income"), _pdf_cell(format_currency(report["net_income"], company), align="right"), class_name="total-row"))
+    return [{
+        "columns": [{"label": "Account"}, {"label": "Amount", "align": "right", "width": "24%"}],
+        "rows": rows,
+    }]
+
+
+def _report_tables_balance_sheet(report: dict, company: dict) -> list[dict]:
+    rows = [_pdf_row(_pdf_cell("Assets", colspan=2), class_name="section-row")]
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["assets"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Assets"), _pdf_cell(format_currency(report["total_assets"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Liabilities", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["liabilities"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Liabilities"), _pdf_cell(format_currency(report["total_liabilities"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Equity", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["equity"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Equity"), _pdf_cell(format_currency(report["total_equity"], company), align="right"), class_name="total-row"))
+    return [{
+        "columns": [{"label": "Account"}, {"label": "Amount", "align": "right", "width": "24%"}],
+        "rows": rows,
+    }]
+
+
+def _report_tables_trial_balance(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["account_number"] or ""),
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(entry["account_type"].replace("_", " ").title()),
+            _pdf_cell(format_currency(entry["debit_balance"], company) if entry["debit_balance"] else "", align="right"),
+            _pdf_cell(format_currency(entry["credit_balance"], company) if entry["credit_balance"] else "", align="right"),
+        )
+        for entry in report["accounts"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=3),
+            _pdf_cell(format_currency(report["total_debit"], company), align="right"),
+            _pdf_cell(format_currency(report["total_credit"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "columns": [
+            {"label": "Account Code", "width": "16%"},
+            {"label": "Account", "width": "36%"},
+            {"label": "Account Type", "width": "18%"},
+            {"label": "Debit", "align": "right", "width": "15%"},
+            {"label": "Credit", "align": "right", "width": "15%"},
+        ],
+        "rows": rows,
+        "empty_message": "No balances for this date.",
+    }]
+
+
+def _report_tables_aging(report: dict, company: dict, party_label: str) -> list[dict]:
+    label_key = "customer_name" if party_label == "Customer" else "vendor_name"
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry[label_key]),
+            _pdf_cell(format_currency(entry["current"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_30"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_60"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_90"], company), align="right"),
+            _pdf_cell(format_currency(entry["total"], company), align="right"),
+        )
+        for entry in report["items"]
+    ]
+    totals = report["totals"]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total"),
+            _pdf_cell(format_currency(totals["current"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_30"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_60"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_90"], company), align="right"),
+            _pdf_cell(format_currency(totals["total"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "columns": [
+            {"label": party_label, "width": "26%"},
+            {"label": "Current", "align": "right"},
+            {"label": "1-30", "align": "right"},
+            {"label": "31-60", "align": "right"},
+            {"label": "61-90+", "align": "right"},
+            {"label": "Total", "align": "right"},
+        ],
+        "rows": rows,
+        "empty_message": f"No outstanding {party_label.lower()} balances.",
+    }]
+
+
+def _report_tables_income_by_customer(report: dict, company: dict) -> list[dict]:
+    invoice_total = sum(item["invoice_count"] for item in report["items"])
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["customer_name"]),
+            _pdf_cell(str(entry["invoice_count"]), align="right"),
+            _pdf_cell(format_currency(entry["total_sales"], company), align="right"),
+            _pdf_cell(format_currency(entry["total_paid"], company), align="right"),
+            _pdf_cell(format_currency(entry["total_balance"], company), align="right"),
+        )
+        for entry in report["items"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total"),
+            _pdf_cell(str(invoice_total), align="right"),
+            _pdf_cell(format_currency(report["total_sales"], company), align="right"),
+            _pdf_cell(format_currency(report["total_paid"], company), align="right"),
+            _pdf_cell(format_currency(report["total_balance"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "columns": [
+            {"label": "Customer", "width": "32%"},
+            {"label": "Invoices", "align": "right", "width": "12%"},
+            {"label": "Sales", "align": "right", "width": "18%"},
+            {"label": "Paid", "align": "right", "width": "18%"},
+            {"label": "Balance", "align": "right", "width": "20%"},
+        ],
+        "rows": rows,
+        "empty_message": "No sales data for this period.",
+    }]
+
+
+def _report_tables_general_ledger(report: dict, company: dict) -> list[dict]:
+    tables = []
+    for account in report["accounts"]:
+        rows = [
+            _pdf_row(
+                _pdf_cell(format_date(entry["date"], company)),
+                _pdf_cell(entry["description"]),
+                _pdf_cell(entry["reference"]),
+                _pdf_cell(format_currency(entry["debit"], company) if entry["debit"] else "", align="right"),
+                _pdf_cell(format_currency(entry["credit"], company) if entry["credit"] else "", align="right"),
+            )
+            for entry in account["entries"]
+        ]
+        rows.append(
+            _pdf_row(
+                _pdf_cell("Total", colspan=3),
+                _pdf_cell(format_currency(account["total_debit"], company), align="right"),
+                _pdf_cell(format_currency(account["total_credit"], company), align="right"),
+                class_name="total-row",
+            )
+        )
+        tables.append({
+            "title": f'{account["account_number"] or ""} - {account["account_name"]}'.strip(" -"),
+            "columns": [
+                {"label": "Date", "width": "16%"},
+                {"label": "Description", "width": "36%"},
+                {"label": "Reference", "width": "18%"},
+                {"label": "Debit", "align": "right", "width": "15%"},
+                {"label": "Credit", "align": "right", "width": "15%"},
+            ],
+            "rows": rows,
+            "empty_message": "No journal entries found.",
+        })
+    return tables or [{
+        "columns": [{"label": "General Ledger"}],
+        "rows": [],
+        "empty_message": "No journal entries found for this period.",
+    }]
 
 
 def _draft_return_confirmation_state(start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> dict:
@@ -250,6 +484,41 @@ def balance_sheet(
     }
 
 
+@router.get("/profit-loss/pdf")
+def profit_loss_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Profit & Loss",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_profit_loss(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'ProfitLoss_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/balance-sheet/pdf")
+def balance_sheet_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = balance_sheet(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Balance Sheet",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_balance_sheet(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'BalanceSheet_{report["as_of_date"]}.pdf')
+
+
 @router.get("/trial-balance")
 def trial_balance(
     as_of_date: date = Query(default=None),
@@ -305,6 +574,24 @@ def trial_balance(
         "total_debit": float(total_debit),
         "total_credit": float(total_credit),
     }
+
+
+@router.get("/trial-balance/pdf")
+def trial_balance_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = trial_balance(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Trial Balance",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_trial_balance(report, company),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'TrialBalance_{report["as_of_date"]}.pdf')
 
 
 @router.get("/ar-aging")
@@ -364,6 +651,24 @@ def ar_aging(
         totals[k] = float(totals[k])
 
     return {"as_of_date": as_of_date.isoformat(), "items": items, "totals": totals}
+
+
+@router.get("/ar-aging/pdf")
+def ar_aging_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = ar_aging(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Accounts Receivable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_aging(report, company, "Customer"),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'ARAging_{report["as_of_date"]}.pdf')
 
 
 @router.get("/gst-return")
@@ -622,7 +927,7 @@ def gst_return_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="GST101A_{start_date}_{end_date}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="GST101A_{start_date}_{end_date}.pdf"'},
     )
 
 
@@ -687,6 +992,26 @@ def general_ledger(
     }
 
 
+@router.get("/general-ledger/pdf")
+def general_ledger_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    account_id: int = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = general_ledger(start_date=start_date, end_date=end_date, account_id=account_id, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="General Ledger",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_general_ledger(report, company),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'GeneralLedger_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
 @router.get("/income-by-customer")
 def income_by_customer(
     start_date: date = Query(default=None),
@@ -743,6 +1068,25 @@ def income_by_customer(
         "total_paid": grand_paid,
         "total_balance": grand_balance,
     }
+
+
+@router.get("/income-by-customer/pdf")
+def income_by_customer_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = income_by_customer(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Income by Customer",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_income_by_customer(report, company),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'IncomeByCustomer_{report["start_date"]}_{report["end_date"]}.pdf')
 
 
 @router.get("/ap-aging")
@@ -810,6 +1154,24 @@ def ap_aging(
             "vendor_name": "TOTAL", "vendor_id": 0,
             "current": 0, "over_30": 0, "over_60": 0, "over_90": 0, "total": 0,
         }}
+
+
+@router.get("/ap-aging/pdf")
+def ap_aging_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = ap_aging(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Accounts Payable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_aging(report, company, "Vendor"),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'APAging_{report["as_of_date"]}.pdf')
 
 
 @router.get("/customer-statement/{customer_id}/pdf")

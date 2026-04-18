@@ -194,7 +194,7 @@ class GstReturnReportTests(unittest.TestCase):
             )
 
         self.assertEqual(response.media_type, "application/pdf")
-        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="GST101A_2026-04-01_2026-04-30.pdf"')
+        self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="GST101A_2026-04-01_2026-04-30.pdf"')
         fields = PdfReader(io.BytesIO(response.body)).get_fields()
         text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(response.body)).pages)
         compact_text = "".join(text.split())

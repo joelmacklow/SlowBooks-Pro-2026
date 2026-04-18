@@ -4,7 +4,8 @@ const vm = require('vm');
 
 const code = `${fs.readFileSync('app/static/js/reports.js', 'utf8')}\nthis.ReportsPage = ReportsPage;`;
 const calls = [];
-const modalCalls = [];
+const opens = [];
+const navigations = [];
 
 const context = {
     console,
@@ -48,12 +49,15 @@ const context = {
             }
             throw new Error(`unexpected get ${path}`);
         },
+        open: async (path, filename) => {
+            opens.push({ path, filename });
+        },
     },
     escapeHtml: (value) => String(value ?? ''),
     formatCurrency: (value) => `$${Number(value).toFixed(2)}`,
     formatDate: (value) => value,
     todayISO: () => '2026-04-30',
-    App: { navigate() {} },
+    App: { navigate: (hash) => navigations.push(hash) },
     openModal() {},
     $() { return null; },
 };
@@ -66,27 +70,28 @@ vm.runInContext(code, context);
     assert.ok(landing.includes('Trial Balance'));
     assert.ok(landing.includes('ReportsPage.trialBalance()'));
 
-    context.ReportsPage.openPeriodModal = async (title, initialPeriod, loadContent, label, useAsOfOnly) => {
-        modalCalls.push({ title, initialPeriod, label, useAsOfOnly });
-        return loadContent(initialPeriod, { as_of_date: '2026-04-30' });
-    };
+    await context.ReportsPage.trialBalance();
+    assert.deepStrictEqual(navigations, ['#/reports/trial-balance']);
+    context.ReportsPage._reportStates['trial-balance'].period = 'custom';
+    context.ReportsPage._reportStates['trial-balance'].custom_end = '2026-04-30';
 
-    const html = await context.ReportsPage.trialBalance();
-    assert.deepStrictEqual(modalCalls, [
-        {
-            title: 'Trial Balance',
-            initialPeriod: 'this_year_to_date',
-            label: 'As Of',
-            useAsOfOnly: true,
-        },
-    ]);
+    const html = await context.ReportsPage.renderTrialBalanceScreen();
     assert.deepStrictEqual(calls, ['/reports/trial-balance?as_of_date=2026-04-30']);
     assert.ok(html.includes('Business Bank'));
     assert.ok(html.includes('Sales'));
     assert.ok(html.includes('GST'));
     assert.ok(html.includes('Totals'));
+    assert.ok(html.includes('View / Print PDF'));
     assert.ok(html.includes('$92.00'));
     assert.ok(html.includes('$77.00'));
+
+    context.ReportsPage.openReportPdf('trial-balance');
+    assert.deepStrictEqual(opens, [
+        {
+            path: '/reports/trial-balance/pdf?as_of_date=2026-04-30',
+            filename: 'TrialBalance_2026-04-30.pdf',
+        },
+    ]);
 })().catch((err) => {
     console.error(err);
     process.exit(1);
