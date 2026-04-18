@@ -156,6 +156,10 @@ class CashFlowReportTests(unittest.TestCase):
 
         tables = reports_route._report_tables_cash_flow(report, {"locale": "en-NZ", "currency": "NZD"})
         self.assertTrue(all(table.get("style") == "width: 92%;" for table in tables))
+        self.assertEqual(tables[-1]["columns"], [
+            {"label": "Measure", "width": "80%"},
+            {"label": "Amount", "align": "right", "width": "20%"},
+        ])
 
 
 if __name__ == "__main__":

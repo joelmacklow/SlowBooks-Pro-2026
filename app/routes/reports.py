@@ -285,8 +285,8 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         "title": "Cash Summary",
         "style": "width: 92%;",
         "columns": [
-            {"label": "Measure", "width": "70%"},
-            {"label": "Amount", "align": "right", "width": "30%"},
+            {"label": "Measure", "width": "80%"},
+            {"label": "Amount", "align": "right", "width": "20%"},
         ],
         "rows": [
             _pdf_row(_pdf_cell("Opening cash balance"), _pdf_cell(format_currency(report["opening_cash"], company), align="right")),
