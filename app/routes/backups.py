@@ -12,7 +12,13 @@ from typing import Optional
 from app.database import get_db
 from app.models.backups import Backup
 from app.services.auth import require_permissions
-from app.services.backup_service import BACKUP_FILENAME_PATTERN, create_backup, resolve_backup_path, restore_backup
+from app.services.backup_service import (
+    BACKUP_FILENAME_PATTERN,
+    create_backup,
+    ensure_backup_file_permissions,
+    resolve_backup_path,
+    restore_backup,
+)
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -39,6 +45,7 @@ def list_backups(
         except ValueError:
             continue
         if filepath.exists():
+            ensure_backup_file_permissions(filepath)
             visible_backups.append({
                 "id": backup.id,
                 "filename": backup.filename,
@@ -77,6 +84,7 @@ def download_backup(
 
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Backup file not found")
+    ensure_backup_file_permissions(filepath)
     return FileResponse(str(filepath), filename=filepath.name, media_type="application/octet-stream")
 
 

@@ -82,9 +82,9 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 
 ### 2. Secrets-at-rest outside the completed slices still depend on broader operational controls
 - **Original risk:** DB/backup readers could recover sensitive data (`TM-006`)
-- **Current state:** closing-date and SMTP secret handling were hardened, but backups still contain application data and any remaining sensitive settings/records.
-- **Evidence:** `app/services/backup_service.py`, settings model, repo backup behavior
-- **Residual risk:** backups remain high-value artifacts and should be protected operationally.
+- **Current state:** closing-date and SMTP secret handling were hardened, and managed backup artifacts are now tightened to owner-only directory/file permissions when created or served. Backups still contain application data and any remaining sensitive settings/records.
+- **Evidence:** `app/services/backup_service.py`, `app/routes/backups.py`, settings model, repo backup behavior
+- **Residual risk:** backups remain high-value artifacts and still require host-level protection, encrypted storage, and careful operator handling.
 
 ### 3. Deployment defaults are safer, but operator misconfiguration is still possible
 - **Original risk:** reachable hosts with unsafe defaults (`TM-008`)

@@ -3,7 +3,9 @@
 # Feature 11: Database backup and restore accessible from settings
 # ============================================================================
 
+import os
 import re
+import stat
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -15,8 +17,28 @@ from app.config import DATABASE_URL
 from app.models.backups import Backup
 
 BACKUP_DIR = Path(__file__).parent.parent.parent / "backups"
-BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_FILENAME_PATTERN = re.compile(r"slowbooks_\d{8}_\d{6}\.sql\Z")
+
+
+def ensure_backup_dir_permissions() -> Path:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        current_mode = stat.S_IMODE(BACKUP_DIR.stat().st_mode)
+        if current_mode != 0o700:
+            BACKUP_DIR.chmod(0o700)
+    return BACKUP_DIR
+
+
+def ensure_backup_file_permissions(filepath: Path) -> Path:
+    ensure_backup_dir_permissions()
+    if filepath.exists() and os.name == "posix":
+        current_mode = stat.S_IMODE(filepath.stat().st_mode)
+        if current_mode != 0o600:
+            filepath.chmod(0o600)
+    return filepath
+
+
+ensure_backup_dir_permissions()
 
 
 def _parse_db_url(url: str) -> dict:
@@ -61,7 +83,7 @@ def create_backup(db: Session, notes: str = None, backup_type: str = "manual") -
     params = _parse_db_url(DATABASE_URL)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"slowbooks_{timestamp}.sql"
-    filepath = BACKUP_DIR / filename
+    filepath = ensure_backup_dir_permissions() / filename
 
     env = {"PGPASSWORD": params["password"]}
     if params["sslmode"]:
@@ -77,6 +99,7 @@ def create_backup(db: Session, notes: str = None, backup_type: str = "manual") -
         if result.returncode != 0:
             return {"success": False, "error": result.stderr}
 
+        ensure_backup_file_permissions(filepath)
         file_size = filepath.stat().st_size
 
         backup = Backup(
@@ -103,6 +126,8 @@ def restore_backup(db: Session, filename: str) -> dict:
 
     if not filepath.exists():
         return {"success": False, "error": "Backup file not found", "status_code": 404}
+
+    ensure_backup_file_permissions(filepath)
 
     params = _parse_db_url(DATABASE_URL)
     env = {"PGPASSWORD": params["password"]}
@@ -132,7 +157,9 @@ def restore_backup(db: Session, filename: str) -> dict:
 def list_backup_files() -> list[dict]:
     """List all backup files in the backup directory."""
     files = []
+    ensure_backup_dir_permissions()
     for f in sorted(BACKUP_DIR.glob("slowbooks_*.sql"), reverse=True):
+        ensure_backup_file_permissions(f)
         files.append({
             "filename": f.name,
             "file_size": f.stat().st_size,

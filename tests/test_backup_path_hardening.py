@@ -1,4 +1,5 @@
 import os
+import stat
 import sys
 import types
 import unittest
@@ -25,6 +26,67 @@ class BackupPathHardeningTests(unittest.TestCase):
         engine = create_engine('sqlite:///:memory:')
         Base.metadata.create_all(bind=engine)
         self.Session = sessionmaker(bind=engine)
+
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permission semantics required")
+    def test_create_backup_tightens_backup_directory_and_file_permissions(self):
+        from types import SimpleNamespace
+
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, self.Session() as db, \
+             mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
+            backup_dir = Path(tmpdir)
+            os.chmod(backup_dir, 0o755)
+
+            def fake_run(command, **kwargs):
+                filepath = Path(command[command.index('-f') + 1])
+                filepath.write_text('backup-data', encoding='utf-8')
+                os.chmod(filepath, 0o644)
+                return SimpleNamespace(returncode=0, stderr='')
+
+            with mock.patch.object(backup_service.subprocess, 'run', side_effect=fake_run):
+                result = backup_service.create_backup(db)
+
+            self.assertTrue(result['success'])
+            created_file = backup_dir / result['filename']
+            self.assertEqual(stat.S_IMODE(backup_dir.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(created_file.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permission semantics required")
+    def test_download_backup_tightens_insecure_backup_file_permissions(self):
+        from app.routes import backups as backups_route
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, \
+             mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
+            backup_file = Path(tmpdir) / 'slowbooks_20260415_020203.sql'
+            backup_file.write_text('backup-data', encoding='utf-8')
+            os.chmod(backup_file, 0o644)
+
+            response = backups_route.download_backup(backup_file.name, auth={'user_id': 1})
+
+            self.assertEqual(response.path, str(backup_file))
+            self.assertEqual(stat.S_IMODE(backup_file.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permission semantics required")
+    def test_list_backups_tightens_insecure_managed_backup_permissions(self):
+        from app.models.backups import Backup
+        from app.routes import backups as backups_route
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, self.Session() as db, \
+             mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
+            backup_file = Path(tmpdir) / 'slowbooks_20260415_020204.sql'
+            backup_file.write_text('backup-data', encoding='utf-8')
+            os.chmod(backup_file, 0o644)
+            db.add(Backup(filename=backup_file.name, file_size=11, backup_type='manual'))
+            db.commit()
+
+            backups = backups_route.list_backups(db=db, auth={'user_id': 1})
+
+            self.assertEqual([item['filename'] for item in backups], [backup_file.name])
+            self.assertEqual(stat.S_IMODE(backup_file.stat().st_mode), 0o600)
 
     def test_list_backups_ignores_invalid_stored_filenames(self):
         from app.models.backups import Backup
