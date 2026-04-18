@@ -70,18 +70,17 @@ def list_backups(
     for backup in db_backups:
         try:
             filepath = resolve_backup_path(backup.filename)
-        except ValueError:
+        except (ValueError, FileNotFoundError):
             continue
-        if filepath.exists():
-            ensure_backup_file_permissions(filepath)
-            visible_backups.append({
-                "id": backup.id,
-                "filename": backup.filename,
-                "file_size": backup.file_size,
-                "backup_type": backup.backup_type,
-                "notes": backup.notes,
-                "created_at": backup.created_at.isoformat() if backup.created_at else None,
-            })
+        ensure_backup_file_permissions(filepath.name)
+        visible_backups.append({
+            "id": backup.id,
+            "filename": backup.filename,
+            "file_size": backup.file_size,
+            "backup_type": backup.backup_type,
+            "notes": backup.notes,
+            "created_at": backup.created_at.isoformat() if backup.created_at else None,
+        })
     return visible_backups
 
 
@@ -101,7 +100,7 @@ def make_backup(
     )
     result = create_backup(db, notes=data.notes)
     if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
+        raise HTTPException(status_code=500, detail=result.get("public_error", "Backup failed"))
     _log_backup_audit_event(db, filename=result["filename"], action="CREATE", auth=auth)
     return result
 
@@ -127,10 +126,10 @@ def download_backup(
         filepath = resolve_backup_path(filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if not filepath.exists():
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Backup file not found")
-    ensure_backup_file_permissions(filepath)
+
+    ensure_backup_file_permissions(filepath.name)
     _log_backup_audit_event(db, filename=filepath.name, action="DOWNLOAD", auth=auth)
     return FileResponse(
         str(filepath),
@@ -163,7 +162,7 @@ def restore(
     if not result.get("success"):
         raise HTTPException(
             status_code=result.get("status_code", 500),
-            detail=result.get("error", "Restore failed"),
+            detail=result.get("public_error", "Restore failed"),
         )
     _log_backup_audit_event(db, filename=data.filename, action="RESTORE", auth=auth)
     return result
