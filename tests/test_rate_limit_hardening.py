@@ -4,6 +4,7 @@ import sys
 import types
 import unittest
 from io import BytesIO
+from pathlib import Path
 import importlib
 from unittest import mock
 
@@ -76,6 +77,71 @@ class RateLimitHardeningTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.status_code, 429)
+
+
+    def test_backup_routes_are_rate_limited_when_request_present(self):
+        from tempfile import TemporaryDirectory
+
+        backups_route = self._load_route_module("app.routes.backups")
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, self.Session() as db, \
+             mock.patch.object(backup_service, "BACKUP_DIR", Path(tmpdir)), \
+             mock.patch.object(backups_route, "create_backup", return_value={"success": True, "filename": "slowbooks_20260418_010101.sql", "file_size": 123}), \
+             mock.patch.object(backups_route, "restore_backup", return_value={"success": True, "message": "restored"}):
+            backup_file = Path(tmpdir) / "slowbooks_20260418_010101.sql"
+            backup_file.write_text("backup-data", encoding="utf-8")
+
+            for _ in range(3):
+                create_result = backups_route.make_backup(
+                    db=db,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.1"),
+                )
+                self.assertTrue(create_result["success"])
+
+            with self.assertRaises(HTTPException) as create_ctx:
+                backups_route.make_backup(
+                    db=db,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.1"),
+                )
+
+            for _ in range(10):
+                response = backups_route.download_backup(
+                    backup_file.name,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.1"),
+                )
+                self.assertEqual(response.path, str(backup_file))
+
+            with self.assertRaises(HTTPException) as download_ctx:
+                backups_route.download_backup(
+                    backup_file.name,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.1"),
+                )
+
+            for _ in range(3):
+                restore_result = backups_route.restore(
+                    backups_route.RestoreRequest(filename=backup_file.name),
+                    db=db,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.2"),
+                )
+                self.assertTrue(restore_result["success"])
+
+            with self.assertRaises(HTTPException) as restore_ctx:
+                backups_route.restore(
+                    backups_route.RestoreRequest(filename=backup_file.name),
+                    db=db,
+                    auth={"user_id": 1},
+                    request=make_request("127.0.0.2"),
+                )
+
+        self.assertEqual(create_ctx.exception.status_code, 429)
+        self.assertEqual(download_ctx.exception.status_code, 429)
+        self.assertEqual(restore_ctx.exception.status_code, 429)
 
     def test_csv_import_is_rate_limited_when_request_present(self):
         csv_route = self._load_route_module("app.routes.csv")

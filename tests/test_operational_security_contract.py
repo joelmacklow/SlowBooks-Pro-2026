@@ -13,6 +13,7 @@ weasyprint_stub.HTML = object
 sys.modules.setdefault("weasyprint", weasyprint_stub)
 
 RATE_LIMIT_EXPECTATIONS = {
+    "app.routes.backups": ["make_backup", "download_backup", "restore"],
     "app.routes.settings": ["test_email"],
     "app.routes.uploads": ["upload_logo"],
     "app.routes.csv": [

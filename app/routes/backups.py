@@ -8,10 +8,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.backups import Backup
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 from app.services.backup_service import (
     BACKUP_FILENAME_PATTERN,
     create_backup,
@@ -62,7 +64,15 @@ def make_backup(
     data: BackupCreate = BackupCreate(),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("backups.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="backup:create",
+        limit=3,
+        window_seconds=300,
+        detail="Too many backup creation requests. Please wait and try again.",
+    )
     result = create_backup(db, notes=data.notes)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
@@ -73,7 +83,15 @@ def make_backup(
 def download_backup(
     filename: str,
     auth=Depends(require_permissions("backups.view")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="backup:download",
+        limit=10,
+        window_seconds=60,
+        detail="Too many backup download requests. Please wait and try again.",
+    )
     if not BACKUP_FILENAME_PATTERN.fullmatch(filename):
         raise HTTPException(status_code=400, detail="Invalid backup filename")
 
@@ -93,7 +111,15 @@ def restore(
     data: RestoreRequest,
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("backups.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="backup:restore",
+        limit=3,
+        window_seconds=300,
+        detail="Too many backup restore requests. Please wait and try again.",
+    )
     result = restore_backup(db, data.filename)
     if not result.get("success"):
         raise HTTPException(

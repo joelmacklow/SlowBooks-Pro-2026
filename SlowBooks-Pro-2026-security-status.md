@@ -44,9 +44,9 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 
 ### 7. Burst abuse on high-risk email/import surfaces — partially resolved
 - **Original risk:** repeated email/import abuse could degrade service (`TM-004`, `TM-007`)
-- **Current state:** lightweight in-memory per-host throttling protects SMTP test email, document email routes, and major import/upload endpoints.
-- **Evidence:** `app/services/rate_limit.py`, targeted routes
-- **Result:** abuse resistance is improved in the default single-process deployment model.
+- **Current state:** lightweight in-memory per-host throttling protects SMTP test email, document email routes, major import/upload endpoints, and backup create/download/restore operations.
+- **Evidence:** `app/services/rate_limit.py`, targeted routes including `app/routes/backups.py`
+- **Result:** abuse resistance is improved across the main high-value operational surfaces in the default single-process deployment model.
 
 ### 8. Wildcard CORS browser exposure — resolved
 - **Original risk:** wildcard browser origins could read sensitive responses (`TM-005`)
