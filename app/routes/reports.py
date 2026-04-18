@@ -271,6 +271,7 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         )
         tables.append({
             "title": label_map[key],
+            "style": "width: 92%;",
             "columns": [
                 {"label": "Date", "width": "16%"},
                 {"label": "Description", "width": "46%"},
@@ -282,6 +283,7 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         })
     tables.append({
         "title": "Cash Summary",
+        "style": "width: 92%;",
         "columns": [
             {"label": "Measure", "width": "70%"},
             {"label": "Amount", "align": "right", "width": "30%"},

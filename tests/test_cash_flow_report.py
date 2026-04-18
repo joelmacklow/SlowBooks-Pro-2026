@@ -143,6 +143,20 @@ class CashFlowReportTests(unittest.TestCase):
         self.assertEqual(response.media_type, "application/pdf")
         self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="CashFlow_2026-04-01_2026-04-30.pdf"')
 
+    def test_cash_flow_pdf_uses_narrowed_table_width(self):
+        from app.routes import reports as reports_route
+
+        with self.Session() as db:
+            report = reports_route.cash_flow_report(
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 4, 30),
+                db=db,
+                auth={"user_id": 1},
+            )
+
+        tables = reports_route._report_tables_cash_flow(report, {"locale": "en-NZ", "currency": "NZD"})
+        self.assertTrue(all(table.get("style") == "width: 92%;" for table in tables))
+
 
 if __name__ == "__main__":
     unittest.main()
