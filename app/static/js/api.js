@@ -76,13 +76,22 @@ const API = {
     },
     async open(path, fallbackName = 'document.bin') {
         const res = await this.raw('GET', path);
+        const disposition = res.headers.get('Content-Disposition');
+        let filename = fallbackName;
+        if (disposition) {
+            const match = disposition.match(/filename="?([^\"]+)"?/);
+            if (match) filename = match[1];
+        }
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+        const objectSource = typeof File !== 'undefined'
+            ? new File([blob], filename, { type: blob.type || 'application/octet-stream' })
+            : blob;
+        const url = URL.createObjectURL(objectSource);
         const opened = typeof window !== 'undefined' && typeof window.open === 'function' ? window.open(url, '_blank') : null;
         if (!opened) {
             const link = document.createElement('a');
             link.href = url;
-            link.download = fallbackName;
+            link.download = filename;
             link.click();
         }
         setTimeout(() => URL.revokeObjectURL(url), 60_000);

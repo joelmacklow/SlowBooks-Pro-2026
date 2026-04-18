@@ -53,11 +53,6 @@ vm.runInContext(code, context);
     await context.PurchaseOrdersPage.emailPurchaseOrder(2);
     await context.CreditMemosPage.emailCreditMemo(3);
     context.PayrollPage.emailPayslip(7, 8);
-    context.ReportsPage._statementCustomers = [{ id: 5, name: 'Aroha Ltd', email: 'customer@example.com' }];
-    context.ReportsPage.emailStatementFromForm({
-        customer_id: { value: '5' },
-        as_of_date: { value: '2026-04-30' },
-    });
 
     assert.deepStrictEqual(
         calls.map(call => [call.endpoint, call.recipient]),
@@ -66,7 +61,6 @@ vm.runInContext(code, context);
             ['/purchase-orders/2/email', 'vendor@example.com'],
             ['/credit-memos/3/email', 'customer@example.com'],
             ['/payroll/7/payslips/8/email', ''],
-            ['/reports/customer-statement/5/email', 'customer@example.com'],
         ],
     );
 })().catch(err => {

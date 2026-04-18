@@ -19,9 +19,17 @@ const ReportsPage = {
                     <div class="card-header">Balance Sheet</div>
                     <p style="font-size:13px; color:var(--gray-500);">Assets, liabilities, and equity</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.trialBalance()">
+                    <div class="card-header">Trial Balance</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Ending debit and credit balances by account</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
                     <div class="card-header">A/R Aging</div>
                     <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
+                </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.apAging()">
+                    <div class="card-header">A/P Aging</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Outstanding payables by age</p>
                 </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.gstReturn()">
                     <div class="card-header">GST Return</div>
@@ -35,7 +43,7 @@ const ReportsPage = {
                     <div class="card-header">Income by Customer</div>
                     <p style="font-size:13px; color:var(--gray-500);">Sales totals per customer</p>
                 </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.customerStatementPicker()">
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.customerStatement()">
                     <div class="card-header">Customer Statement</div>
                     <p style="font-size:13px; color:var(--gray-500);">Invoice/payment history PDF</p>
                 </div>
@@ -202,58 +210,339 @@ const ReportsPage = {
         await render();
     },
 
+    _reportRoute(key) {
+        return `#/reports/${key}`;
+    },
+
+    _defaultRangeReportState() {
+        return {
+            period: "this_year_to_date",
+            custom_start: `${new Date().getFullYear()}-01-01`,
+            custom_end: todayISO(),
+        };
+    },
+
+    _defaultAsOfReportState() {
+        return {
+            period: "this_year_to_date",
+            custom_end: todayISO(),
+        };
+    },
+
+    _reportDefinitions() {
+        return {
+            "profit-loss": {
+                title: "Profit & Loss",
+                filterMode: "range",
+                loadData: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return API.get(`/reports/profit-loss?start_date=${range.start}&end_date=${range.end}`);
+                },
+                pdfPath: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `/reports/profit-loss/pdf?start_date=${range.start}&end_date=${range.end}`;
+                },
+                pdfFilename: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `ProfitLoss_${range.start}_${range.end}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderProfitLossContent(data),
+            },
+            "balance-sheet": {
+                title: "Balance Sheet",
+                filterMode: "as_of",
+                loadData: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return API.get(`/reports/balance-sheet?as_of_date=${asOfDate}`);
+                },
+                pdfPath: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `/reports/balance-sheet/pdf?as_of_date=${asOfDate}`;
+                },
+                pdfFilename: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `BalanceSheet_${asOfDate}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderBalanceSheetContent(data),
+            },
+            "trial-balance": {
+                title: "Trial Balance",
+                filterMode: "as_of",
+                loadData: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return API.get(`/reports/trial-balance?as_of_date=${asOfDate}`);
+                },
+                pdfPath: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `/reports/trial-balance/pdf?as_of_date=${asOfDate}`;
+                },
+                pdfFilename: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `TrialBalance_${asOfDate}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderTrialBalanceContent(data),
+            },
+            "ar-aging": {
+                title: "Accounts Receivable Aging",
+                filterMode: "as_of",
+                loadData: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return API.get(`/reports/ar-aging?as_of_date=${asOfDate}`);
+                },
+                pdfPath: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `/reports/ar-aging/pdf?as_of_date=${asOfDate}`;
+                },
+                pdfFilename: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `ARAging_${asOfDate}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderArAgingContent(data),
+            },
+            "ap-aging": {
+                title: "Accounts Payable Aging",
+                filterMode: "as_of",
+                loadData: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return API.get(`/reports/ap-aging?as_of_date=${asOfDate}`);
+                },
+                pdfPath: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `/reports/ap-aging/pdf?as_of_date=${asOfDate}`;
+                },
+                pdfFilename: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `APAging_${asOfDate}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderApAgingContent(data),
+            },
+            "general-ledger": {
+                title: "General Ledger",
+                filterMode: "range",
+                loadData: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return API.get(`/reports/general-ledger?start_date=${range.start}&end_date=${range.end}`);
+                },
+                pdfPath: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `/reports/general-ledger/pdf?start_date=${range.start}&end_date=${range.end}`;
+                },
+                pdfFilename: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `GeneralLedger_${range.start}_${range.end}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderGeneralLedgerContent(data),
+            },
+            "income-by-customer": {
+                title: "Income by Customer",
+                filterMode: "range",
+                loadData: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return API.get(`/reports/income-by-customer?start_date=${range.start}&end_date=${range.end}`);
+                },
+                pdfPath: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `/reports/income-by-customer/pdf?start_date=${range.start}&end_date=${range.end}`;
+                },
+                pdfFilename: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `IncomeByCustomer_${range.start}_${range.end}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderIncomeByCustomerContent(data),
+            },
+        };
+    },
+
+    _reportDefinition(key) {
+        return ReportsPage._reportDefinitions()[key];
+    },
+
+    _ensureReportState(key) {
+        ReportsPage._reportStates = ReportsPage._reportStates || {};
+        const definition = ReportsPage._reportDefinition(key);
+        if (!ReportsPage._reportStates[key]) {
+            ReportsPage._reportStates[key] = definition.filterMode === "range"
+                ? ReportsPage._defaultRangeReportState()
+                : ReportsPage._defaultAsOfReportState();
+        }
+        return ReportsPage._reportStates[key];
+    },
+
+    openReport(key) {
+        ReportsPage._ensureReportState(key);
+        return App.navigate(ReportsPage._reportRoute(key));
+    },
+
+    refreshReport(key) {
+        return App.navigate(ReportsPage._reportRoute(key));
+    },
+
+    changeReportPeriod(key, value) {
+        const state = ReportsPage._ensureReportState(key);
+        state.period = value;
+        App.navigate(ReportsPage._reportRoute(key));
+    },
+
+    changeReportDate(key, field, value) {
+        const state = ReportsPage._ensureReportState(key);
+        state[field] = value;
+        App.navigate(ReportsPage._reportRoute(key));
+    },
+
+    openReportPdf(key) {
+        const definition = ReportsPage._reportDefinition(key);
+        const state = ReportsPage._ensureReportState(key);
+        API.open(definition.pdfPath(state), definition.pdfFilename(state));
+    },
+
+    _renderReportFilterControls(key, definition, state) {
+        const label = definition.filterMode === "range" ? "Dates" : "As Of";
+        const customRow = definition.filterMode === "range"
+            ? `
+                <div style="display:${state.period === "custom" ? "flex" : "none"}; margin-top:12px; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <label for="${key}-custom-start">From:</label>
+                    <input id="${key}-custom-start" type="date" value="${state.custom_start}" onchange="ReportsPage.changeReportDate('${key}', 'custom_start', this.value)">
+                    <label for="${key}-custom-end">To:</label>
+                    <input id="${key}-custom-end" type="date" value="${state.custom_end}" onchange="ReportsPage.changeReportDate('${key}', 'custom_end', this.value)">
+                </div>`
+            : `
+                <div style="display:${state.period === "custom" ? "flex" : "none"}; margin-top:12px; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <label for="${key}-custom-end">As of date:</label>
+                    <input id="${key}-custom-end" type="date" value="${state.custom_end}" onchange="ReportsPage.changeReportDate('${key}', 'custom_end', this.value)">
+                </div>`;
+
+        return `
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>${label}</label>
+                    <select onchange="ReportsPage.changeReportPeriod('${key}', this.value)">
+                        ${ReportsPage.periodOptions(state.period)}
+                    </select>
+                </div>
+            </div>
+            ${customRow}
+            <div class="form-actions" style="justify-content:flex-start;">
+                <button class="btn btn-secondary" onclick="ReportsPage.refreshReport('${key}')">Refresh</button>
+                <button class="btn btn-primary" onclick="ReportsPage.openReportPdf('${key}')">View / Print PDF</button>
+            </div>`;
+    },
+
+    async renderReportScreen(key) {
+        const definition = ReportsPage._reportDefinition(key);
+        const state = ReportsPage._ensureReportState(key);
+        const data = await definition.loadData(state);
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports</div>
+                    <h2>${escapeHtml(definition.title)}</h2>
+                </div>
+                <button class="btn btn-secondary" onclick="App.navigate('#/reports')">Back to Reports</button>
+            </div>
+            <div class="settings-section">
+                ${ReportsPage._renderReportFilterControls(key, definition, state)}
+            </div>
+            <div class="settings-section">
+                ${definition.renderContent(data, state)}
+            </div>`;
+    },
+
+    renderProfitLossContent(data) {
+        const section = (items) => {
+            if (!items.length) return `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
+            return items.map(i =>
+                `<tr><td style="padding-left:24px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(Math.abs(i.amount))}</td></tr>`
+            ).join("");
+        };
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>Account</th><th class="amount">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Income</strong></td><td></td></tr>
+                    ${section(data.income)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Income</td><td class="amount">${formatCurrency(data.total_income)}</td></tr>
+                    <tr><td><strong>Cost of Goods Sold</strong></td><td></td></tr>
+                    ${section(data.cogs)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Gross Profit</td><td class="amount">${formatCurrency(data.gross_profit)}</td></tr>
+                    <tr><td><strong>Expenses</strong></td><td></td></tr>
+                    ${section(data.expenses)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Expenses</td><td class="amount">${formatCurrency(data.total_expenses)}</td></tr>
+                    <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>Net Income</td><td class="amount">${formatCurrency(data.net_income)}</td></tr>
+                </tbody>
+            </table></div>`;
+    },
+
+    renderBalanceSheetContent(data) {
+        const section = (items) => items.map(i =>
+            `<tr><td style="padding-left:24px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(Math.abs(i.amount))}</td></tr>`
+        ).join("") || `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>Account</th><th class="amount">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Assets</strong></td><td></td></tr>
+                    ${section(data.assets)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Assets</td><td class="amount">${formatCurrency(data.total_assets)}</td></tr>
+                    <tr><td><strong>Liabilities</strong></td><td></td></tr>
+                    ${section(data.liabilities)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Liabilities</td><td class="amount">${formatCurrency(data.total_liabilities)}</td></tr>
+                    <tr><td><strong>Equity</strong></td><td></td></tr>
+                    ${section(data.equity)}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Equity</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
+                </tbody>
+            </table></div>`;
+    },
+
+    renderTrialBalanceContent(data) {
+        const rows = data.accounts.map((account) => `
+            <tr>
+                <td>${escapeHtml(account.account_number || '')}</td>
+                <td>${escapeHtml(account.account_name)}</td>
+                <td>${escapeHtml(account.account_type)}</td>
+                <td class="amount">${account.debit_balance ? formatCurrency(account.debit_balance) : ''}</td>
+                <td class="amount">${account.credit_balance ? formatCurrency(account.credit_balance) : ''}</td>
+            </tr>
+        `).join("") || `<tr><td colspan="5" style="color:var(--gray-400);">No balances for this date</td></tr>`;
+
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>No.</th><th>Account</th><th>Type</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead>
+                <tbody>
+                    ${rows}
+                    <tr style="font-weight:700; background:var(--primary-light);">
+                        <td colspan="3">Totals</td>
+                        <td class="amount">${formatCurrency(data.total_debit)}</td>
+                        <td class="amount">${formatCurrency(data.total_credit)}</td>
+                    </tr>
+                </tbody>
+            </table></div>`;
+    },
+
+    renderProfitLossScreen() {
+        return ReportsPage.renderReportScreen("profit-loss");
+    },
+
+    renderBalanceSheetScreen() {
+        return ReportsPage.renderReportScreen("balance-sheet");
+    },
+
+    renderTrialBalanceScreen() {
+        return ReportsPage.renderReportScreen("trial-balance");
+    },
+
     async profitLoss() {
-        await ReportsPage.openPeriodModal("Profit & Loss", "this_year_to_date", async (_period, range) => {
-            const data = await API.get(`/reports/profit-loss?start_date=${range.start}&end_date=${range.end}`);
-            const section = (items) => {
-                if (!items.length) return `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
-                return items.map(i =>
-                    `<tr><td style="padding-left:24px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(Math.abs(i.amount))}</td></tr>`
-                ).join("");
-            };
-            return `
-                <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
-                <div class="table-container"><table>
-                    <thead><tr><th>Account</th><th class="amount">Amount</th></tr></thead>
-                    <tbody>
-                        <tr><td><strong>Income</strong></td><td></td></tr>
-                        ${section(data.income)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Total Income</td><td class="amount">${formatCurrency(data.total_income)}</td></tr>
-                        <tr><td><strong>Cost of Goods Sold</strong></td><td></td></tr>
-                        ${section(data.cogs)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Gross Profit</td><td class="amount">${formatCurrency(data.gross_profit)}</td></tr>
-                        <tr><td><strong>Expenses</strong></td><td></td></tr>
-                        ${section(data.expenses)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Total Expenses</td><td class="amount">${formatCurrency(data.total_expenses)}</td></tr>
-                        <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>Net Income</td><td class="amount">${formatCurrency(data.net_income)}</td></tr>
-                    </tbody>
-                </table></div>`;
-        });
+        return ReportsPage.openReport("profit-loss");
     },
 
     async balanceSheet() {
-        await ReportsPage.openPeriodModal("Balance Sheet", "this_year_to_date", async (_period, params) => {
-            const data = await API.get(`/reports/balance-sheet?as_of_date=${params.as_of_date}`);
-            const section = (items) => items.map(i =>
-                `<tr><td style="padding-left:24px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(Math.abs(i.amount))}</td></tr>`
-            ).join("") || `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
-            return `
-                <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
-                <div class="table-container"><table>
-                    <thead><tr><th>Account</th><th class="amount">Amount</th></tr></thead>
-                    <tbody>
-                        <tr><td><strong>Assets</strong></td><td></td></tr>
-                        ${section(data.assets)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Total Assets</td><td class="amount">${formatCurrency(data.total_assets)}</td></tr>
-                        <tr><td><strong>Liabilities</strong></td><td></td></tr>
-                        ${section(data.liabilities)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Total Liabilities</td><td class="amount">${formatCurrency(data.total_liabilities)}</td></tr>
-                        <tr><td><strong>Equity</strong></td><td></td></tr>
-                        ${section(data.equity)}
-                        <tr style="font-weight:600; background:var(--gray-50);"><td>Total Equity</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
-                    </tbody>
-                </table></div>`;
-        }, "As Of", true);
+        return ReportsPage.openReport("balance-sheet");
+    },
+
+    async trialBalance() {
+        return ReportsPage.openReport("trial-balance");
     },
 
     gstReturn() {
@@ -325,7 +614,7 @@ const ReportsPage = {
         const isConfirmed = state.return_status === 'confirmed';
         const confirmationNote = isConfirmed
             ? `Return confirmed ${state.confirmed_at ? formatDate(state.confirmed_at) : ''}`
-            : 'Confirm this GST return to save Box 9 and Box 13 permanently before downloading GST101A.';
+            : 'Confirm this GST return to save Box 9 and Box 13 permanently before viewing or printing GST101A.';
         return `
             <div class="settings-section">
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">${confirmationNote}</div>
@@ -342,7 +631,7 @@ const ReportsPage = {
                 <div class="form-actions" style="justify-content:flex-start;">
                     <button class="btn btn-secondary" onclick="ReportsPage.refreshGstReturnDetail()" ${isConfirmed ? 'disabled' : ''}>Refresh</button>
                     ${isConfirmed ? '' : '<button class="btn btn-primary" onclick="ReportsPage.confirmGstReturn()">Confirm GST Return</button>'}
-                    <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()" ${isConfirmed ? '' : 'disabled'}>Download GST101A PDF</button>
+                    <button class="btn btn-primary" onclick="ReportsPage.downloadGstReturnPdf()" ${isConfirmed ? '' : 'disabled'}>View / Print GST101A PDF</button>
                 </div>
             </div>`;
     },
@@ -577,14 +866,14 @@ const ReportsPage = {
         const state = ReportsPage._gstDetailStateOrNull();
         if (!state) return;
         if (state.return_status !== 'confirmed') {
-            toast('Confirm the GST return before downloading GST101A', 'error');
+            toast('Confirm the GST return before viewing GST101A', 'error');
             return;
         }
         const box9 = ($("#gst-box9-adjustments")?.value || state.box9_adjustments || "0.00");
         const box13 = ($("#gst-box13-adjustments")?.value || state.box13_adjustments || "0.00");
         state.box9_adjustments = box9;
         state.box13_adjustments = box13;
-        API.download(`/reports/gst-return/pdf?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`, `GST101A_${state.start_date}_${state.end_date}.pdf`);
+        API.open(`/reports/gst-return/pdf?start_date=${state.start_date}&end_date=${state.end_date}&box9_adjustments=${encodeURIComponent(box9)}&box13_adjustments=${encodeURIComponent(box13)}`, `GST101A_${state.start_date}_${state.end_date}.pdf`);
     },
 
     async confirmGstReturn() {
@@ -638,138 +927,266 @@ const ReportsPage = {
     },
 
     async generalLedger() {
-        await ReportsPage.openPeriodModal("General Ledger", "this_year_to_date", async (_period, range) => {
-            const data = await API.get(`/reports/general-ledger?start_date=${range.start}&end_date=${range.end}`);
-            let html = `<p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>`;
-            if (data.accounts.length === 0) {
-                html += `<div class="empty-state"><p>No journal entries found</p></div>`;
-            } else {
-                for (const acct of data.accounts) {
-                    html += `<h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">${escapeHtml(acct.account_number)} &mdash; ${escapeHtml(acct.account_name)}</h3>`;
-                    html += `<div class="table-container"><table>
-                        <thead><tr><th>Date</th><th>Description</th><th>Reference</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead><tbody>`;
-                    for (const e of acct.entries) {
-                        html += `<tr>
-                            <td>${formatDate(e.date)}</td>
-                            <td>${escapeHtml(e.description)}</td>
-                            <td>${escapeHtml(e.reference)}</td>
-                            <td class="amount">${e.debit > 0 ? formatCurrency(e.debit) : ""}</td>
-                            <td class="amount">${e.credit > 0 ? formatCurrency(e.credit) : ""}</td>
-                        </tr>`;
-                    }
-                    html += `<tr style="font-weight:600; background:var(--gray-50);">
-                        <td colspan="3">Total</td>
-                        <td class="amount">${formatCurrency(acct.total_debit)}</td>
-                        <td class="amount">${formatCurrency(acct.total_credit)}</td>
-                    </tr></tbody></table></div>`;
-                }
-            }
+        return ReportsPage.openReport("general-ledger");
+    },
+
+    renderGeneralLedgerContent(data) {
+        let html = `<p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>`;
+        if (data.accounts.length === 0) {
+            html += `<div class="empty-state"><p>No journal entries found</p></div>`;
             return html;
-        });
+        }
+        for (const acct of data.accounts) {
+            html += `<h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">${escapeHtml(acct.account_number || '')} ${acct.account_number ? '&mdash;' : ''} ${escapeHtml(acct.account_name)}</h3>`;
+            html += `<div class="table-container"><table>
+                <thead><tr><th>Date</th><th>Description</th><th>Reference</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead><tbody>`;
+            for (const e of acct.entries) {
+                html += `<tr>
+                    <td>${formatDate(e.date)}</td>
+                    <td>${escapeHtml(e.description)}</td>
+                    <td>${escapeHtml(e.reference)}</td>
+                    <td class="amount">${e.debit > 0 ? formatCurrency(e.debit) : ""}</td>
+                    <td class="amount">${e.credit > 0 ? formatCurrency(e.credit) : ""}</td>
+                </tr>`;
+            }
+            html += `<tr style="font-weight:600; background:var(--gray-50);">
+                <td colspan="3">Total</td>
+                <td class="amount">${formatCurrency(acct.total_debit)}</td>
+                <td class="amount">${formatCurrency(acct.total_credit)}</td>
+            </tr></tbody></table></div>`;
+        }
+        return html;
+    },
+
+    renderGeneralLedgerScreen() {
+        return ReportsPage.renderReportScreen("general-ledger");
     },
 
     async incomeByCustomer() {
-        await ReportsPage.openPeriodModal("Income by Customer", "this_year_to_date", async (_period, range) => {
-            const data = await API.get(`/reports/income-by-customer?start_date=${range.start}&end_date=${range.end}`);
-            let rows = data.items.map(i =>
-                `<tr>
-                    <td>${escapeHtml(i.customer_name)}</td>
-                    <td class="amount">${i.invoice_count}</td>
-                    <td class="amount">${formatCurrency(i.total_sales)}</td>
-                    <td class="amount">${formatCurrency(i.total_paid)}</td>
-                    <td class="amount">${formatCurrency(i.total_balance)}</td>
-                </tr>`
-            ).join("");
-            rows += `<tr style="font-weight:700; background:var(--gray-50);">
-                <td>TOTAL</td>
-                <td class="amount">${data.items.reduce((sum, item) => sum + item.invoice_count, 0)}</td>
-                <td class="amount">${formatCurrency(data.total_sales)}</td>
-                <td class="amount">${formatCurrency(data.total_paid)}</td>
-                <td class="amount">${formatCurrency(data.total_balance)}</td>
-            </tr>`;
-            return `
-                <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
-                <div class="table-container"><table>
-                    <thead><tr><th>Customer</th><th class="amount">Invoices</th><th class="amount">Sales</th><th class="amount">Paid</th><th class="amount">Balance</th></tr></thead>
-                    <tbody>${rows || '<tr><td colspan="5" style="text-align:center; color:var(--gray-400);">No sales data</td></tr>'}</tbody>
-                </table></div>`;
-        });
+        return ReportsPage.openReport("income-by-customer");
     },
 
-    async customerStatementPicker() {
+    renderIncomeByCustomerContent(data) {
+        let rows = data.items.map(i =>
+            `<tr>
+                <td>${escapeHtml(i.customer_name)}</td>
+                <td class="amount">${i.invoice_count}</td>
+                <td class="amount">${formatCurrency(i.total_sales)}</td>
+                <td class="amount">${formatCurrency(i.total_paid)}</td>
+                <td class="amount">${formatCurrency(i.total_balance)}</td>
+            </tr>`
+        ).join("");
+        rows += `<tr style="font-weight:700; background:var(--gray-50);">
+            <td>TOTAL</td>
+            <td class="amount">${data.items.reduce((sum, item) => sum + item.invoice_count, 0)}</td>
+            <td class="amount">${formatCurrency(data.total_sales)}</td>
+            <td class="amount">${formatCurrency(data.total_paid)}</td>
+            <td class="amount">${formatCurrency(data.total_balance)}</td>
+        </tr>`;
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>Customer</th><th class="amount">Invoices</th><th class="amount">Sales</th><th class="amount">Paid</th><th class="amount">Balance</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="5" style="text-align:center; color:var(--gray-400);">No sales data</td></tr>'}</tbody>
+            </table></div>`;
+    },
+
+    renderIncomeByCustomerScreen() {
+        return ReportsPage.renderReportScreen("income-by-customer");
+    },
+
+    _ensureStatementState(customers = []) {
+        ReportsPage._reportStates = ReportsPage._reportStates || {};
+        if (!ReportsPage._reportStates["customer-statement"]) {
+            ReportsPage._reportStates["customer-statement"] = {
+                customer_id: customers[0] ? String(customers[0].id) : "",
+                as_of_date: todayISO(),
+                recipient: customers[0]?.email || "",
+            };
+        }
+        return ReportsPage._reportStates["customer-statement"];
+    },
+
+    async customerStatement() {
+        ReportsPage._ensureStatementState();
+        return App.navigate('#/reports/customer-statement');
+    },
+
+    changeStatementCustomer(value) {
+        const state = ReportsPage._ensureStatementState(ReportsPage._statementCustomers || []);
+        const customer = (ReportsPage._statementCustomers || []).find((entry) => String(entry.id) === String(value));
+        state.customer_id = value;
+        state.recipient = customer?.email || '';
+        App.navigate('#/reports/customer-statement');
+    },
+
+    changeStatementDate(value) {
+        const state = ReportsPage._ensureStatementState();
+        state.as_of_date = value;
+        App.navigate('#/reports/customer-statement');
+    },
+
+    updateStatementRecipient(value) {
+        const state = ReportsPage._ensureStatementState();
+        state.recipient = value;
+    },
+
+    openStatementPdf() {
+        const state = ReportsPage._ensureStatementState();
+        if (!state.customer_id) {
+            toast('Select a customer first', 'error');
+            return;
+        }
+        API.open(`/reports/customer-statement/${state.customer_id}/pdf?as_of_date=${state.as_of_date}`, `Statement_${state.customer_id}_${state.as_of_date}.pdf`);
+    },
+
+    async emailStatementPdf() {
+        const state = ReportsPage._ensureStatementState();
+        if (!state.customer_id) {
+            toast('Select a customer first', 'error');
+            return;
+        }
+        const recipient = $("#statement-recipient")?.value || state.recipient || "";
+        if (!recipient) {
+            toast('Enter a recipient email address', 'error');
+            return;
+        }
+        state.recipient = recipient;
+        try {
+            await API.post(`/reports/customer-statement/${state.customer_id}/email`, {
+                recipient,
+                as_of_date: state.as_of_date,
+            });
+            toast('Statement emailed');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    },
+
+    async renderCustomerStatementScreen() {
         const customers = await API.get("/customers?active_only=true");
         ReportsPage._statementCustomers = customers;
-        const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
-        openModal("Customer Statement", `
-            <form onsubmit="ReportsPage.openStatement(event)">
+        const state = ReportsPage._ensureStatementState(customers);
+        if (!state.customer_id && customers[0]) {
+            state.customer_id = String(customers[0].id);
+            state.recipient = customers[0].email || "";
+        }
+        const custOpts = customers.map(c => `<option value="${c.id}" ${String(c.id) === String(state.customer_id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join("");
+        const selected = customers.find((entry) => String(entry.id) === String(state.customer_id));
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports</div>
+                    <h2>Customer Statement</h2>
+                </div>
+                <button class="btn btn-secondary" onclick="App.navigate('#/reports')">Back to Reports</button>
+            </div>
+            <div class="settings-section">
                 <div class="form-grid">
-                    <div class="form-group"><label>Customer *</label>
-                        <select name="customer_id" required><option value="">Select...</option>${custOpts}</select></div>
-                    <div class="form-group"><label>As of Date</label>
-                        <input name="as_of_date" type="date" value="${todayISO()}"></div>
+                    <div class="form-group">
+                        <label>Customer</label>
+                        <select onchange="ReportsPage.changeStatementCustomer(this.value)">
+                            <option value="">Select...</option>
+                            ${custOpts}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>As of Date</label>
+                        <input type="date" value="${state.as_of_date}" onchange="ReportsPage.changeStatementDate(this.value)">
+                    </div>
+                    <div class="form-group">
+                        <label>Email recipient</label>
+                        <input id="statement-recipient" type="email" value="${escapeHtml(state.recipient || '')}" onchange="ReportsPage.updateStatementRecipient(this.value)" placeholder="customer@example.com">
+                    </div>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="button" class="btn btn-secondary" onclick="ReportsPage.emailStatementFromForm(this.form)">Email PDF</button>
-                    <button type="submit" class="btn btn-primary">Generate PDF</button>
+                <div class="form-actions" style="justify-content:flex-start;">
+                    <button class="btn btn-primary" onclick="ReportsPage.openStatementPdf()" ${state.customer_id ? '' : 'disabled'}>View / Print PDF</button>
+                    <button class="btn btn-secondary" onclick="ReportsPage.emailStatementPdf()" ${state.customer_id ? '' : 'disabled'}>Email PDF</button>
                 </div>
-            </form>`);
-    },
-
-    openStatement(e) {
-        e.preventDefault();
-        const form = e.target;
-        const cid = form.customer_id.value;
-        const asOf = form.as_of_date.value || todayISO();
-        API.open(`/reports/customer-statement/${cid}/pdf?as_of_date=${asOf}`, `customer-statement-${cid}.pdf`);
-        closeModal();
-    },
-
-    emailStatementFromForm(form) {
-        const cid = form.customer_id.value;
-        const asOf = form.as_of_date.value || todayISO();
-        const customer = (ReportsPage._statementCustomers || []).find((entry) => String(entry.id) === String(cid));
-        App.showDocumentEmailModal({
-            title: "Email Customer Statement",
-            endpoint: `/reports/customer-statement/${cid}/email`,
-            recipient: customer?.email || '',
-            defaultSubject: `Statement as at ${asOf}`,
-            successMessage: 'Statement emailed',
-            extraPayload: { as_of_date: asOf },
-        });
+            </div>
+            <div class="settings-section">
+                ${selected
+                    ? `<p style="margin:0 0 8px 0; color:var(--gray-500);">Generate a statement for <strong>${escapeHtml(selected.name)}</strong> as at ${formatDate(state.as_of_date)}.</p>
+                       <p style="margin:0; color:var(--text-muted); font-size:11px;">Use View / Print PDF to open the statement in the browser PDF viewer, or email the same PDF directly from this screen.</p>`
+                    : '<div class="empty-state"><p>Select a customer to generate a statement PDF.</p></div>'}
+            </div>`;
     },
 
     async arAging() {
-        await ReportsPage.openPeriodModal("Accounts Receivable Aging", "this_year_to_date", async (_period, params) => {
-            const data = await API.get(`/reports/ar-aging?as_of_date=${params.as_of_date}`);
-            let rows = data.items.map(i =>
-                `<tr>
-                    <td>${escapeHtml(i.customer_name)}</td>
-                    <td class="amount">${formatCurrency(i.current)}</td>
-                    <td class="amount">${formatCurrency(i.over_30)}</td>
-                    <td class="amount">${formatCurrency(i.over_60)}</td>
-                    <td class="amount">${formatCurrency(i.over_90)}</td>
-                    <td class="amount" style="font-weight:600;">${formatCurrency(i.total)}</td>
-                </tr>`
-            ).join("");
-            const t = data.totals;
-            rows += `<tr style="font-weight:700; background:var(--gray-50);">
-                <td>TOTAL</td>
-                <td class="amount">${formatCurrency(t.current)}</td>
-                <td class="amount">${formatCurrency(t.over_30)}</td>
-                <td class="amount">${formatCurrency(t.over_60)}</td>
-                <td class="amount">${formatCurrency(t.over_90)}</td>
-                <td class="amount">${formatCurrency(t.total)}</td>
-            </tr>`;
-            return `
-                <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
-                <div class="table-container"><table>
-                    <thead><tr>
-                        <th>Customer</th><th class="amount">Current</th><th class="amount">1-30</th>
-                        <th class="amount">31-60</th><th class="amount">61-90+</th><th class="amount">Total</th>
-                    </tr></thead>
-                    <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding receivables</td></tr>'}</tbody>
-                </table></div>`;
-        }, "As Of", true);
+        return ReportsPage.openReport("ar-aging");
+    },
+
+    renderArAgingContent(data) {
+        let rows = data.items.map(i =>
+            `<tr>
+                <td>${escapeHtml(i.customer_name)}</td>
+                <td class="amount">${formatCurrency(i.current)}</td>
+                <td class="amount">${formatCurrency(i.over_30)}</td>
+                <td class="amount">${formatCurrency(i.over_60)}</td>
+                <td class="amount">${formatCurrency(i.over_90)}</td>
+                <td class="amount" style="font-weight:600;">${formatCurrency(i.total)}</td>
+            </tr>`
+        ).join("");
+        const t = data.totals;
+        rows += `<tr style="font-weight:700; background:var(--gray-50);">
+            <td>TOTAL</td>
+            <td class="amount">${formatCurrency(t.current)}</td>
+            <td class="amount">${formatCurrency(t.over_30)}</td>
+            <td class="amount">${formatCurrency(t.over_60)}</td>
+            <td class="amount">${formatCurrency(t.over_90)}</td>
+            <td class="amount">${formatCurrency(t.total)}</td>
+        </tr>`;
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr>
+                    <th>Customer</th><th class="amount">Current</th><th class="amount">1-30</th>
+                    <th class="amount">31-60</th><th class="amount">61-90+</th><th class="amount">Total</th>
+                </tr></thead>
+                <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding receivables</td></tr>'}</tbody>
+            </table></div>`;
+    },
+
+    renderArAgingScreen() {
+        return ReportsPage.renderReportScreen("ar-aging");
+    },
+
+    async apAging() {
+        return ReportsPage.openReport("ap-aging");
+    },
+
+    renderApAgingContent(data) {
+        let rows = data.items.map(i =>
+            `<tr>
+                <td>${escapeHtml(i.vendor_name)}</td>
+                <td class="amount">${formatCurrency(i.current)}</td>
+                <td class="amount">${formatCurrency(i.over_30)}</td>
+                <td class="amount">${formatCurrency(i.over_60)}</td>
+                <td class="amount">${formatCurrency(i.over_90)}</td>
+                <td class="amount" style="font-weight:600;">${formatCurrency(i.total)}</td>
+            </tr>`
+        ).join("");
+        const t = data.totals;
+        rows += `<tr style="font-weight:700; background:var(--gray-50);">
+            <td>TOTAL</td>
+            <td class="amount">${formatCurrency(t.current)}</td>
+            <td class="amount">${formatCurrency(t.over_30)}</td>
+            <td class="amount">${formatCurrency(t.over_60)}</td>
+            <td class="amount">${formatCurrency(t.over_90)}</td>
+            <td class="amount">${formatCurrency(t.total)}</td>
+        </tr>`;
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr>
+                    <th>Vendor</th><th class="amount">Current</th><th class="amount">1-30</th>
+                    <th class="amount">31-60</th><th class="amount">61-90+</th><th class="amount">Total</th>
+                </tr></thead>
+                <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding payables</td></tr>'}</tbody>
+            </table></div>`;
+    },
+
+    renderApAgingScreen() {
+        return ReportsPage.renderReportScreen("ap-aging");
     },
 };

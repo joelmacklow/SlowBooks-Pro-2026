@@ -4,7 +4,7 @@ const vm = require('vm');
 
 const code = `${fs.readFileSync('app/static/js/reports.js', 'utf8')}\nthis.ReportsPage = ReportsPage;`;
 const calls = [];
-const downloads = [];
+const opens = [];
 const navigations = [];
 const posts = [];
 let gstReturnConfirmed = false;
@@ -96,8 +96,8 @@ const context = {
             }
             throw new Error(`unexpected get ${path}`);
         },
-        download: async (path, filename) => {
-            downloads.push({ path, filename });
+        open: async (path, filename) => {
+            opens.push({ path, filename });
         },
         post: async (path, body) => {
             posts.push({ path, body });
@@ -150,7 +150,7 @@ vm.runInContext(code, context);
     };
     let detailHtml = await context.ReportsPage.renderGstReturnDetailScreen();
     assert.ok(detailHtml.includes('Confirm GST Return'));
-    assert.ok(detailHtml.includes('Download GST101A PDF'));
+    assert.ok(detailHtml.includes('View / Print GST101A PDF'));
     assert.ok(detailHtml.includes('disabled'));
     assert.ok(detailHtml.includes('Awaiting return confirmation'));
 
@@ -183,7 +183,7 @@ vm.runInContext(code, context);
     assert.ok(!detailHtml.includes('Confirm GST Return'));
 
     context.ReportsPage.downloadGstReturnPdf();
-    assert.deepStrictEqual(downloads, [
+    assert.deepStrictEqual(opens, [
         {
             path: '/reports/gst-return/pdf?start_date=2026-04-01&end_date=2026-04-30&box9_adjustments=5.00&box13_adjustments=2.00',
             filename: 'GST101A_2026-04-01_2026-04-30.pdf',

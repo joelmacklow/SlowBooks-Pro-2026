@@ -181,7 +181,7 @@ Upstream commit `80b4bc782954aba5cdb93503f817e0776dc652c1` adds a second feature
 
 Recommended priority order for the new `80b4bc782954aba5cdb93503f817e0776dc652c1` carryovers:
 
-- **Priority 1 — Native Trial Balance and Cash Flow reports:** highest accountant value, no new policy surface, and closes a core in-app reporting gap the NZ branch still has.
+- **Priority 1 — Native Cash Flow report:** Trial Balance is now available in-app; Cash Flow remains the highest accountant-value reporting gap with no new policy surface.
 - **Priority 2 — Batch overdue statement delivery:** builds directly on the existing shared statement/email infrastructure with lower risk than new document types.
 - **Priority 3 — Bank rules:** meaningful banking productivity win, but should follow the current reconciliation/import foundations rather than precede them.
 - **Priority 4 — Budget vs Actual:** useful management reporting once the core accountant-facing report surface is stronger.
@@ -208,8 +208,8 @@ Recommended priority order for the new `80b4bc782954aba5cdb93503f817e0776dc652c1
 6. Decide multi-currency scope explicitly:
    The branch currently assumes single-currency `NZD` formatting. Full multi-currency support remains a separate accounting feature involving exchange rates, realized gains/losses, account currencies, and reporting currency.
 
-11. Add native accountant-facing Trial Balance and Cash Flow reports:
-   The NZ branch can already verify imported Xero Trial Balance / P&L / Balance Sheet files, but it still lacks first-class in-app Trial Balance and Cash Flow reporting from the live ledger. Implement these as NZ-safe accounting reports rather than copying US-facing report labels or assumptions.
+11. Add a native accountant-facing Cash Flow report:
+   The NZ branch now has an in-app Trial Balance, and it can already verify imported Xero Trial Balance / P&L / Balance Sheet files. The remaining gap is a first-class Cash Flow report from the live ledger, implemented with NZ-safe accounting/report wording rather than copied US-facing assumptions.
 
 12. Add batch overdue statement delivery on top of the shared email path:
    Reuse the existing SMTP/email-log/document-PDF infrastructure to email statements to all overdue customers in one controlled batch, with RBAC, failure reporting, and opt-out-safe recipient handling.

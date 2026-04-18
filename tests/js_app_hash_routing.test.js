@@ -26,4 +26,5 @@ vm.runInContext(code, context);
 
 assert.strictEqual(context.App.routePathFromHash('#/login?bootstrap_token=setup-url-token'), '/login');
 assert.strictEqual(context.App.routePathFromHash('#/reports/gst-return/detail?period=2026-04'), '/reports/gst-return/detail');
+assert.strictEqual(context.App.routePathFromHash('#/reports/trial-balance?period=this_year_to_date'), '/reports/trial-balance');
 assert.strictEqual(context.App.routePathFromHash('#/'), '/');
