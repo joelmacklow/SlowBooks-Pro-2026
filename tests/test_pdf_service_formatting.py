@@ -248,6 +248,7 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         rendered = CapturingHTML.rendered[-1]
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("position: fixed; bottom: 0;", rendered)
         self.assertIn("Trial Balance", rendered)
 
 
