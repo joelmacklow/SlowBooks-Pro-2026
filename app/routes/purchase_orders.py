@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine, POStatus
@@ -22,6 +23,7 @@ from app.services.auth import require_permissions
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 from app.services.pdf_service import generate_purchase_order_pdf
 from app.routes.settings import _get_all as get_settings
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/purchase-orders", tags=["purchase_orders"])
 
@@ -248,7 +250,14 @@ def purchase_order_pdf(po_id: int, db: Session = Depends(get_db), auth=Depends(r
 
 
 @router.post("/{po_id}/email")
-def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage"))):
+def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")

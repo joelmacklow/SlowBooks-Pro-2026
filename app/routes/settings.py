@@ -6,6 +6,7 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.config import SMTP_PASSWORD
 from app.database import get_db
@@ -17,6 +18,7 @@ from app.services.chart_setup_status import (
 )
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
 from app.services.closing_date import hash_closing_date_password
+from app.services.rate_limit import enforce_rate_limit
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -126,8 +128,16 @@ def update_settings(
 def test_email(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
+    request: Request = None,
 ):
     """Feature 8: Send a test email to verify SMTP settings."""
+    enforce_rate_limit(
+        request,
+        scope="email:test",
+        limit=5,
+        window_seconds=60,
+        detail="Too many SMTP test email requests. Please wait and try again.",
+    )
     settings = _get_all(db)
     if not settings.get("smtp_host"):
         from fastapi import HTTPException

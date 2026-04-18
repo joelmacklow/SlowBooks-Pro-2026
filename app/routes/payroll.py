@@ -8,6 +8,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.payroll import Employee, PayRun, PayRunStatus, PayStub
@@ -29,6 +30,7 @@ from app.services.accounting import (
 from app.services.auth import require_permissions
 from app.services.closing_date import check_closing_date
 from app.services.nz_payroll import calculate_payroll_stub, round_money
+from app.services.rate_limit import enforce_rate_limit
 from app.services.payroll_filing_audit import (
     create_filing_audit,
     list_pay_run_filing_history,
@@ -334,7 +336,15 @@ def email_payroll_payslip(
     data: DocumentEmailRequest,
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("payroll.payslips.email")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
     if not pay_run:
         raise HTTPException(status_code=404, detail="Pay run not found")

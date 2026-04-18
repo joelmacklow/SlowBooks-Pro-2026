@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.services.auth import require_permissions
 from app.services.ofx_import import import_transactions, parse_statement_file, statement_summary
+from app.services.rate_limit import enforce_rate_limit
 from app.services.upload_limits import IMPORT_FILE_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/bank-import", tags=["bank_import"])
@@ -13,7 +15,15 @@ router = APIRouter(prefix="/api/bank-import", tags=["bank_import"])
 async def preview_statement(
     file: UploadFile = File(...),
     auth=Depends(require_permissions("banking.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="import:bank",
+        limit=10,
+        window_seconds=60,
+        detail="Too many bank import requests. Please wait and try again.",
+    )
     content = enforce_upload_size(
         await file.read(),
         max_bytes=IMPORT_FILE_MAX_BYTES,
@@ -33,7 +43,15 @@ async def import_statement(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("banking.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="import:bank",
+        limit=10,
+        window_seconds=60,
+        detail="Too many bank import requests. Please wait and try again.",
+    )
     content = enforce_upload_size(
         await file.read(),
         max_bytes=IMPORT_FILE_MAX_BYTES,

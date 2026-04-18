@@ -11,6 +11,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
@@ -25,6 +26,7 @@ from app.services.email_service import render_document_email, send_document_emai
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/estimates", tags=["estimates"])
 
@@ -193,7 +195,14 @@ def estimate_pdf(estimate_id: int, db: Session = Depends(get_db), auth=Depends(r
 
 
 @router.post("/{estimate_id}/email")
-def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     est = db.query(Estimate).filter(Estimate.id == estimate_id).first()
     if not est:
         raise HTTPException(status_code=404, detail="Estimate not found")

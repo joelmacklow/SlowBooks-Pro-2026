@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.accounts import Account, AccountType
@@ -30,6 +31,7 @@ from app.services.email_service import render_document_email, send_document_emai
 from app.services.pdf_service import generate_statement_pdf
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 from app.services.gst_return import (
     calculate_gst_return,
     generate_gst101a_pdf,
@@ -800,7 +802,15 @@ def email_customer_statement(
     data: StatementEmailRequest,
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     as_of_date = data.as_of_date or date.today()
 
     customer = db.query(Customer).filter(Customer.id == customer_id).first()

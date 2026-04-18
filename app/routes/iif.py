@@ -15,6 +15,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.schemas.iif import IIFImportResult, IIFValidationReport
@@ -24,6 +25,7 @@ from app.services.iif_export import (
 )
 from app.services.iif_import import import_all, validate_iif
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 from app.services.upload_limits import IMPORT_FILE_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/iif", tags=["iif"])
@@ -115,12 +117,19 @@ def export_estimates_iif(db: Session = Depends(get_db), auth=Depends(require_per
 # ============================================================================
 
 @router.post("/import", response_model=IIFImportResult)
-async def import_iif(file: UploadFile = File(...), db: Session = Depends(get_db), auth=Depends(require_permissions("import_export.manage"))):
+async def import_iif(file: UploadFile = File(...), db: Session = Depends(get_db), auth=Depends(require_permissions("import_export.manage")), request: Request = None):
     """Upload and import an IIF file into Slowbooks.
 
     Processes accounts, customers, vendors, items, and transactions.
     Skips duplicates and collects per-row errors.
     """
+    enforce_rate_limit(
+        request,
+        scope="import:iif",
+        limit=10,
+        window_seconds=60,
+        detail="Too many IIF import requests. Please wait and try again.",
+    )
     if not file.filename.lower().endswith(".iif"):
         raise HTTPException(400, "File must have .iif extension")
 
@@ -145,8 +154,15 @@ async def import_iif(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 
 @router.post("/validate", response_model=IIFValidationReport)
-async def validate_iif_file(file: UploadFile = File(...), auth=Depends(require_permissions("import_export.manage"))):
+async def validate_iif_file(file: UploadFile = File(...), auth=Depends(require_permissions("import_export.manage")), request: Request = None):
     """Validate an IIF file without importing — pre-flight check."""
+    enforce_rate_limit(
+        request,
+        scope="import:iif",
+        limit=10,
+        window_seconds=60,
+        detail="Too many IIF import requests. Please wait and try again.",
+    )
     if not file.filename.lower().endswith(".iif"):
         raise HTTPException(400, "File must have .iif extension")
 

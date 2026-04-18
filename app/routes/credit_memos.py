@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.credit_memos import CreditMemo, CreditMemoLine, CreditMemoStatus, CreditApplication
@@ -30,6 +31,7 @@ from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, st
 from app.services.pdf_service import generate_credit_memo_pdf
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/credit-memos", tags=["credit_memos"])
 
@@ -261,7 +263,14 @@ def credit_memo_pdf(cm_id: int, db: Session = Depends(get_db), auth=Depends(requ
 
 
 @router.post("/{cm_id}/email")
-def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     cm = db.query(CreditMemo).filter(CreditMemo.id == cm_id).first()
     if not cm:
         raise HTTPException(status_code=404, detail="Credit memo not found")

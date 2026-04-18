@@ -8,10 +8,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.settings import Settings
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 from app.services.upload_limits import LOGO_UPLOAD_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -27,7 +29,15 @@ async def upload_logo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="upload:logo",
+        limit=10,
+        window_seconds=60,
+        detail="Too many logo upload requests. Please wait and try again.",
+    )
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Only PNG, JPEG, or GIF images are allowed")
 

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
@@ -32,6 +33,7 @@ from app.services.email_service import render_invoice_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -345,8 +347,15 @@ def mark_invoice_sent(invoice_id: int, db: Session = Depends(get_db), auth=Depen
 
 
 @router.post("/{invoice_id}/email")
-def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
     """Email invoice as PDF attachment — Feature 8"""
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
