@@ -232,6 +232,24 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertNotIn("<svg onload=alert(1)>", CapturingHTML.rendered[-1])
         self.assertNotIn("<b>Net 7</b>", CapturingHTML.rendered[-1])
 
+    def test_report_pdf_uses_a4_page_size_with_1_5cm_margins(self):
+        pdf_service.generate_report_pdf(
+            title="Trial Balance",
+            company_settings=self.company,
+            subtitle="As of 30 Apr 2026",
+            tables=[{
+                "columns": [{"label": "Account"}, {"label": "Debit", "align": "right"}],
+                "rows": [{
+                    "cells": [{"text": "Business Bank"}, {"text": "$92.00", "align": "right"}],
+                }],
+            }],
+            landscape=False,
+        )
+
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Trial Balance", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
