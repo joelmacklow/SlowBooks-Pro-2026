@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-mkdir -p /app/backups /app/app/static/uploads
+mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true
 
 python - <<'PY'
 import sys

@@ -105,9 +105,6 @@ register_audit_hooks(SessionLocal)
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# Ensure uploads directory exists
-uploads_dir = static_dir / "uploads"
-uploads_dir.mkdir(exist_ok=True)
 
 # SPA entry point
 index_path = Path(__file__).parent.parent / "index.html"

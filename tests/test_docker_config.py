@@ -85,6 +85,7 @@ class DockerConfigTests(unittest.TestCase):
         env_example = (root / ".env.example").read_text()
         dockerfile_text = (root / "Dockerfile").read_text()
         backup_script = (root / "scripts" / "backup.sh").read_text()
+        entrypoint_script = (root / "scripts" / "docker-entrypoint.sh").read_text()
 
         self.assertTrue((root / "Dockerfile").exists())
         self.assertTrue((root / "docker-compose.yml").exists())
@@ -95,6 +96,7 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         self.assertIn('USER slowbooks', dockerfile_text)
         self.assertIn('set -eo pipefail', backup_script)
+        self.assertIn('mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true', entrypoint_script)
         compose_text = (root / "docker-compose.yml").read_text()
         self.assertIn("image: postgres:18", compose_text)
         self.assertIn("postgres_data:/var/lib/postgresql", compose_text)

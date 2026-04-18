@@ -19,9 +19,16 @@ from app.services.upload_limits import LOGO_UPLOAD_MAX_BYTES, enforce_upload_siz
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif"}
+
+
+def ensure_upload_dir() -> Path:
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        raise HTTPException(status_code=500, detail="Upload storage is not writable") from exc
+    return UPLOAD_DIR
 
 
 @router.post("/logo")
@@ -49,7 +56,7 @@ async def upload_logo(
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "png"
     filename = f"company_logo.{ext}"
-    filepath = UPLOAD_DIR / filename
+    filepath = ensure_upload_dir() / filename
 
     with open(filepath, "wb") as f:
         f.write(content)

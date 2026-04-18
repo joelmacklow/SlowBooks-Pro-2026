@@ -38,9 +38,6 @@ def ensure_backup_file_permissions(filepath: Path) -> Path:
     return filepath
 
 
-ensure_backup_dir_permissions()
-
-
 def _parse_db_url(url: str) -> dict:
     """Parse PostgreSQL connection URL into components."""
     # postgresql://user:pass@host:port/dbname
