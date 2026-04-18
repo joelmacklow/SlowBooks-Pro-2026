@@ -105,6 +105,22 @@ class BackupPathHardeningTests(unittest.TestCase):
 
         self.assertEqual([item['filename'] for item in backups], [valid_name])
 
+    def test_download_backup_sets_private_no_store_headers(self):
+        from app.routes import backups as backups_route
+        from app.services import backup_service
+
+        with TemporaryDirectory() as tmpdir, \
+             mock.patch.object(backup_service, 'BACKUP_DIR', Path(tmpdir)):
+            backup_file = Path(tmpdir) / 'slowbooks_20260415_020205.sql'
+            backup_file.write_text('backup-data', encoding='utf-8')
+
+            response = backups_route.download_backup(backup_file.name, auth={'user_id': 1})
+
+        self.assertEqual(response.headers['cache-control'], 'no-store, no-cache, must-revalidate, private')
+        self.assertEqual(response.headers['pragma'], 'no-cache')
+        self.assertEqual(response.headers['expires'], '0')
+        self.assertEqual(response.headers['x-content-type-options'], 'nosniff')
+
     def test_download_backup_rejects_path_traversal(self):
         from fastapi import HTTPException
         from app.routes import backups as backups_route

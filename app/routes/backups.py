@@ -103,7 +103,17 @@ def download_backup(
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Backup file not found")
     ensure_backup_file_permissions(filepath)
-    return FileResponse(str(filepath), filename=filepath.name, media_type="application/octet-stream")
+    return FileResponse(
+        str(filepath),
+        filename=filepath.name,
+        media_type="application/octet-stream",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/restore")
