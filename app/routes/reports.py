@@ -18,7 +18,7 @@ from starlette.requests import Request
 
 from app.database import get_db
 from app.models.accounts import Account, AccountType
-from app.models.banking import BankTransaction
+from app.models.banking import BankAccount, BankTransaction
 from app.models.gst_return import GstReturn, GstReturnStatus
 from app.models.gst_settlement import GstSettlement, GstSettlementStatus
 from app.models.transactions import Transaction, TransactionLine
@@ -31,6 +31,7 @@ from app.services.email_service import render_document_email, send_document_emai
 from app.services.pdf_service import generate_report_pdf, generate_statement_pdf
 from app.services.formatting import format_currency, format_date
 from app.routes.settings import _get_all as get_settings
+from app.services.accounting import get_default_bank_account_id
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
 from app.services.gst_return import (
@@ -191,6 +192,107 @@ def _report_tables_trial_balance(report: dict, company: dict) -> list[dict]:
         "rows": rows,
         "empty_message": "No balances for this date.",
     }]
+
+
+def _cash_flow_category_for_account(account: Account | None) -> str:
+    if not account:
+        return "operating"
+
+    name = (account.name or "").lower()
+    number = (account.account_number or "").lower()
+    operating_asset_markers = (
+        "receivable", "debtor", "inventory", "stock", "prepayment", "undeposited", "gst", "tax"
+    )
+    financing_liability_markers = ("loan", "mortgage", "lease", "note payable", "note")
+
+    if account.account_type in (AccountType.INCOME, AccountType.EXPENSE, AccountType.COGS):
+        return "operating"
+    if account.account_type == AccountType.EQUITY:
+        return "financing"
+    if account.account_type == AccountType.LIABILITY:
+        if any(marker in name for marker in financing_liability_markers):
+            return "financing"
+        return "operating"
+    if any(marker in name for marker in operating_asset_markers) or number.startswith("11"):
+        return "operating"
+    return "investing"
+
+
+def _cash_account_ids(db: Session) -> set[int]:
+    ids = {
+        int(account_id)
+        for account_id, in (
+            db.query(BankAccount.account_id)
+            .filter(BankAccount.is_active == True, BankAccount.account_id.is_not(None))
+            .all()
+        )
+        if account_id is not None
+    }
+    default_bank_id = get_default_bank_account_id(db, allow_create=False)
+    if default_bank_id:
+        ids.add(int(default_bank_id))
+    return ids
+
+
+def _opening_cash_balance(db: Session, cash_account_ids: set[int], start_date: date) -> Decimal:
+    rows = (
+        db.query(TransactionLine.debit, TransactionLine.credit)
+        .join(Transaction, TransactionLine.transaction_id == Transaction.id)
+        .filter(TransactionLine.account_id.in_(cash_account_ids), Transaction.date < start_date)
+        .all()
+    )
+    return sum((Decimal(str(debit or 0)) - Decimal(str(credit or 0)) for debit, credit in rows), Decimal("0.00"))
+
+
+def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
+    tables = []
+    label_map = {
+        "operating": "Operating Activities",
+        "investing": "Investing Activities",
+        "financing": "Financing Activities",
+    }
+    for key in ("operating", "investing", "financing"):
+        section = report[key]
+        rows = [
+            _pdf_row(
+                _pdf_cell(format_date(entry["date"], company)),
+                _pdf_cell(entry["description"]),
+                _pdf_cell(entry["reference"]),
+                _pdf_cell(format_currency(entry["amount"], company), align="right"),
+            )
+            for entry in section["items"]
+        ]
+        rows.append(
+            _pdf_row(
+                _pdf_cell(f'Net cash from {label_map[key].lower()}', colspan=3),
+                _pdf_cell(format_currency(section["total"], company), align="right"),
+                class_name="total-row",
+            )
+        )
+        tables.append({
+            "title": label_map[key],
+            "columns": [
+                {"label": "Date", "width": "16%"},
+                {"label": "Description", "width": "46%"},
+                {"label": "Reference", "width": "18%"},
+                {"label": "Amount", "align": "right", "width": "20%"},
+            ],
+            "rows": rows,
+            "empty_message": f'No {label_map[key].lower()} cash flows for this period.',
+        })
+    tables.append({
+        "title": "Cash Summary",
+        "columns": [
+            {"label": "Measure", "width": "70%"},
+            {"label": "Amount", "align": "right", "width": "30%"},
+        ],
+        "rows": [
+            _pdf_row(_pdf_cell("Opening cash balance"), _pdf_cell(format_currency(report["opening_cash"], company), align="right")),
+            _pdf_row(_pdf_cell("Net increase / (decrease) in cash"), _pdf_cell(format_currency(report["net_cash_change"], company), align="right")),
+            _pdf_row(_pdf_cell("Closing cash balance"), _pdf_cell(format_currency(report["closing_cash"], company), align="right"), class_name="total-row"),
+        ],
+    })
+    return tables
 
 
 def _report_tables_aging(report: dict, company: dict, party_label: str) -> list[dict]:
@@ -591,6 +693,112 @@ def trial_balance_pdf(
         tables=_report_tables_trial_balance(report, company),
     )
     return _report_pdf_response(pdf_bytes, f'TrialBalance_{report["as_of_date"]}.pdf')
+
+
+@router.get("/cash-flow")
+def cash_flow_report(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    if not start_date:
+        start_date = date(date.today().year, 1, 1)
+    if not end_date:
+        end_date = date.today()
+
+    cash_account_ids = _cash_account_ids(db)
+    if not cash_account_ids:
+        return {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "cash_account_ids": [],
+            "operating": {"items": [], "total": 0.0},
+            "investing": {"items": [], "total": 0.0},
+            "financing": {"items": [], "total": 0.0},
+            "opening_cash": 0.0,
+            "closing_cash": 0.0,
+            "net_cash_change": 0.0,
+        }
+
+    txns = (
+        db.query(Transaction)
+        .filter(Transaction.date >= start_date, Transaction.date <= end_date)
+        .order_by(Transaction.date, Transaction.id)
+        .all()
+    )
+
+    sections = {
+        "operating": {"items": [], "total": Decimal("0.00")},
+        "investing": {"items": [], "total": Decimal("0.00")},
+        "financing": {"items": [], "total": Decimal("0.00")},
+    }
+
+    for txn in txns:
+        cash_lines = [line for line in txn.lines if line.account_id in cash_account_ids]
+        counterpart_lines = [line for line in txn.lines if line.account_id not in cash_account_ids]
+        if not cash_lines or not counterpart_lines:
+            continue
+
+        net_cash = sum((Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0)) for line in cash_lines), Decimal("0.00"))
+        if net_cash == 0:
+            continue
+
+        categories = {_cash_flow_category_for_account(line.account) for line in counterpart_lines}
+        if categories == {"financing"}:
+            section_key = "financing"
+        elif categories == {"investing"}:
+            section_key = "investing"
+        elif "operating" in categories:
+            section_key = "operating"
+        elif "financing" in categories and "investing" not in categories:
+            section_key = "financing"
+        else:
+            section_key = "investing"
+
+        sections[section_key]["items"].append({
+            "transaction_id": txn.id,
+            "date": txn.date.isoformat(),
+            "description": txn.description or txn.source_type or "Cash movement",
+            "reference": txn.reference or "",
+            "amount": float(net_cash),
+            "source_type": txn.source_type or "",
+        })
+        sections[section_key]["total"] += net_cash
+
+    opening_cash = _opening_cash_balance(db, cash_account_ids, start_date)
+    net_cash_change = sum((section["total"] for section in sections.values()), Decimal("0.00"))
+    closing_cash = opening_cash + net_cash_change
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "cash_account_ids": sorted(cash_account_ids),
+        "operating": {"items": sections["operating"]["items"], "total": float(sections["operating"]["total"])},
+        "investing": {"items": sections["investing"]["items"], "total": float(sections["investing"]["total"])},
+        "financing": {"items": sections["financing"]["items"], "total": float(sections["financing"]["total"])},
+        "opening_cash": float(opening_cash),
+        "closing_cash": float(closing_cash),
+        "net_cash_change": float(net_cash_change),
+    }
+
+
+@router.get("/cash-flow/pdf")
+def cash_flow_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = cash_flow_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Cash Flow",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_cash_flow(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'CashFlow_{report["start_date"]}_{report["end_date"]}.pdf')
 
 
 @router.get("/ar-aging")

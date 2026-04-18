@@ -23,6 +23,10 @@ const ReportsPage = {
                     <div class="card-header">Trial Balance</div>
                     <p style="font-size:13px; color:var(--gray-500);">Ending debit and credit balances by account</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.cashFlow()">
+                    <div class="card-header">Cash Flow</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Operating, investing, and financing cash movements</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
                     <div class="card-header">A/R Aging</div>
                     <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
@@ -282,6 +286,23 @@ const ReportsPage = {
                 },
                 renderContent: (data) => ReportsPage.renderTrialBalanceContent(data),
             },
+            "cash-flow": {
+                title: "Cash Flow",
+                filterMode: "range",
+                loadData: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return API.get(`/reports/cash-flow?start_date=${range.start}&end_date=${range.end}`);
+                },
+                pdfPath: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `/reports/cash-flow/pdf?start_date=${range.start}&end_date=${range.end}`;
+                },
+                pdfFilename: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `CashFlow_${range.start}_${range.end}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderCashFlowContent(data),
+            },
             "ar-aging": {
                 title: "Accounts Receivable Aging",
                 filterMode: "as_of",
@@ -531,6 +552,53 @@ const ReportsPage = {
 
     renderTrialBalanceScreen() {
         return ReportsPage.renderReportScreen("trial-balance");
+    },
+
+    async cashFlow() {
+        return ReportsPage.openReport("cash-flow");
+    },
+
+    renderCashFlowContent(data) {
+        const section = (title, payload) => {
+            const rows = (payload.items || []).map((item) => `
+                <tr>
+                    <td>${formatDate(item.date)}</td>
+                    <td>${escapeHtml(item.description)}</td>
+                    <td>${escapeHtml(item.reference)}</td>
+                    <td class="amount">${formatCurrency(item.amount)}</td>
+                </tr>
+            `).join("") || `<tr><td colspan="4" style="color:var(--gray-400);">No ${title.toLowerCase()} cash flows</td></tr>`;
+
+            return `
+                <h3 style="margin:16px 0 8px 0;">${title}</h3>
+                <div class="table-container"><table>
+                    <thead><tr><th>Date</th><th>Description</th><th>Reference</th><th class="amount">Amount</th></tr></thead>
+                    <tbody>
+                        ${rows}
+                        <tr style="font-weight:700; background:var(--gray-50);">
+                            <td colspan="3">Net cash from ${title.toLowerCase()}</td>
+                            <td class="amount">${formatCurrency(payload.total || 0)}</td>
+                        </tr>
+                    </tbody>
+                </table></div>`;
+        };
+
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+            <div style="margin-bottom:12px; padding:8px; background:var(--gray-50); border:1px solid var(--gray-200);">
+                <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; font-size:12px;">
+                    <span>Opening cash: <strong>${formatCurrency(data.opening_cash)}</strong></span>
+                    <span>Net change: <strong>${formatCurrency(data.net_cash_change)}</strong></span>
+                    <span>Closing cash: <strong>${formatCurrency(data.closing_cash)}</strong></span>
+                </div>
+            </div>
+            ${section('Operating Activities', data.operating || { items: [], total: 0 })}
+            ${section('Investing Activities', data.investing || { items: [], total: 0 })}
+            ${section('Financing Activities', data.financing || { items: [], total: 0 })}`;
+    },
+
+    renderCashFlowScreen() {
+        return ReportsPage.renderReportScreen("cash-flow");
     },
 
     async profitLoss() {

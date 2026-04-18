@@ -102,6 +102,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             (self.reports_route.profit_loss, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
             (self.reports_route.balance_sheet, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.trial_balance, {"as_of_date": date(2026, 4, 30)}),
+            (self.reports_route.cash_flow_report, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
             (self.reports_route.ar_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.ap_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.general_ledger, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "account_id": None}),
@@ -123,6 +124,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             self.reports_route.profit_loss_pdf,
             self.reports_route.balance_sheet_pdf,
             self.reports_route.trial_balance_pdf,
+            self.reports_route.cash_flow_pdf,
             self.reports_route.ar_aging_pdf,
             self.reports_route.ap_aging_pdf,
             self.reports_route.gst_return_pdf,
@@ -145,6 +147,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 trial_balance_pdf_auth = self._auth_dependency(self.reports_route.trial_balance_pdf)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                cash_flow_pdf_auth = self._auth_dependency(self.reports_route.cash_flow_pdf)(
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 ar_pdf_auth = self._auth_dependency(self.reports_route.ar_aging_pdf)(
@@ -191,6 +196,12 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db,
                     auth=trial_balance_pdf_auth,
                 )
+                cash_flow_pdf = self.reports_route.cash_flow_pdf(
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 4, 30),
+                    db=db,
+                    auth=cash_flow_pdf_auth,
+                )
                 ar_pdf = self.reports_route.ar_aging_pdf(
                     as_of_date=date(2026, 4, 30),
                     db=db,
@@ -233,6 +244,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
         self.assertEqual(profit_loss_pdf.media_type, "application/pdf")
         self.assertEqual(balance_sheet_pdf.media_type, "application/pdf")
         self.assertEqual(trial_balance_pdf.media_type, "application/pdf")
+        self.assertEqual(cash_flow_pdf.media_type, "application/pdf")
         self.assertEqual(ar_pdf.media_type, "application/pdf")
         self.assertEqual(ap_pdf.media_type, "application/pdf")
         self.assertEqual(gst_pdf.media_type, "application/pdf")
