@@ -285,13 +285,15 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         "title": "Cash Summary",
         "style": "width: 92%;",
         "columns": [
-            {"label": "Measure", "width": "80%"},
+            {"label": "Measure", "width": "16%"},
+            {"label": "", "width": "46%"},
+            {"label": "", "width": "18%"},
             {"label": "Amount", "align": "right", "width": "20%"},
         ],
         "rows": [
-            _pdf_row(_pdf_cell("Opening cash balance"), _pdf_cell(format_currency(report["opening_cash"], company), align="right")),
-            _pdf_row(_pdf_cell("Net increase / (decrease) in cash"), _pdf_cell(format_currency(report["net_cash_change"], company), align="right")),
-            _pdf_row(_pdf_cell("Closing cash balance"), _pdf_cell(format_currency(report["closing_cash"], company), align="right"), class_name="total-row"),
+            _pdf_row(_pdf_cell("Opening cash balance", colspan=3), _pdf_cell(format_currency(report["opening_cash"], company), align="right")),
+            _pdf_row(_pdf_cell("Net increase / (decrease) in cash", colspan=3), _pdf_cell(format_currency(report["net_cash_change"], company), align="right")),
+            _pdf_row(_pdf_cell("Closing cash balance", colspan=3), _pdf_cell(format_currency(report["closing_cash"], company), align="right"), class_name="total-row"),
         ],
     })
     return tables
