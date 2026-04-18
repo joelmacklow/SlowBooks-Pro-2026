@@ -19,6 +19,7 @@ from app.services.csv_export import (
     export_vendors,
 )
 from app.services.csv_import import import_customers, import_items, import_vendors
+from app.services.upload_limits import IMPORT_FILE_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/csv", tags=["csv"])
 
@@ -28,7 +29,12 @@ CSV_IMPORT_ERROR = "CSV import failed"
 
 async def _read_csv_upload(file: UploadFile) -> str:
     try:
-        return (await file.read()).decode("utf-8-sig")
+        content = enforce_upload_size(
+            await file.read(),
+            max_bytes=IMPORT_FILE_MAX_BYTES,
+            detail="CSV file is too large",
+        )
+        return content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail=CSV_DECODE_ERROR) from exc
 

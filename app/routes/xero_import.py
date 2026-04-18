@@ -6,17 +6,30 @@ from app.schemas.xero_import import XeroImportDryRunResponse, XeroImportExecuteR
 from app.services.auth import require_permissions
 from app.services.chart_setup_status import CHART_SETUP_SOURCE_XERO_IMPORT, mark_chart_setup_ready
 from app.services.xero_import import detect_file_type, dry_run_import, execute_import
+from app.services.upload_limits import (
+    IMPORT_FILE_MAX_BYTES,
+    XERO_IMPORT_TOTAL_MAX_BYTES,
+    enforce_upload_size,
+)
 
 router = APIRouter(prefix="/api/xero-import", tags=["xero_import"])
 
 
 def _load_files(files: list[UploadFile]) -> dict[str, tuple[str, str]]:
     file_map = {}
+    total_bytes = 0
     for file in files:
         file_type = detect_file_type(file.filename or '')
         if not file_type:
             continue
-        content_bytes = file.file.read()
+        content_bytes = enforce_upload_size(
+            file.file.read(),
+            max_bytes=IMPORT_FILE_MAX_BYTES,
+            detail="Xero import file is too large",
+        )
+        total_bytes += len(content_bytes)
+        if total_bytes > XERO_IMPORT_TOTAL_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Xero import bundle is too large")
         try:
             text = content_bytes.decode('utf-8-sig')
         except UnicodeDecodeError:

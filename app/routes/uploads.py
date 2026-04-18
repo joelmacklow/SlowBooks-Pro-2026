@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.settings import Settings
 from app.services.auth import require_permissions
+from app.services.upload_limits import LOGO_UPLOAD_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -30,12 +31,18 @@ async def upload_logo(
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Only PNG, JPEG, or GIF images are allowed")
 
+    content = enforce_upload_size(
+        await file.read(),
+        max_bytes=LOGO_UPLOAD_MAX_BYTES,
+        detail="Logo image is too large",
+    )
+
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "png"
     filename = f"company_logo.{ext}"
     filepath = UPLOAD_DIR / filename
 
     with open(filepath, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(content)
 
     logo_path = f"/static/uploads/{filename}"
     row = db.query(Settings).filter(Settings.key == "company_logo_path").first()

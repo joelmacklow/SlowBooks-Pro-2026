@@ -24,6 +24,7 @@ from app.services.iif_export import (
 )
 from app.services.iif_import import import_all, validate_iif
 from app.services.auth import require_permissions
+from app.services.upload_limits import IMPORT_FILE_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/iif", tags=["iif"])
 
@@ -123,7 +124,11 @@ async def import_iif(file: UploadFile = File(...), db: Session = Depends(get_db)
     if not file.filename.lower().endswith(".iif"):
         raise HTTPException(400, "File must have .iif extension")
 
-    content = await file.read()
+    content = enforce_upload_size(
+        await file.read(),
+        max_bytes=IMPORT_FILE_MAX_BYTES,
+        detail="IIF file is too large",
+    )
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
@@ -145,7 +150,11 @@ async def validate_iif_file(file: UploadFile = File(...), auth=Depends(require_p
     if not file.filename.lower().endswith(".iif"):
         raise HTTPException(400, "File must have .iif extension")
 
-    content = await file.read()
+    content = enforce_upload_size(
+        await file.read(),
+        max_bytes=IMPORT_FILE_MAX_BYTES,
+        detail="IIF file is too large",
+    )
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
