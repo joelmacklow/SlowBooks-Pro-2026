@@ -77,6 +77,7 @@ EXPECTED_ROUTE_AUTH = {
     "app.routes.reports": {
         "profit_loss": ("permissions", ("accounts.manage",)),
         "balance_sheet": ("permissions", ("accounts.manage",)),
+        "trial_balance": ("permissions", ("accounts.manage",)),
         "ar_aging": ("permissions", ("accounts.manage",)),
         "gst_return_report": ("permissions", ("accounts.manage",)),
         "gst_returns_overview": ("permissions", ("accounts.manage",)),

@@ -19,6 +19,10 @@ const ReportsPage = {
                     <div class="card-header">Balance Sheet</div>
                     <p style="font-size:13px; color:var(--gray-500);">Assets, liabilities, and equity</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.trialBalance()">
+                    <div class="card-header">Trial Balance</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Ending debit and credit balances by account</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
                     <div class="card-header">A/R Aging</div>
                     <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
@@ -251,6 +255,35 @@ const ReportsPage = {
                         <tr><td><strong>Equity</strong></td><td></td></tr>
                         ${section(data.equity)}
                         <tr style="font-weight:600; background:var(--gray-50);"><td>Total Equity</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
+                    </tbody>
+                </table></div>`;
+        }, "As Of", true);
+    },
+
+    async trialBalance() {
+        return ReportsPage.openPeriodModal("Trial Balance", "this_year_to_date", async (_period, params) => {
+            const data = await API.get(`/reports/trial-balance?as_of_date=${params.as_of_date}`);
+            const rows = data.accounts.map((account) => `
+                <tr>
+                    <td>${escapeHtml(account.account_number || '')}</td>
+                    <td>${escapeHtml(account.account_name)}</td>
+                    <td>${escapeHtml(account.account_type)}</td>
+                    <td class="amount">${account.debit_balance ? formatCurrency(account.debit_balance) : ''}</td>
+                    <td class="amount">${account.credit_balance ? formatCurrency(account.credit_balance) : ''}</td>
+                </tr>
+            `).join("") || `<tr><td colspan="5" style="color:var(--gray-400);">No balances for this date</td></tr>`;
+
+            return `
+                <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+                <div class="table-container"><table>
+                    <thead><tr><th>No.</th><th>Account</th><th>Type</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead>
+                    <tbody>
+                        ${rows}
+                        <tr style="font-weight:700; background:var(--primary-light);">
+                            <td colspan="3">Totals</td>
+                            <td class="amount">${formatCurrency(data.total_debit)}</td>
+                            <td class="amount">${formatCurrency(data.total_credit)}</td>
+                        </tr>
                     </tbody>
                 </table></div>`;
         }, "As Of", true);

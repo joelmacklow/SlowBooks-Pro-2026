@@ -250,6 +250,63 @@ def balance_sheet(
     }
 
 
+@router.get("/trial-balance")
+def trial_balance(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    if not as_of_date:
+        as_of_date = date.today()
+
+    results = (
+        db.query(
+            Account.id,
+            Account.account_number,
+            Account.name,
+            Account.account_type,
+            sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+            sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+        )
+        .join(TransactionLine, TransactionLine.account_id == Account.id)
+        .join(Transaction, TransactionLine.transaction_id == Transaction.id)
+        .filter(Transaction.date <= as_of_date)
+        .group_by(Account.id, Account.account_number, Account.name, Account.account_type)
+        .all()
+    )
+
+    accounts = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    for account_id, account_number, account_name, account_type, debit_total, credit_total in results:
+        net_balance = Decimal(str(debit_total or 0)) - Decimal(str(credit_total or 0))
+        if net_balance == 0:
+            continue
+
+        debit_balance = net_balance if net_balance > 0 else Decimal("0.00")
+        credit_balance = -net_balance if net_balance < 0 else Decimal("0.00")
+        total_debit += debit_balance
+        total_credit += credit_balance
+        accounts.append({
+            "account_id": account_id,
+            "account_number": account_number,
+            "account_name": account_name,
+            "account_type": account_type.value,
+            "debit_balance": float(debit_balance),
+            "credit_balance": float(credit_balance),
+        })
+
+    accounts.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "accounts": accounts,
+        "total_debit": float(total_debit),
+        "total_credit": float(total_credit),
+    }
+
+
 @router.get("/ar-aging")
 def ar_aging(
     as_of_date: date = Query(default=None),

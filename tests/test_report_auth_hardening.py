@@ -101,6 +101,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
         route_calls = [
             (self.reports_route.profit_loss, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
             (self.reports_route.balance_sheet, {"as_of_date": date(2026, 4, 30)}),
+            (self.reports_route.trial_balance, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.ar_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.ap_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.general_ledger, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "account_id": None}),
