@@ -146,6 +146,7 @@ cp .env.example .env
 # edit .env before first run:
 # - set POSTGRES_PASSWORD to a long random secret
 # - leave APP_DEBUG=false unless you explicitly need debug/reload
+# - set CORS_ALLOW_ORIGINS explicitly if browsers will access the API from another trusted origin
 # - set SMTP_PASSWORD only if authenticated SMTP is required
 docker compose up --build
 ```
@@ -153,6 +154,7 @@ docker compose up --build
 This starts:
 - `postgres:18`
 - Postgres is not published to the host by default; expose it only deliberately if you need local DB tooling access.
+- `CORS_ALLOW_ORIGINS` defaults to loopback browser origins only; set it explicitly for real deployments that serve the UI/API across other trusted origins.
 - the Slowbooks app on **http://localhost:3001**
 
 Default compose behavior:

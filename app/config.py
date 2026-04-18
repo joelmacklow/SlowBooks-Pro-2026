@@ -39,7 +39,20 @@ def resolve_database_url(env: dict | None = None) -> str:
     return build_database_url(env)
 
 
+def resolve_cors_origins(env: dict | None = None) -> list[str]:
+    env = env or os.environ
+    explicit = (env.get("CORS_ALLOW_ORIGINS") or "").strip()
+    if explicit:
+        return [origin.strip() for origin in explicit.split(",") if origin.strip()]
+    app_port = str(env.get("APP_PORT", "3001")).strip() or "3001"
+    return [
+        f"http://localhost:{app_port}",
+        f"http://127.0.0.1:{app_port}",
+    ]
+
+
 DATABASE_URL = resolve_database_url()
+CORS_ALLOW_ORIGINS = resolve_cors_origins()
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "3001"))
 APP_DEBUG = os.getenv("APP_DEBUG", "false").lower() == "true"

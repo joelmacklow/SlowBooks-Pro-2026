@@ -42,6 +42,7 @@ cp .env.example .env
 # edit .env before first run:
 # - set POSTGRES_PASSWORD to a long random secret
 # - leave APP_DEBUG=false unless you explicitly need debug/reload
+# - set CORS_ALLOW_ORIGINS explicitly if browsers will access the API from another trusted origin
 # - set SMTP_PASSWORD only if authenticated SMTP is required
 docker compose up --build
 ```
@@ -201,6 +202,7 @@ POSTGRES_SSLMODE=disable
 APP_HOST=0.0.0.0
 APP_PORT=3001
 APP_DEBUG=false
+CORS_ALLOW_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
 ```
 
 ---

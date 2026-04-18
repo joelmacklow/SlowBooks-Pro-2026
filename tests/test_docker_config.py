@@ -60,6 +60,26 @@ class DockerConfigTests(unittest.TestCase):
             "postgresql://slowbooks:replace-with-a-long-random-password@localhost:5432/slowbooks?sslmode=disable",
         )
 
+    def test_resolve_cors_origins_uses_explicit_loopback_safe_defaults(self):
+        import app.config as config
+
+        self.assertEqual(
+            config.resolve_cors_origins(env={}),
+            [
+                "http://localhost:3001",
+                "http://127.0.0.1:3001",
+            ],
+        )
+
+    def test_resolve_cors_origins_honors_env_override(self):
+        import app.config as config
+
+        env = {"CORS_ALLOW_ORIGINS": "https://app.example.com, https://admin.example.com "}
+        self.assertEqual(
+            config.resolve_cors_origins(env=env),
+            ["https://app.example.com", "https://admin.example.com"],
+        )
+
     def test_docker_assets_and_env_keys_exist(self):
         root = Path(__file__).resolve().parent.parent
         env_example = (root / ".env.example").read_text()
@@ -95,6 +115,7 @@ class DockerConfigTests(unittest.TestCase):
             "POSTGRES_USER=",
             "POSTGRES_PASSWORD=",
             "POSTGRES_SSLMODE=",
+            "CORS_ALLOW_ORIGINS=",
         ):
             self.assertIn(key, env_example)
         self.assertIn("POSTGRES_PASSWORD=replace-with-a-long-random-password", env_example)
@@ -109,8 +130,10 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn("set POSTGRES_PASSWORD to a long random secret", readme)
         self.assertIn("Postgres is not published to the host by default", readme)
         self.assertIn("APP_DEBUG=false", readme)
+        self.assertIn("CORS_ALLOW_ORIGINS", readme)
         self.assertIn("set POSTGRES_PASSWORD to a long random secret", install)
         self.assertIn("Postgres is not published to the host by default", install)
+        self.assertIn("CORS_ALLOW_ORIGINS", install)
 
     def test_bootstrap_database_script_can_import_app_when_run_as_script(self):
         root = Path(__file__).resolve().parent.parent
