@@ -113,7 +113,7 @@ class TrialBalanceReportTests(unittest.TestCase):
     def test_trial_balance_pdf_returns_inline_pdf(self):
         from app.routes import reports as reports_route
 
-        with mock.patch.object(reports_route, "generate_report_pdf", return_value=b"%PDF-trial-balance"):
+        with mock.patch.object(reports_route, "generate_report_pdf", return_value=b"%PDF-trial-balance") as generate_pdf:
             with self.Session() as db:
                 response = reports_route.trial_balance_pdf(
                     as_of_date=date(2026, 4, 30),
@@ -121,6 +121,7 @@ class TrialBalanceReportTests(unittest.TestCase):
                     auth={"user_id": 1},
                 )
 
+        self.assertEqual(generate_pdf.call_args.kwargs.get("landscape", False), False)
         self.assertEqual(response.media_type, "application/pdf")
         self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="TrialBalance_2026-04-30.pdf"')
 

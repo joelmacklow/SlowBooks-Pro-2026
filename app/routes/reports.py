@@ -589,7 +589,6 @@ def trial_balance_pdf(
         company_settings=company,
         subtitle=f'As of {format_date(report["as_of_date"], company)}',
         tables=_report_tables_trial_balance(report, company),
-        landscape=True,
     )
     return _report_pdf_response(pdf_bytes, f'TrialBalance_{report["as_of_date"]}.pdf')
 
