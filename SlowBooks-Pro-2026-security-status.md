@@ -48,7 +48,25 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 - **Evidence:** `app/services/rate_limit.py`, targeted routes
 - **Result:** abuse resistance is improved in the default single-process deployment model.
 
-### 8. Insecure deployment defaults — materially reduced
+### 8. Wildcard CORS browser exposure — resolved
+- **Original risk:** wildcard browser origins could read sensitive responses (`TM-005`)
+- **Current state:** `app/main.py` now uses env-driven `CORS_ALLOW_ORIGINS` with loopback-safe defaults rather than wildcard origins.
+- **Evidence:** `app/main.py`, `app/config.py`, `.env.example`, `tests/test_docker_config.py`
+- **Result:** the previous wildcard CORS posture is no longer present by default.
+
+### 9. Sensitive-route auth regressions — resolved
+- **Original risk:** future sensitive routes could silently lose auth/permission coverage (`Issue 9` from the threat model resolution list)
+- **Current state:** the repo now includes a broad route-auth contract harness covering sensitive routers and expected permission requirements.
+- **Evidence:** `tests/test_sensitive_route_auth_contract.py`
+- **Result:** permission drift on covered sensitive endpoints now fails CI immediately.
+
+### 10. Operational safeguard drift — materially reduced
+- **Original risk:** future refactors could silently drop rate limits, upload size checks, secret masking, bootstrap trust checks, or explicit CORS configuration.
+- **Current state:** the repo now includes an operational security contract harness that locks those safeguard markers and invariants.
+- **Evidence:** `tests/test_operational_security_contract.py`
+- **Result:** key operational controls are now protected by focused regression coverage instead of relying on manual review alone.
+
+### 11. Insecure deployment defaults — materially reduced
 - **Original risk:** public Postgres exposure, weak default credentials, and debug-default posture (`TM-008`)
 - **Current state:** bundled Postgres is no longer published by default, compose now requires explicit `POSTGRES_PASSWORD`, docs use non-legacy credential examples, and debug defaults are false.
 - **Evidence:** `docker-compose.yml`, `.env.example`, `README.md`, `INSTALL.md`, `app/config.py`
@@ -76,25 +94,7 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 
 ## Still-open findings
 
-### 1. Wildcard CORS remains enabled — still open
-- **Original risk:** browser-driven localhost or cross-origin data access (`TM-005`)
-- **Current state:** `app/main.py` still configures:
-  - `allow_origins=["*"]`
-  - `allow_credentials=True`
-  - `allow_methods=["*"]`
-  - `allow_headers=["*"]`
-- **Evidence:** `app/main.py`
-- **Status:** still open
-- **Recommended next step:** replace wildcard CORS with an explicit origin allowlist or environment-driven local-safe policy.
-
-### 2. No generic route-surface auth regression framework — still open
-- **Original risk:** future sensitive routes could accidentally ship without auth (`Issue 9` from the threat model resolution list)
-- **Current state:** targeted auth tests exist for the remediated report/company surfaces, but there is not yet a broad automated route-audit test across sensitive endpoints.
-- **Evidence:** targeted tests exist, but no generic router-wide auth coverage harness is present
-- **Status:** still open
-- **Recommended next step:** add a route-surface policy test that asserts expected auth coverage for sensitive routers/endpoints.
-
-### 3. Expensive non-file operations are still synchronous — still open
+### 1. Expensive non-file operations are still synchronous — still open
 - **Original risk:** availability degradation from heavy PDF/report/email work (`TM-007`)
 - **Current state:** size limits and throttling help, but document generation/email/import work still runs inline in request handlers.
 - **Evidence:** document email + PDF routes remain synchronous
@@ -103,11 +103,11 @@ This summary reconciles the original `SlowBooks-Pro-2026-threat-model.md` findin
 
 ## Recommended next actions
 
-1. **High** — Replace wildcard CORS in `app/main.py` with an explicit allowlist / local-safe policy.
-2. **High** — Add a route-auth coverage harness so future sensitive endpoints cannot regress silently.
-3. **Medium** — Consider background/offline processing for heavy PDF/email/import workflows.
-4. **Medium** — Review backup/restore operational guidance and artifact protection posture.
+1. **Medium** — Consider background/offline processing for heavy PDF/email/import workflows.
+2. **Medium** — Review backup/restore operational guidance and artifact protection posture.
+3. **Medium** — Replace per-process in-memory throttling with a shared store if the app is deployed across multiple workers or instances.
+4. **Low** — Extend the contract harness as new sensitive routes or ingest surfaces are added.
 
 ## Short conclusion
 
-The highest-risk findings from the original threat model—public report exposure, raw company-scope trust, bootstrap takeover, plaintext operational secret handling, insecure deployment defaults, and uncontrolled upload size—have been materially reduced or resolved in the repository. The most important remaining repo-level gap is the still-open wildcard CORS posture in `app/main.py`, followed by broader auth-regression enforcement and more durable throttling/background-processing for expensive operations.
+The highest-risk findings from the original threat model—public report exposure, raw company-scope trust, bootstrap takeover, wildcard CORS, plaintext operational secret handling, insecure deployment defaults, and uncontrolled upload size—have been materially reduced or resolved in the repository. The main remaining repo-level work is operational hardening around synchronous expensive workflows, backup protection posture, and more durable shared throttling for multi-instance deployments.
