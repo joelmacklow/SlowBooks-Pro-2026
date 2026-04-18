@@ -55,6 +55,7 @@ const context = {
         syncAuthUI() {},
     },
     escapeHtml: value => String(value || ''),
+    location: { hash: '#/login?bootstrap_token=setup-url-token', search: '' },
     openModal(title, html) { lastModal = { title, html }; },
     closeModal() {},
     toast() {},
@@ -73,7 +74,8 @@ vm.runInContext(code, context);
     assert.ok(bootstrapHtml.includes('Create First Admin'));
     assert.ok(bootstrapHtml.includes('Password'));
     assert.ok(bootstrapHtml.includes('Bootstrap Token'));
-    assert.ok(bootstrapHtml.includes('container logs'));
+    assert.ok(bootstrapHtml.includes('prefilled below'));
+    assert.ok(bootstrapHtml.includes('value="setup-url-token"'));
 
     await context.AuthPage.bootstrapAdmin({
         preventDefault() {},
@@ -82,14 +84,13 @@ vm.runInContext(code, context);
                 full_name: 'Owner User',
                 email: 'owner@example.com',
                 password: 'supersecret',
-                bootstrap_token: 'setup-token',
             },
         },
     });
     assert.ok(lastRawRequest);
     assert.strictEqual(lastRawRequest.method, 'POST');
     assert.strictEqual(lastRawRequest.path, '/auth/bootstrap-admin');
-    assert.strictEqual(lastRawRequest.options.headers['X-Bootstrap-Token'], 'setup-token');
+    assert.strictEqual(lastRawRequest.options.headers['X-Bootstrap-Token'], 'setup-url-token');
     assert.strictEqual(lastRawRequest.options.body.email, 'owner@example.com');
     assert.strictEqual(localStore['slowbooks-auth-token'], 'tok-bootstrap');
 

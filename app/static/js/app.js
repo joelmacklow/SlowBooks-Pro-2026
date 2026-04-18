@@ -65,6 +65,11 @@ const App = {
         };
     },
 
+    routePathFromHash(hash) {
+        const rawPath = (hash || '').replace('#', '') || '/';
+        return rawPath.split('?')[0] || '/';
+    },
+
     hasPermission(permission) {
         if (!permission) return true;
         const permissions = App.authState.user?.membership?.effective_permissions || [];
@@ -117,7 +122,7 @@ const App = {
     },
 
     async navigate(hash) {
-        const path = hash.replace('#', '') || '/';
+        const path = App.routePathFromHash(hash);
         const route = App.routes[path];
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
         if (path === '/login' && App.authState.authenticated) {

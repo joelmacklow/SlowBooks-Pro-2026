@@ -13,7 +13,19 @@ export BOOTSTRAP_ADMIN_TOKEN
 printf '%s\n' 'BOOTSTRAP_ADMIN_TOKEN was not set; generated a startup token for first-admin setup.'
 fi
 
+BOOTSTRAP_SETUP_URL="$(python - <<'PY'
+import os
+from urllib.parse import quote
+
+port = os.environ.get("APP_PORT", "3001").strip() or "3001"
+token = os.environ.get("BOOTSTRAP_ADMIN_TOKEN", "")
+print(f"http://localhost:{port}/#/login?bootstrap_token={quote(token, safe='')}")
+PY
+)"
+
 printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
+printf '%s %s\n' 'Bootstrap admin setup URL:' "$BOOTSTRAP_SETUP_URL"
+printf '%s\n' 'If accessing SlowBooks remotely, replace localhost with your Docker host name or IP before opening the URL.'
 
 python - <<'PY'
 import sys

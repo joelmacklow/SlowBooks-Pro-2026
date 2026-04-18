@@ -20,6 +20,22 @@ const AuthPage = {
         return (permissionKeys || []).map((permission) => escapeHtml(AuthPage.formatPermissionLabel(permission))).join(', ');
     },
 
+    bootstrapTokenFromLocation() {
+        if (typeof location === 'undefined') return '';
+        const hash = String(location.hash || '');
+        const query = hash.includes('?')
+            ? hash.split('?').slice(1).join('?')
+            : String(location.search || '').replace(/^\?/, '');
+        if (!query) return '';
+        for (const part of query.split('&')) {
+            const [rawKey, rawValue = ''] = part.split('=');
+            if (decodeURIComponent(rawKey || '') === 'bootstrap_token') {
+                return decodeURIComponent(rawValue.replace(/\+/g, ' '));
+            }
+        }
+        return '';
+    },
+
     async render() {
         const state = App.authState && Object.prototype.hasOwnProperty.call(App.authState, 'authenticated')
             ? App.authState
@@ -62,20 +78,21 @@ const AuthPage = {
     },
 
     renderBootstrapForm() {
+        const bootstrapToken = AuthPage.bootstrapTokenFromLocation();
         return `
             <div class="page-header">
                 <h2>Create First Admin</h2>
             </div>
             <div class="settings-section" style="max-width:480px; margin:0 auto;">
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                    No users exist yet. Create the first admin to activate protected payroll and admin features. If you are setting up remotely, paste the bootstrap token from the terminal or container logs.
+                    No users exist yet. Create the first admin to activate protected payroll and admin features. If you opened a bootstrap setup URL from the terminal or container logs, the token will be prefilled below.
                 </div>
                 <form onsubmit="AuthPage.bootstrapAdmin(event)">
                     <div class="form-grid">
                         <div class="form-group full-width"><label>Full Name</label><input name="full_name" required></div>
                         <div class="form-group full-width"><label>Email</label><input name="email" type="email" required></div>
                         <div class="form-group full-width"><label>Password</label><input name="password" type="password" minlength="8" required></div>
-                        <div class="form-group full-width"><label>Bootstrap Token</label><input name="bootstrap_token" type="text" autocomplete="off" placeholder="Required for remote setup; check the container logs"></div>
+                        <div class="form-group full-width"><label>Bootstrap Token</label><input name="bootstrap_token" type="text" autocomplete="off" placeholder="Required for remote setup; check the terminal or container logs" value="${escapeHtml(bootstrapToken)}"></div>
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Create First Admin</button>
@@ -106,7 +123,7 @@ const AuthPage = {
     async bootstrapAdmin(e) {
         e.preventDefault();
         const form = new FormData(e.target);
-        const bootstrapToken = String(form.get('bootstrap_token') || '').trim();
+        const bootstrapToken = String(form.get('bootstrap_token') || AuthPage.bootstrapTokenFromLocation() || '').trim();
         try {
             const responseRaw = await API.raw('POST', '/auth/bootstrap-admin', {
                 body: {
