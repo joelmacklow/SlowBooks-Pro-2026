@@ -100,6 +100,8 @@ EXPECTED_ROUTE_AUTH = {
         "ap_aging_pdf": ("permissions", ("accounts.manage",)),
         "customer_statement_pdf": ("permissions", ("accounts.manage",)),
         "email_customer_statement": ("permissions", ("accounts.manage",)),
+        "overdue_statement_candidates": ("permissions", ("accounts.manage",)),
+        "send_overdue_statements": ("permissions", ("accounts.manage",)),
     },
     "app.routes.employees": {
         "list_employees": ("permissions", ("employees.view_private",)),

@@ -102,6 +102,77 @@ def _company_settings(db: Session) -> dict:
     return get_settings(db)
 
 
+def _customer_statement_context(db: Session, customer_id: int, as_of_date: date) -> tuple[Customer, list[Invoice], list[Payment]]:
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.customer_id == customer_id)
+        .filter(Invoice.status != InvoiceStatus.VOID)
+        .filter(Invoice.date <= as_of_date)
+        .order_by(Invoice.date)
+        .all()
+    )
+
+    payments = (
+        db.query(Payment)
+        .filter(Payment.customer_id == customer_id)
+        .filter(Payment.date <= as_of_date)
+        .order_by(Payment.date)
+        .all()
+    )
+    return customer, invoices, payments
+
+
+def _overdue_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
+    rows = (
+        db.query(Invoice)
+        .join(Customer, Invoice.customer_id == Customer.id)
+        .filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]))
+        .filter(Invoice.due_date.is_not(None))
+        .filter(Invoice.due_date < as_of_date)
+        .filter(Invoice.balance_due > 0)
+        .filter(Customer.is_active == True)
+        .order_by(Customer.name, Invoice.due_date, Invoice.id)
+        .all()
+    )
+
+    grouped: dict[int, dict] = {}
+    for invoice in rows:
+        customer = invoice.customer
+        email = (customer.email or "").strip() if customer else ""
+        if not email:
+            continue
+        entry = grouped.setdefault(customer.id, {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "recipient": email,
+            "overdue_invoice_count": 0,
+            "overdue_balance": Decimal("0.00"),
+            "oldest_due_date": invoice.due_date,
+            "latest_due_date": invoice.due_date,
+        })
+        entry["overdue_invoice_count"] += 1
+        entry["overdue_balance"] += Decimal(str(invoice.balance_due or 0))
+        entry["oldest_due_date"] = min(entry["oldest_due_date"], invoice.due_date)
+        entry["latest_due_date"] = max(entry["latest_due_date"], invoice.due_date)
+
+    results = []
+    for entry in grouped.values():
+        results.append({
+            "customer_id": entry["customer_id"],
+            "customer_name": entry["customer_name"],
+            "recipient": entry["recipient"],
+            "overdue_invoice_count": entry["overdue_invoice_count"],
+            "overdue_balance": float(entry["overdue_balance"]),
+            "oldest_due_date": entry["oldest_due_date"].isoformat(),
+            "latest_due_date": entry["latest_due_date"].isoformat(),
+        })
+    return sorted(results, key=lambda row: (row["oldest_due_date"], row["customer_name"]))
+
+
 def _report_tables_profit_loss(report: dict, company: dict) -> list[dict]:
     rows = [_pdf_row(_pdf_cell("Income", colspan=2), class_name="section-row")]
     rows.extend(
@@ -1398,26 +1469,7 @@ def customer_statement_pdf(
     if not as_of_date:
         as_of_date = date.today()
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.customer_id == customer_id)
-        .filter(Invoice.status != InvoiceStatus.VOID)
-        .filter(Invoice.date <= as_of_date)
-        .order_by(Invoice.date)
-        .all()
-    )
-
-    payments = (
-        db.query(Payment)
-        .filter(Payment.customer_id == customer_id)
-        .filter(Payment.date <= as_of_date)
-        .order_by(Payment.date)
-        .all()
-    )
+    customer, invoices, payments = _customer_statement_context(db, customer_id, as_of_date)
 
     company = get_settings(db)
     pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
@@ -1445,26 +1497,7 @@ def email_customer_statement(
     )
     as_of_date = data.as_of_date or date.today()
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.customer_id == customer_id)
-        .filter(Invoice.status != InvoiceStatus.VOID)
-        .filter(Invoice.date <= as_of_date)
-        .order_by(Invoice.date)
-        .all()
-    )
-
-    payments = (
-        db.query(Payment)
-        .filter(Payment.customer_id == customer_id)
-        .filter(Payment.date <= as_of_date)
-        .order_by(Payment.date)
-        .all()
-    )
+    customer, invoices, payments = _customer_statement_context(db, customer_id, as_of_date)
 
     company = get_settings(db)
     try:
@@ -1490,3 +1523,105 @@ def email_customer_statement(
         return {"status": "sent"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+
+
+@router.get("/overdue-statements/candidates")
+def overdue_statement_candidates(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    as_of_date = as_of_date or date.today()
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "items": _overdue_statement_candidates(db, as_of_date),
+    }
+
+
+class OverdueStatementRecipient(BaseModel):
+    customer_id: int
+    recipient: str
+    subject: str | None = None
+
+
+class BatchOverdueStatementRequest(BaseModel):
+    as_of_date: date | None = None
+    recipients: list[OverdueStatementRecipient]
+
+
+@router.post("/overdue-statements/send")
+def send_overdue_statements(
+    data: BatchOverdueStatementRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
+):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=3,
+        window_seconds=60,
+        detail="Too many batch document email requests. Please wait and try again.",
+    )
+    as_of_date = data.as_of_date or date.today()
+    allowed = {
+        row["customer_id"]: row
+        for row in _overdue_statement_candidates(db, as_of_date)
+    }
+    company = get_settings(db)
+    results = []
+
+    for recipient in data.recipients:
+        candidate = allowed.get(recipient.customer_id)
+        if not candidate:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "status": "skipped",
+                "detail": "Customer is not currently an overdue statement candidate",
+            })
+            continue
+
+        try:
+            customer, invoices, payments = _customer_statement_context(db, recipient.customer_id, as_of_date)
+            pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
+            html_body = render_document_email(
+                document_label="Statement",
+                recipient_name=customer.name,
+                company_settings=company,
+                action_label="As of",
+                action_value=as_of_date,
+                message="Please find attached your overdue customer statement.",
+            )
+            send_document_email(
+                db,
+                to_email=recipient.recipient,
+                subject=recipient.subject or f"Overdue statement as at {as_of_date.isoformat()}",
+                html_body=html_body,
+                attachment_bytes=pdf_bytes,
+                attachment_name=f"Statement_{recipient.customer_id}_{as_of_date.isoformat()}.pdf",
+                entity_type="statement",
+                entity_id=customer.id,
+            )
+            results.append({
+                "customer_id": customer.id,
+                "customer_name": customer.name,
+                "recipient": recipient.recipient,
+                "status": "sent",
+                "detail": None,
+            })
+        except Exception as exc:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "failed",
+                "detail": str(exc),
+            })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "results": results,
+        "sent_count": sum(1 for row in results if row["status"] == "sent"),
+        "failed_count": sum(1 for row in results if row["status"] == "failed"),
+        "skipped_count": sum(1 for row in results if row["status"] == "skipped"),
+    }
