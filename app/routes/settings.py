@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.config import SMTP_PASSWORD
+import app.config as app_config
 from app.database import get_db
 from app.models.settings import Settings, DEFAULT_SETTINGS
 from app.services.auth import require_permissions
@@ -51,7 +51,7 @@ def _settings_for_client(settings: dict) -> dict:
 def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
     result = dict(settings)
     legacy_row = db.query(Settings).filter(Settings.key == "smtp_password").first()
-    env_ready = bool((SMTP_PASSWORD or "").strip())
+    env_ready = bool((app_config.SMTP_PASSWORD or "").strip())
 
     if legacy_row and env_ready:
         db.delete(legacy_row)

@@ -93,33 +93,33 @@ class SettingsSecretHardeningTests(unittest.TestCase):
         self.assertIn("remains in the database", settings["smtp_password_notice"])
 
     def test_legacy_smtp_password_is_removed_when_env_secret_is_configured(self):
-        import app.routes.settings as settings_route
+        import app.config as app_config
 
-        original_password = settings_route.SMTP_PASSWORD
+        original_password = app_config.SMTP_PASSWORD
         try:
-            settings_route.SMTP_PASSWORD = "env-secret"
+            app_config.SMTP_PASSWORD = "env-secret"
             with self.Session() as db:
                 db.add(Settings(key="smtp_password", value="legacy-secret"))
                 db.commit()
                 settings = get_settings(db=db, auth={"user_id": 1})
                 stored = db.query(Settings).filter(Settings.key == "smtp_password").first()
         finally:
-            settings_route.SMTP_PASSWORD = original_password
+            app_config.SMTP_PASSWORD = original_password
 
         self.assertIsNone(stored)
         self.assertEqual(settings["smtp_password_status"], "env_managed_legacy_removed")
         self.assertIn("removed", settings["smtp_password_notice"])
 
     def test_env_managed_status_is_reported_without_legacy_row(self):
-        import app.routes.settings as settings_route
+        import app.config as app_config
 
-        original_password = settings_route.SMTP_PASSWORD
+        original_password = app_config.SMTP_PASSWORD
         try:
-            settings_route.SMTP_PASSWORD = "env-secret"
+            app_config.SMTP_PASSWORD = "env-secret"
             with self.Session() as db:
                 settings = get_settings(db=db, auth={"user_id": 1})
         finally:
-            settings_route.SMTP_PASSWORD = original_password
+            app_config.SMTP_PASSWORD = original_password
 
         self.assertEqual(settings["smtp_password_status"], "env_managed")
         self.assertIn("environment variable", settings["smtp_password_notice"])
