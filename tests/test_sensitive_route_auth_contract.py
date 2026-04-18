@@ -81,6 +81,8 @@ EXPECTED_ROUTE_AUTH = {
         "balance_sheet_pdf": ("permissions", ("accounts.manage",)),
         "trial_balance": ("permissions", ("accounts.manage",)),
         "trial_balance_pdf": ("permissions", ("accounts.manage",)),
+        "cash_flow_report": ("permissions", ("accounts.manage",)),
+        "cash_flow_pdf": ("permissions", ("accounts.manage",)),
         "ar_aging": ("permissions", ("accounts.manage",)),
         "ar_aging_pdf": ("permissions", ("accounts.manage",)),
         "gst_return_report": ("permissions", ("accounts.manage",)),

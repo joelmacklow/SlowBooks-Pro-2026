@@ -32,7 +32,7 @@
 
     {% for table in tables %}
         {% if table.title %}<div class="table-title">{{ table.title }}</div>{% endif %}
-        <table class="report">
+        <table class="report" {% if table.style %}style="{{ table.style }}"{% endif %}>
             {% if table.columns %}
             <thead>
                 <tr>
