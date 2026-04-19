@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from scripts import container_entrypoint
+from app import container_entrypoint
 
 
 class ContainerEntrypointTests(unittest.TestCase):

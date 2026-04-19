@@ -25,11 +25,11 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/docker/docker-entrypoint.sh /app/scripts/container_entrypoint.py /app/scripts/run_invoice_reminder_scheduler.py
+RUN chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/docker/docker-entrypoint.sh /app/scripts/run_invoice_reminder_scheduler.py
 
 EXPOSE 3001
 
 RUN useradd -m -r slowbooks && chown -R slowbooks:slowbooks /app
 USER slowbooks
 
-CMD ["python", "/app/scripts/container_entrypoint.py"]
+CMD ["python", "-m", "app.container_entrypoint"]
