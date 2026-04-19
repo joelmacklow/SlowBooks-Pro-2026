@@ -70,6 +70,10 @@ EXPECTED_ROUTE_AUTH = {
         "get_public_settings": ("public", None),
         "get_settings": ("permissions", ("settings.manage",)),
         "update_settings": ("permissions", ("settings.manage",)),
+        "list_invoice_reminder_rules": ("permissions", ("settings.manage",)),
+        "create_invoice_reminder_rule": ("permissions", ("settings.manage",)),
+        "update_invoice_reminder_rule": ("permissions", ("settings.manage",)),
+        "delete_invoice_reminder_rule": ("permissions", ("settings.manage",)),
         "test_email": ("permissions", ("settings.manage",)),
         "load_chart_template": ("permissions", ("settings.manage",)),
         "load_demo_data": ("permissions", ("settings.manage",)),
@@ -101,6 +105,7 @@ EXPECTED_ROUTE_AUTH = {
         "customer_statement_pdf": ("permissions", ("accounts.manage",)),
         "email_customer_statement": ("permissions", ("accounts.manage",)),
         "overdue_statement_candidates": ("permissions", ("accounts.manage",)),
+        "invoice_reminder_preview": ("permissions", ("accounts.manage",)),
         "send_overdue_statements": ("permissions", ("accounts.manage",)),
     },
     "app.routes.employees": {

@@ -25,6 +25,7 @@ from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
 
 # Phase 4: Communication & Export
 from app.models.email_log import EmailLog
+from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRule
 
 # Phase 5: Advanced Integration
 from app.models.tax import TaxCategoryMapping
@@ -52,7 +53,7 @@ __all__ = [
     # Phase 3
     "RecurringInvoice", "RecurringInvoiceLine",
     # Phase 4
-    "EmailLog",
+    "EmailLog", "InvoiceReminderRule", "InvoiceReminderAudit",
     # Phase 5
     "TaxCategoryMapping", "Backup",
     # Phase 6

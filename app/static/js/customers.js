@@ -53,7 +53,7 @@ const CustomersPage = {
     },
 
     async showForm(id = null) {
-        let c = { name: '', company: '', email: '', phone: '', mobile: '', fax: '', website: '',
+        let c = { name: '', company: '', email: '', invoice_reminders_enabled: true, phone: '', mobile: '', fax: '', website: '',
             bill_address1: '', bill_address2: '', bill_city: '', bill_state: '', bill_zip: '', bill_country: 'NZ',
             ship_address1: '', ship_address2: '', ship_city: '', ship_state: '', ship_zip: '', ship_country: 'NZ',
             terms: 'Net 30', credit_limit: '', tax_id: '', is_taxable: true, notes: '' };
@@ -69,6 +69,11 @@ const CustomersPage = {
                         <input name="company" value="${escapeHtml(c.company || '')}"></div>
                     <div class="form-group"><label>Email</label>
                         <input name="email" type="email" value="${escapeHtml(c.email || '')}"></div>
+                    <div class="form-group"><label>Invoice Reminders</label>
+                        <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
+                            <input name="invoice_reminders_enabled" type="checkbox" ${c.invoice_reminders_enabled !== false ? 'checked' : ''}>
+                            <span>Allow company invoice reminders for this customer</span>
+                        </label></div>
                     <div class="form-group"><label>Phone</label>
                         <input name="phone" value="${escapeHtml(c.phone || '')}"></div>
                     <div class="form-group"><label>Mobile</label>
@@ -130,6 +135,7 @@ const CustomersPage = {
         e.preventDefault();
         const form = new FormData(e.target);
         const data = Object.fromEntries(form.entries());
+        data.invoice_reminders_enabled = !!e.target.invoice_reminders_enabled.checked;
         if (data.credit_limit) data.credit_limit = parseFloat(data.credit_limit);
         else delete data.credit_limit;
 

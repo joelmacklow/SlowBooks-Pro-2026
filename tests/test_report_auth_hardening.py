@@ -123,6 +123,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             (self.reports_route.gst_return_transactions, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "page": 1, "page_size": 10}),
             (self.reports_route.sales_tax_report, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
             (self.reports_route.overdue_statement_candidates, {"as_of_date": date(2026, 4, 30)}),
+            (self.reports_route.invoice_reminder_preview, {"as_of_date": date(2026, 4, 30)}),
         ]
 
         for func, kwargs in route_calls:
