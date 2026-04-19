@@ -32,4 +32,4 @@ EXPOSE 3001
 RUN useradd -m -r slowbooks && chown -R slowbooks:slowbooks /app
 USER slowbooks
 
-CMD ["python", "-m", "app.container_entrypoint"]
+CMD ["python", "-c", "import sys; sys.path.insert(0, '/app'); from app.container_entrypoint import main; main()"]

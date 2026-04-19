@@ -37,7 +37,7 @@ services:
     volumes:
       - ./:/app:Z
     restart: unless-stopped
-    command: ["python", "-m", "app.container_entrypoint"]
+    command: ["python", "-c", "import sys; sys.path.insert(0, '/app'); from app.container_entrypoint import main; main()"]
 
   invoice_reminder_scheduler:
     build:
@@ -62,7 +62,7 @@ services:
     volumes:
       - ./:/app:Z
     restart: unless-stopped
-    command: ["python", "-m", "app.container_entrypoint"]
+    command: ["python", "-c", "import sys; sys.path.insert(0, '/app'); from app.container_entrypoint import main; main()"]
 
 volumes:
   postgres_data:
