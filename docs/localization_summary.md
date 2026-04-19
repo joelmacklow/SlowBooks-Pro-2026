@@ -177,19 +177,16 @@ Relevant files:
 
 The NZ-relevant carryovers from upstream commit `934244242d3a1a2802ba76de80f59f8a942c2c5e` are now implemented on this branch: payment voids, inline customer creation from invoice/estimate forms, manual journals, deposit recording, running-balance check-register workflows, credit-card charges, and vendor default expense accounts. Browser print-preview, US sales-tax payment, and cheque-printing remain intentionally out of scope for the NZ product surface.
 
-Upstream commit `80b4bc782954aba5cdb93503f817e0776dc652c1` adds a second feature bundle. For SlowBooks NZ, the relevant carryovers are native Trial Balance and Cash Flow reports, batch overdue-statement emailing, automated overdue invoice email reminders, NZ-localized collection workflows, bank rules, budget-vs-actual reporting, secure document attachments, and customizable email templates. The explicit non-port is US-only `1099` tracking. Late-fee automation is only conditionally relevant because NZ policy/legal/product rules need to be decided before automating charges or journals. Existing overlap to preserve: per-document email already exists, GST settlement already replaces the mainline sales-tax-payment shape, and any future templating work must keep sandboxing/autoescaping rather than reintroducing unsafe Jinja rendering. Batch overdue statement delivery shipped on 2026-04-18 and now serves as the base for the remaining collection/email follow-ups.
+Upstream commit `80b4bc782954aba5cdb93503f817e0776dc652c1` adds a second feature bundle. For SlowBooks NZ, the relevant carryovers are native Trial Balance and Cash Flow reports, batch overdue-statement emailing, automated overdue invoice email reminders, NZ-localized collection workflows, bank rules, budget-vs-actual reporting, secure document attachments, and customizable email templates. The explicit non-port is US-only `1099` tracking. Late-fee automation is only conditionally relevant because NZ policy/legal/product rules need to be decided before automating charges or journals. Existing overlap to preserve: per-document email already exists, GST settlement already replaces the mainline sales-tax-payment shape, and any future templating work must keep sandboxing/autoescaping rather than reintroducing unsafe Jinja rendering. Batch overdue statement delivery shipped on 2026-04-18, and the overdue invoice reminder foundation, operator-reviewed send flow, and reminder automation policy are now complete shared infrastructure for the remaining collection/email follow-ups.
 
 ### Active next slices
 
-- **Priority 1 — Overdue invoice reminders foundation:** define reminder eligibility, exclusions, and audit/history shape before automating sends.
-- **Priority 2 — Overdue invoice reminders review/send UI:** add an operator-reviewed reminder batch flow on top of the shared email path before introducing background automation.
-- **Priority 3 — Reminder automation policy:** add cadence, duplicate-suppression, and skip rules only after the manual/batch reminder flow is stable.
-- **Priority 4 — Bank rules MVP:** add deterministic payee/pattern categorization for imported bank lines on top of the existing reconciliation/import foundations.
-- **Priority 5 — Budget vs Actual:** add monthly budget-entry and variance reporting once the core banking/reminder productivity slices are in place.
-- **Priority 6 — NZ-localized collection workflows:** expand into broader 30/60/90-day collection workflows only after the simpler reminder flow is proven.
-- **Priority 7 — Late-fee decision then automation (if approved):** keep after collection workflows because it is policy/legal/product gated, not just an engineering task.
-- **Priority 8 — Secure document attachments:** intentionally late because file upload/download work is high-risk and needs explicit hardening.
-- **Priority 9 — Customizable email templates:** also intentionally late because it needs sandboxed + autoescaped rendering and should come after the base overdue/collection workflows are proven.
+- **Priority 1 — Bank rules MVP:** add deterministic payee/pattern categorization for imported bank lines on top of the existing reconciliation/import foundations.
+- **Priority 2 — Budget vs Actual:** add monthly budget-entry and variance reporting once the core banking/reminder productivity slices are in place.
+- **Priority 3 — NZ-localized collection workflows:** expand into broader 30/60/90-day collection workflows now that the base reminder flow is proven.
+- **Priority 4 — Late-fee decision then automation (if approved):** keep after collection workflows because it is policy/legal/product gated, not just an engineering task.
+- **Priority 5 — Secure document attachments:** intentionally late because file upload/download work is high-risk and needs explicit hardening.
+- **Priority 6 — Customizable email templates:** also intentionally late because it needs sandboxed + autoescaped rendering and should come after the base overdue/collection workflows are proven.
 
 1. Keep NZ fork hygiene clean:
    Continue treating `nz-localization` as the canonical SlowBooks NZ branch. Do not reintroduce US tax, payroll, reporting, address, or seed-data behavior without an explicit product decision.
@@ -212,32 +209,23 @@ Upstream commit `80b4bc782954aba5cdb93503f817e0776dc652c1` adds a second feature
 11. Keep refining the accountant-facing report surface:
    The NZ branch now has in-app Trial Balance and Cash Flow reports, and it can already verify imported Xero Trial Balance / P&L / Balance Sheet files. Continue future report work with NZ-safe accounting/report wording rather than copied US-facing assumptions.
 
-12. Treat batch overdue statement delivery as completed shared infrastructure:
-   Batch overdue statement delivery shipped on 2026-04-18. Reuse that SMTP/email-log/document-PDF path as the base for reminder and collection follow-up work rather than rebuilding delivery logic.
+12. Treat batch overdue statement delivery and overdue invoice reminders as completed shared infrastructure:
+   Batch overdue statement delivery shipped on 2026-04-18, and the reminder foundation/review/send/automation slices now share the same SMTP/email-log/document-PDF path. Reuse that base for collection follow-up work rather than rebuilding delivery logic.
 
-13. Add overdue invoice reminders foundation on top of the shared email path:
-   Reuse the same document-delivery foundation for overdue invoices, but define candidate selection, exclusions, and reminder audit visibility explicitly before adding automated sends.
-
-14. Add an operator-reviewed reminder review/send flow before background automation:
-   Keep the first reminder UX explicit and reviewable so wording, recipient handling, and failure states can be proven before scheduling or cadence logic is introduced.
-
-15. Add reminder cadence/duplicate-suppression policy only after the reminder flow is proven:
-   When automation is added, make cadence windows, customer exclusions, retry behavior, and audit visibility explicit instead of bundling them into the broader collection-workflow slice.
-
-16. Decide and implement NZ collection workflows after the reminder slices:
-   Add 30/60/90-day collection workflows only after localizing the wording, escalation behavior, and legal/accounting assumptions for NZ customers. Reuse the shared PDF/email foundation rather than introducing a separate document-delivery stack.
-
-17. Decide late-fee product policy before building fee automation:
-   Upstream late-fee settings and auto-journaling are not a straight carryover. First decide whether SlowBooks NZ should support late fees at all, what NZ disclosure/grace/rate rules apply, and whether fees should be suggested, manually approved, or automatically posted.
-
-18. Add secure bank rules for imported transaction categorization:
+13. Add secure bank rules for imported transaction categorization:
    Auto-categorization by payee/pattern is relevant to NZ bank-import workflows, but it should integrate with the existing import/reconciliation model, support deterministic priority ordering, and stay behind the current auth/audit expectations.
 
-19. Add budget-vs-actual workflows for monthly management reporting:
+14. Add budget-vs-actual workflows for monthly management reporting:
    Spreadsheet-style budget entry and variance reporting are NZ-relevant and should be built against the current chart/system-account model, not a separate US reporting fork.
 
-20. Add attachments only with explicit upload/download hardening:
+15. Decide and implement NZ collection workflows after the reminder platform:
+   Add 30/60/90-day collection workflows only after localizing the wording, escalation behavior, and legal/accounting assumptions for NZ customers. Reuse the shared PDF/email foundation rather than introducing a separate document-delivery stack.
+
+16. Decide late-fee product policy before building fee automation:
+   Upstream late-fee settings and auto-journaling are not a straight carryover. First decide whether SlowBooks NZ should support late fees at all, what NZ disclosure/grace/rate rules apply, and whether fees should be suggested, manually approved, or automatically posted.
+
+17. Add attachments only with explicit upload/download hardening:
    Document attachments are relevant, but this is a high-risk file-handling slice. Any implementation must include RBAC, path/filename validation, content-type/size controls, safe storage layout, and download protections comparable to the backup-path hardening work.
 
-21. Add customizable email templates only with sandboxed rendering:
+18. Add customizable email templates only with sandboxed rendering:
    Template customization is relevant because the branch already has shared document-email flows, but future implementation must use sandboxed rendering plus autoescaping and must not allow arbitrary template execution or unsafe HTML output.
