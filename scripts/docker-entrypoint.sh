@@ -1,22 +1,27 @@
 #!/bin/sh
 set -eu
 
-mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+APP_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+cd "$APP_ROOT"
+export PYTHONPATH="$APP_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+mkdir -p "$APP_ROOT/backups" "$APP_ROOT/app/static/uploads" 2>/dev/null || true
 
 RUN_INVOICE_REMINDER_SCHEDULER="${RUN_INVOICE_REMINDER_SCHEDULER:-false}"
 
 if [ "$RUN_INVOICE_REMINDER_SCHEDULER" != "true" ]; then
-if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
-BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
+    if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
+        BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
 import secrets
 print(secrets.token_urlsafe(24))
 PY
 )"
-export BOOTSTRAP_ADMIN_TOKEN
-printf '%s\n' 'BOOTSTRAP_ADMIN_TOKEN was not set; generated a startup token for first-admin setup.'
-fi
+        export BOOTSTRAP_ADMIN_TOKEN
+        printf '%s\n' 'BOOTSTRAP_ADMIN_TOKEN was not set; generated a startup token for first-admin setup.'
+    fi
 
-BOOTSTRAP_SETUP_URL="$(python - <<'PY'
+    BOOTSTRAP_SETUP_URL="$(python - <<'PY'
 import os
 from urllib.parse import quote
 
@@ -26,11 +31,11 @@ print(f"http://localhost:{port}/#/login?bootstrap_token={quote(token, safe='')}"
 PY
 )"
 
-printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
-printf '%s %s\n' 'Bootstrap admin setup URL:' "$BOOTSTRAP_SETUP_URL"
-printf '%s\n' 'If accessing SlowBooks remotely, replace localhost with your Docker host name or IP before opening the URL.'
+    printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
+    printf '%s %s\n' 'Bootstrap admin setup URL:' "$BOOTSTRAP_SETUP_URL"
+    printf '%s\n' 'If accessing SlowBooks remotely, replace localhost with your Docker host name or IP before opening the URL.'
 else
-printf '%s\n' 'Starting invoice reminder scheduler service.'
+    printf '%s\n' 'Starting invoice reminder scheduler service.'
 fi
 
 python - <<'PY'
@@ -58,7 +63,7 @@ PY
 python scripts/bootstrap_database.py
 
 if [ "$RUN_INVOICE_REMINDER_SCHEDULER" = "true" ]; then
-exec python scripts/run_invoice_reminder_scheduler.py
+    exec python scripts/run_invoice_reminder_scheduler.py
 fi
 
 exec python run.py
