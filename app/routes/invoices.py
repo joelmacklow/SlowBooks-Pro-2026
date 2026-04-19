@@ -21,7 +21,13 @@ from app.models.items import Item
 from app.models.contacts import Customer
 from app.models.credit_memos import CreditApplication
 from app.schemas.email import DocumentEmailRequest
-from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceUpdate, InvoiceResponse
+from app.schemas.invoices import (
+    InvoiceCreate,
+    InvoiceCreditApplicationResponse,
+    InvoiceLineCreate,
+    InvoiceUpdate,
+    InvoiceResponse,
+)
 from app.services.pdf_service import generate_invoice_pdf
 from app.services.accounting import (
     create_journal_entry, reverse_journal_entry, get_ar_account_id,
@@ -53,11 +59,11 @@ def _invoice_response(inv: Invoice) -> InvoiceResponse:
     if inv.customer:
         resp.customer_name = inv.customer.name
     resp.applied_credits = [
-        {
-            "credit_memo_id": application.credit_memo_id,
-            "credit_memo_number": application.credit_memo.memo_number if application.credit_memo else None,
-            "amount": application.amount,
-        }
+        InvoiceCreditApplicationResponse(
+            credit_memo_id=application.credit_memo_id,
+            credit_memo_number=application.credit_memo.memo_number if application.credit_memo else None,
+            amount=application.amount,
+        )
         for application in inv.credit_applications
     ]
     return resp

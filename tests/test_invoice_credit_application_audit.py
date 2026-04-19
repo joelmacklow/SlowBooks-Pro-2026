@@ -36,6 +36,7 @@ class InvoiceCreditApplicationAuditTests(unittest.TestCase):
         from app.models.credit_memos import CreditApplication, CreditMemo, CreditMemoStatus
         from app.models.invoices import Invoice, InvoiceStatus
         from app.routes.invoices import get_invoice
+        from app.schemas.invoices import InvoiceCreditApplicationResponse
 
         with self.Session() as db:
             customer = Customer(name="Aroha Ltd")
@@ -78,9 +79,10 @@ class InvoiceCreditApplicationAuditTests(unittest.TestCase):
             response = get_invoice(invoice.id, db=db, auth=None)
 
         self.assertEqual(len(response.applied_credits), 1)
-        self.assertEqual(response.applied_credits[0]["credit_memo_id"], memo.id)
-        self.assertEqual(response.applied_credits[0]["credit_memo_number"], "CM-2011")
-        self.assertEqual(Decimal(str(response.applied_credits[0]["amount"])), Decimal("20.00"))
+        self.assertIsInstance(response.applied_credits[0], InvoiceCreditApplicationResponse)
+        self.assertEqual(response.applied_credits[0].credit_memo_id, memo.id)
+        self.assertEqual(response.applied_credits[0].credit_memo_number, "CM-2011")
+        self.assertEqual(Decimal(str(response.applied_credits[0].amount)), Decimal("20.00"))
 
 
 if __name__ == "__main__":
