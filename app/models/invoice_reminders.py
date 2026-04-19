@@ -8,6 +8,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import relationship
@@ -33,6 +34,7 @@ class InvoiceReminderRule(Base):
 
 class InvoiceReminderAudit(Base):
     __tablename__ = "invoice_reminder_audit"
+    __table_args__ = (UniqueConstraint("invoice_id", "rule_id", "scheduled_for_date", name="uq_invoice_reminder_audit_scheduled"),)
 
     id = Column(Integer, primary_key=True, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)

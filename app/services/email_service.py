@@ -6,9 +6,9 @@
 import html
 import smtplib
 from datetime import date
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, pass_context
@@ -39,8 +39,7 @@ _jinja_env.filters["fdate"] = _format_date
 
 def _get_smtp_settings(db: Session) -> dict:
     """Load SMTP settings from the settings table."""
-    keys = ["smtp_host", "smtp_port", "smtp_user",
-            "smtp_from_email", "smtp_from_name", "smtp_use_tls"]
+    keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_from_email", "smtp_from_name", "smtp_use_tls"]
     rows = db.query(Settings).filter(Settings.key.in_(keys)).all()
     settings = {r.key: r.value for r in rows}
     return settings
@@ -55,7 +54,7 @@ def _log_email(
     subject: str,
     status: str,
     error_message: str | None = None,
-):
+) -> EmailLog:
     log = EmailLog(
         entity_type=entity_type or "",
         entity_id=entity_id or 0,
@@ -66,6 +65,8 @@ def _log_email(
     )
     db.add(log)
     db.commit()
+    db.refresh(log)
+    return log
 
 
 def _send_email_impl(
@@ -78,7 +79,7 @@ def _send_email_impl(
     attachment_name: str = None,
     entity_type: str = None,
     entity_id: int = None,
-) -> str | None:
+) -> tuple[str | None, int | None]:
     smtp = _get_smtp_settings(db)
 
     host = smtp.get("smtp_host", "")
@@ -96,7 +97,7 @@ def _send_email_impl(
 
     if not to_email:
         error = "Recipient email is required"
-        _log_email(
+        log = _log_email(
             db,
             entity_type=entity_type or "",
             entity_id=entity_id or 0,
@@ -105,11 +106,11 @@ def _send_email_impl(
             status="failed",
             error_message=error,
         )
-        return error
+        return error, log.id
 
     if not host or not from_email:
         error = "SMTP not configured"
-        _log_email(
+        log = _log_email(
             db,
             entity_type=entity_type or "",
             entity_id=entity_id or 0,
@@ -118,11 +119,11 @@ def _send_email_impl(
             status="failed",
             error_message=error,
         )
-        return error
+        return error, log.id
 
     if user and not password:
         error = "SMTP password must be provided via the SMTP_PASSWORD environment variable"
-        _log_email(
+        log = _log_email(
             db,
             entity_type=entity_type or "",
             entity_id=entity_id or 0,
@@ -131,7 +132,7 @@ def _send_email_impl(
             status="failed",
             error_message=error,
         )
-        return error
+        return error, log.id
 
     msg = MIMEMultipart()
     msg["From"] = f"{from_name} <{from_email}>"
@@ -159,7 +160,7 @@ def _send_email_impl(
         server.quit()
         server = None
 
-        _log_email(
+        log = _log_email(
             db,
             entity_type=entity_type or "",
             entity_id=entity_id or 0,
@@ -167,7 +168,7 @@ def _send_email_impl(
             subject=subject,
             status="sent",
         )
-        return None
+        return None, log.id
     except Exception as exc:
         if server:
             try:
@@ -175,7 +176,7 @@ def _send_email_impl(
             except Exception:
                 pass
         error = str(exc)
-        _log_email(
+        log = _log_email(
             db,
             entity_type=entity_type or "",
             entity_id=entity_id or 0,
@@ -184,14 +185,21 @@ def _send_email_impl(
             status="failed",
             error_message=error,
         )
-        return error
+        return error, log.id
 
 
-def send_email(db: Session, to_email: str, subject: str, html_body: str,
-               attachment_bytes: bytes = None, attachment_name: str = None,
-               entity_type: str = None, entity_id: int = None) -> bool:
+def send_email(
+    db: Session,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachment_bytes: bytes = None,
+    attachment_name: str = None,
+    entity_type: str = None,
+    entity_id: int = None,
+) -> bool:
     """Send an email via SMTP. Returns True on success."""
-    return _send_email_impl(
+    error, _ = _send_email_impl(
         db,
         to_email=to_email,
         subject=subject,
@@ -200,13 +208,44 @@ def send_email(db: Session, to_email: str, subject: str, html_body: str,
         attachment_name=attachment_name,
         entity_type=entity_type,
         entity_id=entity_id,
-    ) is None
+    )
+    return error is None
 
 
-def send_email_or_raise(db: Session, to_email: str, subject: str, html_body: str,
-                        attachment_bytes: bytes = None, attachment_name: str = None,
-                        entity_type: str = None, entity_id: int = None) -> None:
-    error = _send_email_impl(
+def send_email_result(
+    db: Session,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachment_bytes: bytes = None,
+    attachment_name: str = None,
+    entity_type: str = None,
+    entity_id: int = None,
+) -> tuple[int | None, str | None]:
+    error, log_id = _send_email_impl(
+        db,
+        to_email=to_email,
+        subject=subject,
+        html_body=html_body,
+        attachment_bytes=attachment_bytes,
+        attachment_name=attachment_name,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+    return log_id, error
+
+
+def send_email_or_raise(
+    db: Session,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachment_bytes: bytes = None,
+    attachment_name: str = None,
+    entity_type: str = None,
+    entity_id: int = None,
+) -> int | None:
+    error, log_id = _send_email_impl(
         db,
         to_email=to_email,
         subject=subject,
@@ -218,6 +257,7 @@ def send_email_or_raise(db: Session, to_email: str, subject: str, html_body: str
     )
     if error:
         raise ValueError(error)
+    return log_id
 
 
 def render_invoice_email(invoice, company_settings: dict) -> str:
@@ -226,7 +266,6 @@ def render_invoice_email(invoice, company_settings: dict) -> str:
         template = _jinja_env.get_template("invoice_email.html")
         return template.render(inv=invoice, company=company_settings)
     except Exception:
-        # Fallback simple email
         company_name = company_settings.get("company_name", "Our Company")
         total = format_currency(invoice.total, company_settings)
         due_date = format_date(invoice.due_date, company_settings)
@@ -302,8 +341,31 @@ def send_document_email(
     attachment_name: str,
     entity_type: str,
     entity_id: int,
-) -> None:
-    send_email_or_raise(
+) -> int | None:
+    return send_email_or_raise(
+        db,
+        to_email=to_email,
+        subject=subject,
+        html_body=html_body,
+        attachment_bytes=attachment_bytes,
+        attachment_name=attachment_name,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+
+def send_document_email_result(
+    db: Session,
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachment_bytes: bytes,
+    attachment_name: str,
+    entity_type: str,
+    entity_id: int,
+) -> tuple[int | None, str | None]:
+    return send_email_result(
         db,
         to_email=to_email,
         subject=subject,

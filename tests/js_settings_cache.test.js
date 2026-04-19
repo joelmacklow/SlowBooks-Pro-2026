@@ -40,6 +40,8 @@ vm.runInContext(code, context);
     assert.ok(sampleHtml.includes('Employment Information and employee filing exports'));
     assert.ok(!sampleHtml.includes('payday filing'));
     assert.ok(sampleHtml.includes('Approved PO Delivery Locations'));
+    assert.ok(sampleHtml.includes('Reminder Automation'));
+    assert.ok(sampleHtml.includes('Scheduler Interval (minutes)'));
     assert.ok(sampleHtml.includes('Load NZ Demo Data'));
     assert.ok(sampleHtml.includes('ANZ bank account'));
     assert.ok(sampleHtml.includes('sample customer/vendor banking transactions'));

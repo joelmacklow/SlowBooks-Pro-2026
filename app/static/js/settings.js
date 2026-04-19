@@ -10,6 +10,7 @@ const SettingsPage = {
         const s = await API.get('/settings');
         setTimeout(() => SettingsPage.loadBackups(), 0);
         setTimeout(() => SettingsPage.loadInvoiceReminderRules(), 0);
+        setTimeout(() => SettingsPage.loadInvoiceReminderSchedulerStatus(), 0);
         return `
             <div class="page-header">
                 <h2>Company Settings</h2>
@@ -206,6 +207,16 @@ const SettingsPage = {
                     <div style="display:flex; gap:8px; margin-bottom:12px;">
                         <button type="button" class="btn btn-secondary" onclick="SettingsPage.showReminderRuleForm()">Add Reminder Rule</button>
                     </div>
+                    <div class="form-grid" style="margin-bottom:12px;">
+                        <div class="form-group"><label>Reminder Automation</label>
+                            <select name="invoice_reminder_scheduler_enabled">
+                                <option value="false" ${s.invoice_reminder_scheduler_enabled !== 'true' ? 'selected' : ''}>Disabled</option>
+                                <option value="true" ${s.invoice_reminder_scheduler_enabled === 'true' ? 'selected' : ''}>Enabled</option>
+                            </select></div>
+                        <div class="form-group"><label>Scheduler Interval (minutes)</label>
+                            <input name="invoice_reminder_scheduler_interval_minutes" type="number" min="1" max="1440" value="${escapeHtml(s.invoice_reminder_scheduler_interval_minutes || '15')}"></div>
+                    </div>
+                    <div id="invoice-reminder-scheduler-status" style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Loading scheduler status…</div>
                     <div id="invoice-reminder-rules-list">
                         <div style="font-size:11px; color:var(--text-muted);">Loading reminder rules…</div>
                     </div>
@@ -277,6 +288,32 @@ const SettingsPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
+
+
+    renderInvoiceReminderSchedulerStatus(status) {
+        if (!status) return '<div style="font-size:11px; color:var(--text-muted);">Scheduler status unavailable.</div>';
+        const lines = [
+            `Mode: <strong>${status.enabled ? 'Enabled' : 'Disabled'}</strong>`,
+            `Interval: every ${escapeHtml(String(status.interval_minutes || 15))} minute(s)`,
+            `Last status: <strong>${escapeHtml(status.last_run_status || 'never')}</strong>`,
+            status.last_run_completed_at ? `Last completed: ${escapeHtml(status.last_run_completed_at)}` : 'Last completed: never',
+            status.next_run_at ? `Next run: ${escapeHtml(status.next_run_at)}` : 'Next run: waiting for scheduler process',
+            status.last_error ? `Last error: ${escapeHtml(status.last_error)}` : '',
+            status.last_run_summary ? `Last summary: ${escapeHtml(status.last_run_summary)}` : '',
+        ].filter(Boolean);
+        return `<div class="settings-section" style="padding:12px; margin:0 0 12px 0;">${lines.map(line => `<div style="margin-bottom:4px;">${line}</div>`).join('')}<div style="margin-top:8px; color:var(--text-muted);">The APScheduler reminder worker must run in its own process using <code>scripts/run_invoice_reminder_scheduler.py</code>.</div></div>`;
+    },
+
+    async loadInvoiceReminderSchedulerStatus() {
+        const el = typeof $ === 'function' ? $('#invoice-reminder-scheduler-status') : null;
+        if (!el) return;
+        try {
+            const status = await API.get('/settings/invoice-reminder-scheduler-status');
+            el.innerHTML = SettingsPage.renderInvoiceReminderSchedulerStatus(status);
+        } catch (err) {
+            el.innerHTML = `<div style="font-size:11px; color:var(--danger);">${escapeHtml(err.message || 'Failed to load scheduler status')}</div>`;
+        }
+    },
 
     formatReminderRuleTiming(rule) {
         const offset = Number(rule.day_offset || 0);

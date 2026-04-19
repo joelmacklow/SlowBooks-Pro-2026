@@ -28,12 +28,25 @@ from app.services.invoice_reminders import (
     default_invoice_reminder_body_template,
     default_invoice_reminder_subject_template,
     ensure_default_invoice_reminder_rules,
+    get_scheduler_state,
     invoice_reminder_rule_label,
 )
 from app.services.rate_limit import enforce_rate_limit
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+SYSTEM_MANAGED_SETTINGS_KEYS = {
+    "invoice_reminder_scheduler_last_started_at",
+    "invoice_reminder_scheduler_last_heartbeat_at",
+    "invoice_reminder_scheduler_last_run_started_at",
+    "invoice_reminder_scheduler_last_run_completed_at",
+    "invoice_reminder_scheduler_last_run_status",
+    "invoice_reminder_scheduler_last_run_summary",
+    "invoice_reminder_scheduler_last_error",
+    "invoice_reminder_scheduler_next_run_at",
+}
 
 
 def _get_all(db: Session) -> dict:
@@ -140,6 +153,8 @@ def update_settings(
 ):
     for key, value in data.items():
         if key in DEFAULT_SETTINGS:
+            if key in SYSTEM_MANAGED_SETTINGS_KEYS:
+                continue
             if key == "closing_date_password":
                 secret = str(value) if value is not None else ""
                 if secret:
@@ -155,6 +170,14 @@ def update_settings(
     settings = _apply_smtp_secret_status(db, _get_all(db))
     db.commit()
     return _settings_for_client(settings)
+
+
+@router.get("/invoice-reminder-scheduler-status")
+def get_invoice_reminder_scheduler_status(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    return get_scheduler_state(db)
 
 
 @router.get("/invoice-reminder-rules", response_model=list[InvoiceReminderRuleResponse])

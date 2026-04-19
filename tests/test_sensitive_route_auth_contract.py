@@ -70,6 +70,7 @@ EXPECTED_ROUTE_AUTH = {
         "get_public_settings": ("public", None),
         "get_settings": ("permissions", ("settings.manage",)),
         "update_settings": ("permissions", ("settings.manage",)),
+        "get_invoice_reminder_scheduler_status": ("permissions", ("settings.manage",)),
         "list_invoice_reminder_rules": ("permissions", ("settings.manage",)),
         "create_invoice_reminder_rule": ("permissions", ("settings.manage",)),
         "update_invoice_reminder_rule": ("permissions", ("settings.manage",)),
