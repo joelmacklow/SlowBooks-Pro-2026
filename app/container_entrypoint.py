@@ -19,8 +19,8 @@ if existing_pythonpath:
     pythonpath_parts.append(existing_pythonpath)
 os.environ["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
-from app.config import APP_DEBUG, APP_HOST, APP_PORT, DATABASE_URL  # noqa: E402
-from scripts.bootstrap_database import run_bootstrap  # noqa: E402
+from .config import APP_DEBUG, APP_HOST, APP_PORT, DATABASE_URL  # noqa: E402
+from .bootstrap_database import run_bootstrap  # noqa: E402
 
 
 def is_scheduler_mode() -> bool:

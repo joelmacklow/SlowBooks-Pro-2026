@@ -2,13 +2,13 @@ import os
 import unittest
 from unittest import mock
 
-from scripts import bootstrap_database
+from app import bootstrap_database
 
 
 class BootstrapDatabaseTests(unittest.TestCase):
     def test_bootstrap_env_sets_database_url_and_repo_root_pythonpath(self):
         with mock.patch.dict(os.environ, {"PYTHONPATH": "/existing/path"}, clear=False):
-            env = bootstrap_database._bootstrap_env("sqlite:///tmp/test.db")
+            env = bootstrap_database.bootstrap_env("sqlite:///tmp/test.db")
 
         self.assertEqual(env["DATABASE_URL"], "sqlite:///tmp/test.db")
         parts = env["PYTHONPATH"].split(os.pathsep)
@@ -22,7 +22,7 @@ class BootstrapDatabaseTests(unittest.TestCase):
             calls.append((command, cwd, env, check))
             return None
 
-        with mock.patch("scripts.bootstrap_database.subprocess.run", side_effect=fake_run):
+        with mock.patch("app.bootstrap_database.subprocess.run", side_effect=fake_run):
             bootstrap_database.run_bootstrap("sqlite:///tmp/test.db")
 
         self.assertEqual(calls[0][0][:3], [bootstrap_database.sys.executable, "-m", "alembic"])
