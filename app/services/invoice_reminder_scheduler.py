@@ -76,6 +76,16 @@ def run_invoice_reminder_scheduler_job() -> dict:
     return run_invoice_reminder_cycle()
 
 
+def _job_next_run_iso(job) -> str:
+    if job is None:
+        return ""
+    try:
+        next_run = getattr(job, "next_run_time")
+    except AttributeError:
+        return ""
+    return next_run.isoformat() if next_run else ""
+
+
 def _sync_scheduler_metadata(scheduler: BlockingScheduler) -> None:
     db = SessionLocal()
     try:
@@ -88,7 +98,7 @@ def _sync_scheduler_metadata(scheduler: BlockingScheduler) -> None:
             if current_seconds != desired_seconds:
                 scheduler.reschedule_job(JOB_ID, trigger="interval", minutes=interval_minutes)
                 job = scheduler.get_job(JOB_ID)
-            next_run = job.next_run_time.isoformat() if job and job.next_run_time else ""
+            next_run = _job_next_run_iso(job)
         else:
             next_run = ""
         update_scheduler_state(

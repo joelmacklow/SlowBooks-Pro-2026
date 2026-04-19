@@ -191,6 +191,16 @@ class InvoiceReminderSchedulerTests(unittest.TestCase):
             self.assertEqual(len(audits), 2)
             self.assertTrue(all(audit.status == "failed" for audit in audits))
 
+    def test_build_scheduler_handles_pending_job_without_next_run_time_attribute(self):
+        scheduler = self.scheduler_service.build_invoice_reminder_scheduler()
+        try:
+            job = scheduler.get_job(self.scheduler_service.JOB_ID)
+            self.assertIsNotNone(job)
+            self.assertEqual(self.scheduler_service._job_next_run_iso(job), '')
+        finally:
+            if getattr(scheduler, 'running', False):
+                scheduler.shutdown(wait=False)
+
 
 if __name__ == "__main__":
     unittest.main()
