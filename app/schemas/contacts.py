@@ -9,6 +9,7 @@ class CustomerCreate(BaseModel):
     name: str
     company: Optional[str] = None
     email: Optional[str] = None
+    invoice_reminders_enabled: bool = True
     phone: Optional[str] = None
     mobile: Optional[str] = None
     fax: Optional[str] = None
@@ -36,6 +37,7 @@ class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     company: Optional[str] = None
     email: Optional[str] = None
+    invoice_reminders_enabled: Optional[bool] = None
     phone: Optional[str] = None
     mobile: Optional[str] = None
     fax: Optional[str] = None
@@ -65,6 +67,7 @@ class CustomerResponse(BaseModel):
     name: str
     company: Optional[str]
     email: Optional[str]
+    invoice_reminders_enabled: bool
     phone: Optional[str]
     mobile: Optional[str]
     fax: Optional[str]

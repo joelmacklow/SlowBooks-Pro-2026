@@ -9,6 +9,7 @@ const SettingsPage = {
     async render() {
         const s = await API.get('/settings');
         setTimeout(() => SettingsPage.loadBackups(), 0);
+        setTimeout(() => SettingsPage.loadInvoiceReminderRules(), 0);
         return `
             <div class="page-header">
                 <h2>Company Settings</h2>
@@ -196,6 +197,20 @@ const SettingsPage = {
                     </div>
                 </div>
 
+
+                <div class="settings-section">
+                    <h3>Invoice Reminders</h3>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                        Configure company-wide invoice reminder rules. Rules can trigger before or after the due date and will be used by future automated reminder workflows.
+                    </div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button type="button" class="btn btn-secondary" onclick="SettingsPage.showReminderRuleForm()">Add Reminder Rule</button>
+                    </div>
+                    <div id="invoice-reminder-rules-list">
+                        <div style="font-size:11px; color:var(--text-muted);">Loading reminder rules…</div>
+                    </div>
+                </div>
+
                 <div class="settings-section">
                     <h3>Backup / Restore</h3>
                     <div style="display:flex; gap:8px; margin-bottom:12px;">
@@ -260,6 +275,127 @@ const SettingsPage = {
             toast(`Backup created: ${result.filename}`);
             SettingsPage.loadBackups();
         } catch (err) { toast(err.message, 'error'); }
+    },
+
+
+    formatReminderRuleTiming(rule) {
+        const offset = Number(rule.day_offset || 0);
+        if (offset === 0) return 'On due date';
+        const unit = offset === 1 ? 'day' : 'days';
+        return rule.timing_direction === 'before_due'
+            ? `${offset} ${unit} before due`
+            : `${offset} ${unit} overdue`;
+    },
+
+    renderInvoiceReminderRulesMarkup(rules) {
+        if (!Array.isArray(rules) || rules.length === 0) {
+            return '<div style="font-size:11px; color:var(--text-muted);">No invoice reminder rules yet.</div>';
+        }
+        return `<div class="table-container"><table>
+            <thead><tr><th>Name</th><th>Timing</th><th>Status</th><th>Subject</th><th>Actions</th></tr></thead>
+            <tbody>${rules.map(rule => `<tr>
+                <td><strong>${escapeHtml(rule.name || '')}</strong></td>
+                <td>${escapeHtml(SettingsPage.formatReminderRuleTiming(rule))}</td>
+                <td>${rule.is_enabled ? 'Enabled' : 'Disabled'}</td>
+                <td>${escapeHtml(rule.subject_template || '')}</td>
+                <td class="actions">
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="SettingsPage.showReminderRuleForm(${rule.id})">Edit</button>
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="SettingsPage.deleteReminderRule(${rule.id})">Delete</button>
+                </td>
+            </tr>`).join('')}</tbody>
+        </table></div>`;
+    },
+
+    async loadInvoiceReminderRules() {
+        const listEl = typeof $ === 'function' ? $('#invoice-reminder-rules-list') : null;
+        if (!listEl) return;
+        try {
+            const rules = await API.get('/settings/invoice-reminder-rules');
+            SettingsPage._invoiceReminderRules = Array.isArray(rules) ? rules : [];
+            listEl.innerHTML = SettingsPage.renderInvoiceReminderRulesMarkup(SettingsPage._invoiceReminderRules);
+        } catch (err) {
+            listEl.innerHTML = `<div style="font-size:11px; color:var(--danger);">${escapeHtml(err.message || 'Failed to load reminder rules')}</div>`;
+        }
+    },
+
+    showReminderRuleForm(id = null) {
+        const existing = (SettingsPage._invoiceReminderRules || []).find(rule => rule.id === id) || null;
+        const rule = existing || {
+            name: '',
+            timing_direction: 'before_due',
+            day_offset: 3,
+            is_enabled: true,
+            sort_order: (SettingsPage._invoiceReminderRules || []).length,
+            subject_template: '',
+            body_template: '',
+        };
+        openModal(existing ? 'Edit Invoice Reminder Rule' : 'New Invoice Reminder Rule', `
+            <form onsubmit="SettingsPage.saveReminderRule(event, ${existing ? existing.id : 'null'})">
+                <div class="form-grid">
+                    <div class="form-group"><label>Name</label>
+                        <input name="name" value="${escapeHtml(rule.name || '')}" placeholder="Optional – auto-generated if blank"></div>
+                    <div class="form-group"><label>Timing</label>
+                        <select name="timing_direction">
+                            <option value="before_due" ${rule.timing_direction === 'before_due' ? 'selected' : ''}>Before due date</option>
+                            <option value="after_due" ${rule.timing_direction === 'after_due' ? 'selected' : ''}>After due date</option>
+                        </select></div>
+                    <div class="form-group"><label>Day Offset</label>
+                        <input name="day_offset" type="number" min="0" max="365" value="${Number(rule.day_offset || 0)}" required></div>
+                    <div class="form-group"><label>Sort Order</label>
+                        <input name="sort_order" type="number" min="0" value="${Number(rule.sort_order || 0)}"></div>
+                    <div class="form-group"><label>Enabled</label>
+                        <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
+                            <input name="is_enabled" type="checkbox" ${rule.is_enabled !== false ? 'checked' : ''}>
+                            <span>Rule is enabled</span>
+                        </label></div>
+                    <div class="form-group full-width"><label>Subject Template</label>
+                        <input name="subject_template" value="${escapeHtml(rule.subject_template || '')}" placeholder="Optional – defaults if blank"></div>
+                    <div class="form-group full-width"><label>Body Template</label>
+                        <textarea name="body_template" rows="6" placeholder="Optional – defaults if blank">${escapeHtml(rule.body_template || '')}</textarea></div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${existing ? 'Update' : 'Create'} Rule</button>
+                </div>
+            </form>`);
+    },
+
+    async saveReminderRule(e, id = null) {
+        e.preventDefault();
+        const form = e.target;
+        const data = {
+            name: form.name.value || null,
+            timing_direction: form.timing_direction.value,
+            day_offset: parseInt(form.day_offset.value, 10) || 0,
+            sort_order: form.sort_order.value === '' ? null : (parseInt(form.sort_order.value, 10) || 0),
+            is_enabled: !!form.is_enabled.checked,
+            subject_template: form.subject_template.value || null,
+            body_template: form.body_template.value || null,
+        };
+        try {
+            if (id) {
+                await API.put(`/settings/invoice-reminder-rules/${id}`, data);
+                toast('Invoice reminder rule updated');
+            } else {
+                await API.post('/settings/invoice-reminder-rules', data);
+                toast('Invoice reminder rule created');
+            }
+            closeModal();
+            await SettingsPage.loadInvoiceReminderRules();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    },
+
+    async deleteReminderRule(id) {
+        if (typeof confirm === 'function' && !confirm('Delete this invoice reminder rule?')) return;
+        try {
+            await API.del(`/settings/invoice-reminder-rules/${id}`);
+            toast('Invoice reminder rule deleted');
+            await SettingsPage.loadInvoiceReminderRules();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
     },
 
     async loadDemoData() {

@@ -4,13 +4,19 @@
 # everything into a single key-value store because nobody needs 12 tabs.
 # ============================================================================
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 import app.config as app_config
 from app.database import get_db
+from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRule
 from app.models.settings import Settings, DEFAULT_SETTINGS
+from app.schemas.invoice_reminders import (
+    InvoiceReminderRuleCreate,
+    InvoiceReminderRuleResponse,
+    InvoiceReminderRuleUpdate,
+)
 from app.services.auth import require_permissions
 from app.services.chart_setup_status import (
     CHART_SETUP_SOURCE_TEMPLATE_PREFIX,
@@ -18,6 +24,12 @@ from app.services.chart_setup_status import (
 )
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
 from app.services.closing_date import hash_closing_date_password
+from app.services.invoice_reminders import (
+    default_invoice_reminder_body_template,
+    default_invoice_reminder_subject_template,
+    ensure_default_invoice_reminder_rules,
+    invoice_reminder_rule_label,
+)
 from app.services.rate_limit import enforce_rate_limit
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
@@ -69,6 +81,27 @@ def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
         result["smtp_password_notice"] = "Configure SMTP_PASSWORD in the environment before using authenticated SMTP."
 
     return result
+
+
+def _validate_invoice_reminder_rule_uniqueness(
+    db: Session,
+    *,
+    timing_direction: str,
+    day_offset: int,
+    exclude_rule_id: int | None = None,
+):
+    query = (
+        db.query(InvoiceReminderRule)
+        .filter(InvoiceReminderRule.timing_direction == timing_direction)
+        .filter(InvoiceReminderRule.day_offset == day_offset)
+    )
+    if exclude_rule_id is not None:
+        query = query.filter(InvoiceReminderRule.id != exclude_rule_id)
+    if query.first():
+        raise HTTPException(
+            status_code=400,
+            detail="A reminder rule already exists for that timing direction and day offset",
+        )
 
 
 @router.get("/public")
@@ -124,6 +157,100 @@ def update_settings(
     return _settings_for_client(settings)
 
 
+@router.get("/invoice-reminder-rules", response_model=list[InvoiceReminderRuleResponse])
+def list_invoice_reminder_rules(
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    rows = ensure_default_invoice_reminder_rules(db)
+    return [InvoiceReminderRuleResponse.model_validate(row) for row in rows]
+
+
+@router.post("/invoice-reminder-rules", response_model=InvoiceReminderRuleResponse, status_code=201)
+def create_invoice_reminder_rule(
+    data: InvoiceReminderRuleCreate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    ensure_default_invoice_reminder_rules(db)
+    _validate_invoice_reminder_rule_uniqueness(
+        db,
+        timing_direction=data.timing_direction,
+        day_offset=data.day_offset,
+    )
+    current_max = db.query(InvoiceReminderRule).order_by(InvoiceReminderRule.sort_order.desc(), InvoiceReminderRule.id.desc()).first()
+    next_sort_order = (current_max.sort_order if current_max else -1) + 1
+    rule = InvoiceReminderRule(
+        name=data.name or invoice_reminder_rule_label(data.timing_direction, data.day_offset),
+        timing_direction=data.timing_direction,
+        day_offset=data.day_offset,
+        is_enabled=data.is_enabled,
+        sort_order=data.sort_order if data.sort_order is not None else next_sort_order,
+        subject_template=data.subject_template or default_invoice_reminder_subject_template(data.timing_direction, data.day_offset),
+        body_template=data.body_template or default_invoice_reminder_body_template(data.timing_direction, data.day_offset),
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return InvoiceReminderRuleResponse.model_validate(rule)
+
+
+@router.put("/invoice-reminder-rules/{rule_id}", response_model=InvoiceReminderRuleResponse)
+def update_invoice_reminder_rule(
+    rule_id: int,
+    data: InvoiceReminderRuleUpdate,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    ensure_default_invoice_reminder_rules(db)
+    rule = db.query(InvoiceReminderRule).filter(InvoiceReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Invoice reminder rule not found")
+
+    new_direction = data.timing_direction or rule.timing_direction
+    new_day_offset = data.day_offset if data.day_offset is not None else rule.day_offset
+    _validate_invoice_reminder_rule_uniqueness(
+        db,
+        timing_direction=new_direction,
+        day_offset=new_day_offset,
+        exclude_rule_id=rule.id,
+    )
+
+    rule.timing_direction = new_direction
+    rule.day_offset = new_day_offset
+    if data.is_enabled is not None:
+        rule.is_enabled = data.is_enabled
+    if data.sort_order is not None:
+        rule.sort_order = data.sort_order
+    rule.name = data.name or invoice_reminder_rule_label(rule.timing_direction, rule.day_offset)
+    rule.subject_template = data.subject_template or default_invoice_reminder_subject_template(rule.timing_direction, rule.day_offset)
+    rule.body_template = data.body_template or default_invoice_reminder_body_template(rule.timing_direction, rule.day_offset)
+
+    db.commit()
+    db.refresh(rule)
+    return InvoiceReminderRuleResponse.model_validate(rule)
+
+
+@router.delete("/invoice-reminder-rules/{rule_id}")
+def delete_invoice_reminder_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("settings.manage")),
+):
+    ensure_default_invoice_reminder_rules(db)
+    rule = db.query(InvoiceReminderRule).filter(InvoiceReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Invoice reminder rule not found")
+    if db.query(InvoiceReminderAudit).filter(InvoiceReminderAudit.rule_id == rule_id).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a reminder rule with history; disable it instead",
+        )
+    db.delete(rule)
+    db.commit()
+    return {"status": "deleted"}
+
+
 @router.post("/test-email")
 def test_email(
     db: Session = Depends(get_db),
@@ -140,7 +267,6 @@ def test_email(
     )
     settings = _get_all(db)
     if not settings.get("smtp_host"):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="SMTP not configured")
     try:
         from app.services.email_service import send_email_or_raise
@@ -154,9 +280,7 @@ def test_email(
         )
         return {"status": "sent"}
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
-
 
 
 @router.post("/load-chart-template/{template_key}")
@@ -165,7 +289,6 @@ def load_chart_template(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
 ):
-    from fastapi import HTTPException
     try:
         result = run_chart_template_load(db, template_key)
         mark_chart_setup_ready(db, f"{CHART_SETUP_SOURCE_TEMPLATE_PREFIX}{template_key}")
@@ -173,6 +296,7 @@ def load_chart_template(
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @router.post("/load-demo-data")
 def load_demo_data(

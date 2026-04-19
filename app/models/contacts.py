@@ -21,12 +21,14 @@ class Customer(Base):
     def __init__(self, **kwargs):
         kwargs.setdefault("bill_country", "NZ")
         kwargs.setdefault("ship_country", "NZ")
+        kwargs.setdefault("invoice_reminders_enabled", True)
         super().__init__(**kwargs)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
     company = Column(String(200), nullable=True)
     email = Column(String(200), nullable=True)
+    invoice_reminders_enabled = Column(Boolean, default=True)
     phone = Column(String(50), nullable=True)
     mobile = Column(String(50), nullable=True)
     fax = Column(String(50), nullable=True)
