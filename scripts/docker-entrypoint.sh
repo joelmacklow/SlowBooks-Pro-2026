@@ -1,9 +1,12 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-APP_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+APP_ROOT="${APP_ROOT:-/app}"
+if [ ! -d "$APP_ROOT/app" ]; then
+    APP_ROOT="$(pwd)"
+fi
 cd "$APP_ROOT"
+export APP_ROOT
 export PYTHONPATH="$APP_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 mkdir -p "$APP_ROOT/backups" "$APP_ROOT/app/static/uploads" 2>/dev/null || true
@@ -39,8 +42,14 @@ else
 fi
 
 python - <<'PY'
+import os
 import sys
 import time
+
+app_root = os.environ.get("APP_ROOT", "/app")
+if app_root and app_root not in sys.path:
+    sys.path.insert(0, app_root)
+
 from sqlalchemy import create_engine, text
 from app.config import DATABASE_URL
 

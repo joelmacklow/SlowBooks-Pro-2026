@@ -36,6 +36,7 @@ services:
     volumes:
       - ./:/app:Z
     restart: unless-stopped
+    command: ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]
 
   invoice_reminder_scheduler:
     build:
@@ -59,6 +60,7 @@ services:
     volumes:
       - ./:/app:Z
     restart: unless-stopped
+    command: ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]
 
 volumes:
   postgres_data:
