@@ -4,6 +4,7 @@ import types
 import unittest
 from datetime import date
 from decimal import Decimal
+from unittest import mock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -181,6 +182,103 @@ class InvoiceReminderFoundationTests(unittest.TestCase):
         self.assertEqual(row["last_reminder_trigger_type"], "manual")
         self.assertEqual(row["last_reminder_detail"], "Mailbox full")
         self.assertIsNotNone(row["last_reminder_sent_at"])
+
+    def test_automatic_run_sends_matching_reminders_and_records_automatic_audits(self):
+        from types import SimpleNamespace
+
+        from app.models.invoice_reminders import InvoiceReminderAudit
+        from app.services import invoice_reminders as reminder_service
+
+        sent_logs = iter([SimpleNamespace(id=101), SimpleNamespace(id=102)])
+
+        with mock.patch.object(reminder_service, "generate_invoice_pdf", return_value=b"%PDF-reminder"), \
+             mock.patch.object(reminder_service, "send_document_email_with_log", side_effect=lambda *args, **kwargs: next(sent_logs)) as send_mock:
+            with self.Session() as db:
+                payload = reminder_service.process_automatic_invoice_reminders(
+                    db,
+                    as_of_date=date(2026, 4, 19),
+                )
+                audits = db.query(InvoiceReminderAudit).order_by(InvoiceReminderAudit.invoice_id, InvoiceReminderAudit.rule_id).all()
+
+        self.assertEqual(payload["sent_count"], 2)
+        self.assertEqual(payload["failed_count"], 0)
+        self.assertEqual(payload["skipped_count"], 0)
+        self.assertEqual(send_mock.call_count, 2)
+        self.assertEqual(
+            {(audit.trigger_type, audit.status, audit.scheduled_for_date, audit.email_log_id) for audit in audits},
+            {
+                ("automatic", "sent", date(2026, 4, 19), 101),
+                ("automatic", "sent", date(2026, 4, 19), 102),
+            },
+        )
+
+    def test_automatic_run_does_not_resend_same_invoice_rule_on_same_scheduled_date(self):
+        from types import SimpleNamespace
+
+        from app.models.invoice_reminders import InvoiceReminderAudit
+        from app.services import invoice_reminders as reminder_service
+
+        sent_logs = iter([SimpleNamespace(id=101), SimpleNamespace(id=102)])
+
+        with mock.patch.object(reminder_service, "generate_invoice_pdf", return_value=b"%PDF-reminder"), \
+             mock.patch.object(reminder_service, "send_document_email_with_log", side_effect=lambda *args, **kwargs: next(sent_logs)) as send_mock:
+            with self.Session() as db:
+                first = reminder_service.process_automatic_invoice_reminders(db, as_of_date=date(2026, 4, 19))
+                second = reminder_service.process_automatic_invoice_reminders(db, as_of_date=date(2026, 4, 19))
+                audit_count = db.query(InvoiceReminderAudit).count()
+
+        self.assertEqual(first["sent_count"], 2)
+        self.assertEqual(second["sent_count"], 0)
+        self.assertEqual(second["skipped_count"], 2)
+        self.assertEqual(send_mock.call_count, 2)
+        self.assertEqual(audit_count, 2)
+
+    def test_automatic_run_does_not_retry_same_day_after_failed_automatic_attempt(self):
+        from types import SimpleNamespace
+
+        from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRule
+        from app.models.invoices import Invoice
+        from app.routes import settings as settings_route
+        from app.services import invoice_reminders as reminder_service
+
+        with self.Session() as db:
+            settings_route.list_invoice_reminder_rules(db=db, auth={"user_id": 1})
+            rule = db.query(InvoiceReminderRule).filter(
+                InvoiceReminderRule.timing_direction == "after_due",
+                InvoiceReminderRule.day_offset == 7,
+            ).one()
+            invoice = db.query(Invoice).filter(Invoice.invoice_number == "INV-AFTER").one()
+            db.add(InvoiceReminderAudit(
+                invoice_id=invoice.id,
+                customer_id=self.aroha_id,
+                rule_id=rule.id,
+                email_log_id=None,
+                recipient="aroha@example.com",
+                status="failed",
+                trigger_type="automatic",
+                scheduled_for_date=date(2026, 4, 19),
+                days_from_due_snapshot=7,
+                balance_due_snapshot=Decimal("80.00"),
+                detail="SMTP timeout",
+            ))
+            db.commit()
+
+            with mock.patch.object(reminder_service, "generate_invoice_pdf", return_value=b"%PDF-reminder"), \
+                 mock.patch.object(reminder_service, "send_document_email_with_log", return_value=SimpleNamespace(id=301)) as send_mock:
+                payload = reminder_service.process_automatic_invoice_reminders(
+                    db,
+                    as_of_date=date(2026, 4, 19),
+                )
+                audits = db.query(InvoiceReminderAudit).order_by(InvoiceReminderAudit.id).all()
+
+        self.assertEqual(payload["sent_count"], 1)
+        self.assertEqual(payload["skipped_count"], 1)
+        self.assertEqual(payload["failed_count"], 0)
+        self.assertEqual(send_mock.call_count, 1)
+        self.assertEqual(len(audits), 2)
+        self.assertEqual(audits[0].status, "failed")
+        self.assertEqual(audits[0].trigger_type, "automatic")
+        self.assertEqual(audits[1].status, "sent")
 
     def test_custom_rule_crud_still_works_alongside_default_rules(self):
         from app.routes import settings as settings_route

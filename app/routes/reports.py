@@ -36,7 +36,10 @@ from app.routes.settings import _get_all as get_settings
 from app.services.accounting import get_default_bank_account_id
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
-from app.services.invoice_reminders import ensure_default_invoice_reminder_rules
+from app.services.invoice_reminders import (
+    ensure_default_invoice_reminder_rules,
+    invoice_reminder_preview_items,
+)
 from app.services.gst_return import (
     calculate_gst_return,
     generate_gst101a_pdf,
@@ -179,83 +182,7 @@ def _overdue_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
 
 
 def _invoice_reminder_preview_items(db: Session, as_of_date: date) -> list[dict]:
-    rules = [rule for rule in ensure_default_invoice_reminder_rules(db) if rule.is_enabled]
-    if not rules:
-        return []
-
-    invoices = (
-        db.query(Invoice)
-        .join(Customer, Invoice.customer_id == Customer.id)
-        .filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]))
-        .filter(Invoice.due_date.is_not(None))
-        .filter(Invoice.balance_due > 0)
-        .filter(Customer.is_active == True)
-        .filter(Customer.invoice_reminders_enabled == True)
-        .order_by(Invoice.due_date, Customer.name, Invoice.invoice_number, Invoice.id)
-        .all()
-    )
-
-    matched_items: list[dict] = []
-    matched_keys: list[tuple[int, int]] = []
-    for invoice in invoices:
-        customer = invoice.customer
-        recipient = (customer.email or '').strip() if customer else ''
-        if not recipient:
-            continue
-        days_from_due = (as_of_date - invoice.due_date).days
-        for rule in rules:
-            is_match = (
-                days_from_due == -rule.day_offset
-                if rule.timing_direction == 'before_due'
-                else days_from_due == rule.day_offset
-            )
-            if not is_match:
-                continue
-            matched_keys.append((invoice.id, rule.id))
-            matched_items.append({
-                'invoice_id': invoice.id,
-                'invoice_number': invoice.invoice_number,
-                'customer_id': customer.id,
-                'customer_name': customer.name,
-                'recipient': recipient,
-                'due_date': invoice.due_date,
-                'balance_due': Decimal(str(invoice.balance_due or 0)),
-                'days_from_due': days_from_due,
-                'rule_id': rule.id,
-                'rule_name': rule.name,
-                'timing_direction': rule.timing_direction,
-                'day_offset': rule.day_offset,
-                'last_reminder_sent_at': None,
-                'last_reminder_status': None,
-                'last_reminder_trigger_type': None,
-                'last_reminder_detail': None,
-            })
-
-    if not matched_items:
-        return []
-
-    invoice_ids = {invoice_id for invoice_id, _ in matched_keys}
-    rule_ids = {rule_id for _, rule_id in matched_keys}
-    latest_audits: dict[tuple[int, int], InvoiceReminderAudit] = {}
-    audits = (
-        db.query(InvoiceReminderAudit)
-        .filter(InvoiceReminderAudit.invoice_id.in_(invoice_ids))
-        .filter(InvoiceReminderAudit.rule_id.in_(rule_ids))
-        .order_by(InvoiceReminderAudit.created_at.desc(), InvoiceReminderAudit.id.desc())
-        .all()
-    )
-    for audit in audits:
-        latest_audits.setdefault((audit.invoice_id, audit.rule_id), audit)
-
-    for item in matched_items:
-        audit = latest_audits.get((item['invoice_id'], item['rule_id']))
-        if audit:
-            item['last_reminder_sent_at'] = audit.created_at
-            item['last_reminder_status'] = audit.status
-            item['last_reminder_trigger_type'] = audit.trigger_type
-            item['last_reminder_detail'] = audit.detail
-
-    return matched_items
+    return invoice_reminder_preview_items(db, as_of_date)
 
 def _report_tables_profit_loss(report: dict, company: dict) -> list[dict]:
     rows = [_pdf_row(_pdf_cell("Income", colspan=2), class_name="section-row")]
