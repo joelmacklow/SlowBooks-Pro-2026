@@ -3,6 +3,9 @@ set -eu
 
 mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true
 
+RUN_INVOICE_REMINDER_SCHEDULER="${RUN_INVOICE_REMINDER_SCHEDULER:-false}"
+
+if [ "$RUN_INVOICE_REMINDER_SCHEDULER" != "true" ]; then
 if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
 BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
 import secrets
@@ -26,6 +29,9 @@ PY
 printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
 printf '%s %s\n' 'Bootstrap admin setup URL:' "$BOOTSTRAP_SETUP_URL"
 printf '%s\n' 'If accessing SlowBooks remotely, replace localhost with your Docker host name or IP before opening the URL.'
+else
+printf '%s\n' 'Starting invoice reminder scheduler service.'
+fi
 
 python - <<'PY'
 import sys
@@ -50,4 +56,9 @@ raise SystemExit(f"Database not reachable after waiting: {last_error}")
 PY
 
 python scripts/bootstrap_database.py
+
+if [ "$RUN_INVOICE_REMINDER_SCHEDULER" = "true" ]; then
+exec python scripts/run_invoice_reminder_scheduler.py
+fi
+
 exec python run.py
