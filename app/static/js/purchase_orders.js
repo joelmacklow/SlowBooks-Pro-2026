@@ -103,11 +103,12 @@ const PurchaseOrdersPage = {
         return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
     },
 
-    itemMatchesFilter(item, query) {
-        const needle = String(query || '').trim().toLowerCase();
-        if (!needle) return true;
-        return String(item.code || '').toLowerCase().includes(needle)
-            || String(item.name || '').toLowerCase().includes(needle);
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
     },
 
     _itemsForVendor(vendorId, selectedItemId = null) {
@@ -118,15 +119,26 @@ const PurchaseOrdersPage = {
         });
     },
 
-    _filteredItemsForLine(vendorId, query, selectedItemId = null) {
-        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).filter(item => {
-            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
-            return PurchaseOrdersPage.itemMatchesFilter(item, query);
-        });
+    _itemsForVendorByPickerValue(vendorId, value, selectedItemId = null) {
+        const needle = String(value || '').trim().toLowerCase();
+        if (!needle) return null;
+        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).find(item =>
+            PurchaseOrdersPage.itemSearchValues(item).some(candidate => candidate.toLowerCase() === needle)
+        ) || null;
     },
 
-    itemOptionsHtml(items, selectedItemId = null) {
-        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${PurchaseOrdersPage.itemOptionLabel(i)}</option>`).join('');
+    itemDatalistOptionsHtml(items) {
+        return items.map(item =>
+            PurchaseOrdersPage.itemSearchValues(item).map(value => `<option value="${escapeHtml(value)}"></option>`).join('')
+        ).join('');
+    },
+
+    selectedItemDisplayValue(line, items) {
+        if (line.item_id) {
+            const selected = (items || []).find(item => String(item.id) === String(line.item_id));
+            if (selected) return PurchaseOrdersPage.itemOptionLabel(selected);
+        }
+        return line.item_picker_value || '';
     },
 
     _snapshotLinesFromDom() {
@@ -136,7 +148,7 @@ const PurchaseOrdersPage = {
             const gst = readGstLinePayload(row);
             return {
                 item_id: row.querySelector('.line-item')?.value ? parseInt(row.querySelector('.line-item').value) : null,
-                item_filter_query: row.querySelector('.line-item-filter')?.value || '',
+                item_picker_value: row.querySelector('.line-item-picker')?.value || '',
                 description: row.querySelector('.line-desc')?.value || '',
                 quantity: row.querySelector('.line-qty')?.value || 1,
                 rate: row.querySelector('.line-rate')?.value || 0,
@@ -233,18 +245,14 @@ const PurchaseOrdersPage = {
     },
 
     lineHtml(idx, line, items, canManage = true, vendorId = null) {
-        const filterQuery = line.item_filter_query || '';
-        const filteredItems = items.filter(item => {
-            if (line.item_id && String(item.id) === String(line.item_id)) return true;
-            return PurchaseOrdersPage.itemMatchesFilter(item, filterQuery);
-        });
-        const opts = PurchaseOrdersPage.itemOptionsHtml(filteredItems, line.item_id);
+        const datalistId = `po-line-items-${idx}`;
+        const pickerValue = PurchaseOrdersPage.selectedItemDisplayValue(line, items);
+        const opts = PurchaseOrdersPage.itemDatalistOptionsHtml(items);
         return `<tr data-poline="${idx}">
             <td>
-                <div style="display:grid; gap:4px;">
-                    <input class="line-item-filter" placeholder="Filter by code or name" value="${escapeHtml(filterQuery)}" oninput="PurchaseOrdersPage.filterLineItems(${idx}, this.value)" ${canManage ? '' : 'disabled'}>
-                    <select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select>
-                </div>
+                <input class="line-item-picker" list="${datalistId}" value="${escapeHtml(pickerValue)}" oninput="PurchaseOrdersPage.itemPickerChanged(${idx}, this.value)" placeholder="Select item by code or name" ${canManage ? '' : 'disabled'}>
+                <datalist id="${datalistId}">${opts}</datalist>
+                <input class="line-item" type="hidden" value="${line.item_id || ''}">
             </td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
@@ -272,23 +280,27 @@ const PurchaseOrdersPage = {
         const row = $(`[data-poline="${idx}"]`);
         const item = PurchaseOrdersPage._items.find(i => i.id == row.querySelector('.line-item').value);
         if (item) {
+            const picker = row.querySelector('.line-item-picker');
+            if (picker) picker.value = PurchaseOrdersPage.itemOptionLabel(item);
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.cost || item.rate;
         }
         PurchaseOrdersPage.updateTotals();
     },
 
-    filterLineItems(idx, query) {
+    itemPickerChanged(idx, value) {
         const row = $(`[data-poline="${idx}"]`);
         if (!row) return;
-        const itemSelect = row.querySelector('.line-item');
-        if (!itemSelect) return;
-        const currentValue = itemSelect.value;
+        const itemInput = row.querySelector('.line-item');
+        if (!itemInput) return;
         const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
-        const filtered = PurchaseOrdersPage._filteredItemsForLine(vendorId, query, currentValue);
-        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(filtered, currentValue)}`;
-        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
-            itemSelect.value = '';
+        const currentValue = itemInput.value;
+        const matched = PurchaseOrdersPage._itemsForVendorByPickerValue(vendorId, value, currentValue);
+        if (matched) {
+            itemInput.value = matched.id;
+            PurchaseOrdersPage.itemSel(idx);
+        } else if (!String(value || '').trim()) {
+            itemInput.value = '';
         }
     },
 

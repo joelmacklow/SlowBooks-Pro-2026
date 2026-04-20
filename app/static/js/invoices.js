@@ -151,22 +151,34 @@ const InvoicesPage = {
         return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
     },
 
-    itemMatchesFilter(item, query) {
-        const needle = String(query || '').trim().toLowerCase();
-        if (!needle) return true;
-        return String(item.code || '').toLowerCase().includes(needle)
-            || String(item.name || '').toLowerCase().includes(needle);
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
     },
 
-    filteredItems(query, selectedItemId = null) {
-        return (InvoicesPage._items || []).filter(item => {
-            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
-            return InvoicesPage.itemMatchesFilter(item, query);
-        });
+    findItemByPickerValue(value) {
+        const needle = String(value || '').trim().toLowerCase();
+        if (!needle) return null;
+        return (InvoicesPage._items || []).find(item =>
+            InvoicesPage.itemSearchValues(item).some(candidate => candidate.toLowerCase() === needle)
+        ) || null;
     },
 
-    itemOptionsHtml(items, selectedItemId = null) {
-        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${InvoicesPage.itemOptionLabel(i)}</option>`).join('');
+    itemDatalistOptionsHtml(items) {
+        return items.map(item =>
+            InvoicesPage.itemSearchValues(item).map(value => `<option value="${escapeHtml(value)}"></option>`).join('')
+        ).join('');
+    },
+
+    selectedItemDisplayValue(line, items) {
+        if (line.item_id) {
+            const selected = (items || []).find(item => String(item.id) === String(line.item_id));
+            if (selected) return InvoicesPage.itemOptionLabel(selected);
+        }
+        return line.item_picker_value || '';
     },
 
     renderDetailScreen() {
@@ -414,19 +426,14 @@ const InvoicesPage = {
     },
 
     lineRowHtml(idx, line, items, canManage = true) {
-        const filterQuery = line.item_filter_query || '';
-        const filteredItems = items.filter(item => {
-            if (line.item_id && String(item.id) === String(line.item_id)) return true;
-            return InvoicesPage.itemMatchesFilter(item, filterQuery);
-        });
-        const itemOpts = InvoicesPage.itemOptionsHtml(filteredItems, line.item_id);
+        const datalistId = `invoice-line-items-${idx}`;
+        const pickerValue = InvoicesPage.selectedItemDisplayValue(line, items);
+        const itemOpts = InvoicesPage.itemDatalistOptionsHtml(items);
         return `<tr data-line="${idx}">
             <td>
-                <div style="display:grid; gap:4px;">
-                    <input class="line-item-filter" placeholder="Filter by code or name" value="${escapeHtml(filterQuery)}" oninput="InvoicesPage.filterLineItems(${idx}, this.value)" ${canManage ? '' : 'disabled'}>
-                    <select class="line-item" onchange="InvoicesPage.itemSelected(${idx})" ${canManage ? '' : 'disabled'}>
-                        <option value="">--</option>${itemOpts}</select>
-                </div>
+                <input class="line-item-picker" list="${datalistId}" value="${escapeHtml(pickerValue)}" oninput="InvoicesPage.itemInputChanged(${idx}, this.value)" placeholder="Select item by code or name" ${canManage ? '' : 'disabled'}>
+                <datalist id="${datalistId}">${itemOpts}</datalist>
+                <input class="line-item" type="hidden" value="${line.item_id || ''}">
             </td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
@@ -454,22 +461,25 @@ const InvoicesPage = {
         const itemId = row.querySelector('.line-item').value;
         const item = InvoicesPage._items.find(i => i.id == itemId);
         if (item) {
+            const picker = row.querySelector('.line-item-picker');
+            if (picker) picker.value = InvoicesPage.itemOptionLabel(item);
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.rate;
             InvoicesPage.recalc();
         }
     },
 
-    filterLineItems(idx, query) {
+    itemInputChanged(idx, value) {
         const row = $(`[data-line="${idx}"]`);
         if (!row) return;
-        const itemSelect = row.querySelector('.line-item');
-        if (!itemSelect) return;
-        const currentValue = itemSelect.value;
-        const filtered = InvoicesPage.filteredItems(query, currentValue);
-        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(filtered, currentValue)}`;
-        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
-            itemSelect.value = '';
+        const itemInput = row.querySelector('.line-item');
+        if (!itemInput) return;
+        const matched = InvoicesPage.findItemByPickerValue(value);
+        if (matched) {
+            itemInput.value = matched.id;
+            InvoicesPage.itemSelected(idx);
+        } else if (!String(value || '').trim()) {
+            itemInput.value = '';
         }
     },
 

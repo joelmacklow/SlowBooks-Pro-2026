@@ -145,10 +145,10 @@ vm.runInContext(poCode, poContext);
     assert.ok(vendorTwoLine.includes('200-10'));
     assert.ok(!vendorTwoLine.includes('Pens'));
 
-    const byVendorAndCode = poContext.PurchaseOrdersPage._filteredItemsForLine(1, '100', null);
-    assert.deepStrictEqual(byVendorAndCode.map(item => item.name), ['Pens']);
-    const byVendorAndName = poContext.PurchaseOrdersPage._filteredItemsForLine(2, 'pap', null);
-    assert.deepStrictEqual(byVendorAndName.map(item => item.name), ['Paper']);
+    assert.strictEqual(JSON.stringify(poContext.PurchaseOrdersPage.itemSearchValues(poContext.PurchaseOrdersPage._items[0])), JSON.stringify(['100-20', 'Pens', '100-20 — Pens']));
+    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(1, '100-20', null).name, 'Pens');
+    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(2, 'Paper', null).name, 'Paper');
+    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(1, 'Paper', null), null);
 })().catch(err => {
     console.error(err);
     process.exit(1);

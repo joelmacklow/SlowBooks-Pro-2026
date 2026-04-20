@@ -39,13 +39,13 @@ const label = context.InvoicesPage.itemOptionLabel(context.InvoicesPage._items[0
 assert.ok(label.includes('100-20'));
 assert.ok(label.includes('Pens'));
 
-const byCode = context.InvoicesPage.filteredItems('100', null);
-assert.deepStrictEqual(byCode.map(item => item.name), ['Pens']);
+assert.strictEqual(JSON.stringify(context.InvoicesPage.itemSearchValues(context.InvoicesPage._items[0])), JSON.stringify(['100-20', 'Pens', '100-20 — Pens']));
+assert.strictEqual(context.InvoicesPage.findItemByPickerValue('100-20').id, 2);
+assert.strictEqual(context.InvoicesPage.findItemByPickerValue('Paper').id, 3);
 
-const byName = context.InvoicesPage.filteredItems('pap', null);
-assert.deepStrictEqual(byName.map(item => item.name), ['Paper']);
-
-const html = context.InvoicesPage.lineRowHtml(0, { item_id: 2, item_filter_query: '100', description: '', quantity: 1, rate: 50, gst_code: 'GST15' }, context.InvoicesPage._items, true);
-assert.ok(html.includes('Filter by code or name'));
+const html = context.InvoicesPage.lineRowHtml(0, { item_id: 2, description: '', quantity: 1, rate: 50, gst_code: 'GST15' }, context.InvoicesPage._items, true);
+assert.ok(html.includes('Select item by code or name'));
+assert.ok(!html.includes('line-item-filter'));
+assert.ok(html.includes('datalist'));
 assert.ok(html.includes('100-20'));
-assert.ok(!html.includes('Paper'));
+assert.ok(html.includes('Paper'));
