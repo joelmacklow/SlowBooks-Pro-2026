@@ -78,6 +78,11 @@ const CustomersPage = {
             return `<div class="empty-state"><p>Select a customer first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/customers')">Back to Customers</button></p></div>`;
         }
         const { customer, invoices, estimates, creditMemos } = state;
+        const outstandingBalance = (invoices || []).reduce((total, inv) => {
+            return String(inv.status || '').toLowerCase() === 'paid'
+                ? total
+                : total + Number(inv.balance_due || 0);
+        }, 0);
         const invoiceRows = invoices.map(inv => `<tr>
             <td><button class="btn btn-link" onclick="InvoicesPage.open(${inv.id}, '#/customers/detail')">${escapeHtml(inv.invoice_number)}</button></td>
             <td>${formatDate(inv.date)}</td>
@@ -110,7 +115,7 @@ const CustomersPage = {
                 </div>
             </div>
             <div class="card-grid">
-                <div class="card"><div class="card-header">Balance</div><div class="card-value">${formatCurrency(customer.balance)}</div></div>
+                <div class="card"><div class="card-header">Balance</div><div class="card-value">${formatCurrency(outstandingBalance)}</div></div>
                 <div class="card"><div class="card-header">Email</div><div>${escapeHtml(customer.email || '—')}</div></div>
                 <div class="card"><div class="card-header">Phone</div><div>${escapeHtml(customer.phone || customer.mobile || '—')}</div></div>
             </div>
