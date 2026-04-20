@@ -51,6 +51,10 @@ const ReportsPage = {
                     <div class="card-header">Customer Statement</div>
                     <p style="font-size:13px; color:var(--gray-500);">Invoice/payment history PDF</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.monthlyStatements()">
+                    <div class="card-header">Monthly Statements</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Batch send statements to flagged customers, including zero balances</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.overdueStatements()">
                     <div class="card-header">Overdue Statements</div>
                     <p style="font-size:13px; color:var(--gray-500);">Batch send statements to overdue customers</p>
@@ -1091,6 +1095,19 @@ const ReportsPage = {
         return ReportsPage._reportStates["overdue-statements"];
     },
 
+    _ensureMonthlyStatementsState() {
+        ReportsPage._reportStates = ReportsPage._reportStates || {};
+        if (!ReportsPage._reportStates["monthly-statements"]) {
+            ReportsPage._reportStates["monthly-statements"] = {
+                as_of_date: todayISO(),
+                selected_customer_ids: [],
+                items: [],
+                last_results: [],
+            };
+        }
+        return ReportsPage._reportStates["monthly-statements"];
+    },
+
     async customerStatement() {
         ReportsPage._ensureStatementState();
         return App.navigate('#/reports/customer-statement');
@@ -1099,6 +1116,11 @@ const ReportsPage = {
     async overdueStatements() {
         ReportsPage._ensureOverdueStatementsState();
         return App.navigate('#/reports/overdue-statements');
+    },
+
+    async monthlyStatements() {
+        ReportsPage._ensureMonthlyStatementsState();
+        return App.navigate('#/reports/monthly-statements');
     },
 
     changeStatementCustomer(value) {
@@ -1122,6 +1144,13 @@ const ReportsPage = {
         App.navigate('#/reports/overdue-statements');
     },
 
+    changeMonthlyStatementsDate(value) {
+        const state = ReportsPage._ensureMonthlyStatementsState();
+        state.as_of_date = value;
+        state.selected_customer_ids = [];
+        App.navigate('#/reports/monthly-statements');
+    },
+
     toggleOverdueStatementSelection(customerId) {
         const state = ReportsPage._ensureOverdueStatementsState();
         const id = String(customerId);
@@ -1138,6 +1167,24 @@ const ReportsPage = {
         const ids = (state.items || []).map(item => String(item.customer_id));
         state.selected_customer_ids = state.selected_customer_ids.length === ids.length ? [] : ids;
         App.navigate('#/reports/overdue-statements');
+    },
+
+    toggleMonthlyStatementSelection(customerId) {
+        const state = ReportsPage._ensureMonthlyStatementsState();
+        const id = String(customerId);
+        if (state.selected_customer_ids.includes(id)) {
+            state.selected_customer_ids = state.selected_customer_ids.filter(item => item !== id);
+        } else {
+            state.selected_customer_ids.push(id);
+        }
+        App.navigate('#/reports/monthly-statements');
+    },
+
+    toggleAllMonthlyStatements() {
+        const state = ReportsPage._ensureMonthlyStatementsState();
+        const ids = (state.items || []).map(item => String(item.customer_id));
+        state.selected_customer_ids = state.selected_customer_ids.length === ids.length ? [] : ids;
+        App.navigate('#/reports/monthly-statements');
     },
 
     updateStatementRecipient(value) {
@@ -1249,6 +1296,29 @@ const ReportsPage = {
         }
     },
 
+    async sendSelectedMonthlyStatements() {
+        const state = ReportsPage._ensureMonthlyStatementsState();
+        const selectedItems = (state.items || []).filter(item => state.selected_customer_ids.includes(String(item.customer_id)));
+        if (!selectedItems.length) {
+            toast('Select at least one monthly statement customer first', 'error');
+            return;
+        }
+        try {
+            const result = await API.post('/reports/monthly-statements/send', {
+                as_of_date: state.as_of_date,
+                recipients: selectedItems.map(item => ({
+                    customer_id: item.customer_id,
+                    recipient: item.recipient,
+                })),
+            });
+            state.last_results = result.results || [];
+            toast(`Sent ${result.sent_count} monthly statements`);
+            App.navigate('#/reports/monthly-statements');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    },
+
     async renderOverdueStatementsScreen() {
         const state = ReportsPage._ensureOverdueStatementsState();
         const data = await API.get(`/reports/overdue-statements/candidates?as_of_date=${state.as_of_date}`);
@@ -1305,6 +1375,66 @@ const ReportsPage = {
             <div class="settings-section">
                 <div class="table-container"><table>
                     <thead><tr><th></th><th>Customer</th><th>Email</th><th class="amount">Invoices</th><th>Oldest Due</th><th class="amount">Overdue Balance</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table></div>
+            </div>
+            ${resultsHtml}`;
+    },
+
+    async renderMonthlyStatementsScreen() {
+        const state = ReportsPage._ensureMonthlyStatementsState();
+        const data = await API.get(`/reports/monthly-statements/candidates?as_of_date=${state.as_of_date}`);
+        state.items = data.items || [];
+        const selected = new Set(state.selected_customer_ids);
+        const allSelected = state.items.length > 0 && state.items.every(item => selected.has(String(item.customer_id)));
+        const rows = state.items.map(item => `
+            <tr>
+                <td><input type="checkbox" ${selected.has(String(item.customer_id)) ? 'checked' : ''} onchange="ReportsPage.toggleMonthlyStatementSelection(${item.customer_id})"></td>
+                <td>${escapeHtml(item.customer_name)}</td>
+                <td>${item.recipient ? escapeHtml(item.recipient) : '<span style="color:var(--gray-400);">No email</span>'}</td>
+                <td class="amount">${formatCurrency(item.statement_balance || 0)}</td>
+            </tr>
+        `).join("") || '<tr><td colspan="4" style="text-align:center; color:var(--gray-400);">No monthly statement customers configured</td></tr>';
+        const resultsHtml = (state.last_results || []).length ? `
+            <div class="settings-section">
+                <h3>Last batch results</h3>
+                <div class="table-container"><table>
+                    <thead><tr><th>Customer</th><th>Recipient</th><th>Status</th><th>Detail</th></tr></thead>
+                    <tbody>
+                        ${(state.last_results || []).map(row => `
+                            <tr>
+                                <td>${escapeHtml(row.customer_name || String(row.customer_id))}</td>
+                                <td>${escapeHtml(row.recipient || '')}</td>
+                                <td>${escapeHtml(row.status)}</td>
+                                <td>${escapeHtml(row.detail || '')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table></div>
+            </div>` : '';
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Reports</div>
+                    <h2>Monthly Statements</h2>
+                </div>
+                <button class="btn btn-secondary" onclick="App.navigate('#/reports')">Back to Reports</button>
+            </div>
+            <div class="settings-section">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>As of Date</label>
+                        <input type="date" value="${state.as_of_date}" onchange="ReportsPage.changeMonthlyStatementsDate(this.value)">
+                    </div>
+                </div>
+                <div class="form-actions" style="justify-content:flex-start;">
+                    <button class="btn btn-secondary" onclick="ReportsPage.toggleAllMonthlyStatements()">${allSelected ? 'Clear Selection' : 'Select All'}</button>
+                    <button class="btn btn-primary" onclick="ReportsPage.sendSelectedMonthlyStatements()" ${(state.selected_customer_ids || []).length ? '' : 'disabled'}>Send Selected Statements</button>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div class="table-container"><table>
+                    <thead><tr><th></th><th>Customer</th><th>Email</th><th class="amount">Statement Balance</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>
             </div>

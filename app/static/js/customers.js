@@ -104,6 +104,7 @@ const CustomersPage = {
                 <h3>Customer Details</h3>
                 <div class="form-grid">
                     <div><strong>Terms</strong><br>${escapeHtml(customer.terms || '—')}</div>
+                    <div><strong>Monthly Statements</strong><br>${customer.monthly_statements_enabled ? 'Enabled' : 'Disabled'}</div>
                     <div><strong>Tax ID</strong><br>${escapeHtml(customer.tax_id || '—')}</div>
                     <div><strong>Billing</strong><br>${escapeHtml([customer.bill_address1, customer.bill_address2, customer.bill_city, customer.bill_state, customer.bill_zip].filter(Boolean).join(', ') || '—')}</div>
                     <div><strong>Shipping</strong><br>${escapeHtml([customer.ship_address1, customer.ship_address2, customer.ship_city, customer.ship_state, customer.ship_zip].filter(Boolean).join(', ') || '—')}</div>
@@ -131,7 +132,7 @@ const CustomersPage = {
     },
 
     async showForm(id = null) {
-        let c = { name: '', company: '', email: '', invoice_reminders_enabled: true, phone: '', mobile: '', fax: '', website: '',
+        let c = { name: '', company: '', email: '', invoice_reminders_enabled: true, monthly_statements_enabled: false, phone: '', mobile: '', fax: '', website: '',
             bill_address1: '', bill_address2: '', bill_city: '', bill_state: '', bill_zip: '', bill_country: 'NZ',
             ship_address1: '', ship_address2: '', ship_city: '', ship_state: '', ship_zip: '', ship_country: 'NZ',
             terms: 'Net 30', credit_limit: '', tax_id: '', is_taxable: true, notes: '' };
@@ -151,6 +152,11 @@ const CustomersPage = {
                         <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
                             <input name="invoice_reminders_enabled" type="checkbox" ${c.invoice_reminders_enabled !== false ? 'checked' : ''}>
                             <span>Allow company invoice reminders for this customer</span>
+                        </label></div>
+                    <div class="form-group"><label>Monthly Statements</label>
+                        <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
+                            <input name="monthly_statements_enabled" type="checkbox" ${c.monthly_statements_enabled ? 'checked' : ''}>
+                            <span>Include this customer in monthly statement runs even when balance is zero</span>
                         </label></div>
                     <div class="form-group"><label>Phone</label>
                         <input name="phone" value="${escapeHtml(c.phone || '')}"></div>
@@ -214,6 +220,7 @@ const CustomersPage = {
         const form = new FormData(e.target);
         const data = Object.fromEntries(form.entries());
         data.invoice_reminders_enabled = !!e.target.invoice_reminders_enabled.checked;
+        data.monthly_statements_enabled = !!e.target.monthly_statements_enabled.checked;
         if (data.credit_limit) data.credit_limit = parseFloat(data.credit_limit);
         else delete data.credit_limit;
 

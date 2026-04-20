@@ -69,7 +69,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
                 "gst_number": "123-456-789",
             }.items():
                 db.add(Settings(key=key, value=value))
-            customer = Customer(name="Aroha Ltd", email="customer@example.com")
+            customer = Customer(name="Aroha Ltd", email="customer@example.com", monthly_statements_enabled=True)
             db.add(customer)
             db.flush()
             db.add(Invoice(
@@ -122,6 +122,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             (self.reports_route.gst_returns_overview, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.gst_return_transactions, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "page": 1, "page_size": 10}),
             (self.reports_route.sales_tax_report, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
+            (self.reports_route.monthly_statement_candidates, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.overdue_statement_candidates, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.invoice_reminder_preview, {"as_of_date": date(2026, 4, 30)}),
         ]
@@ -145,6 +146,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             self.reports_route.income_by_customer_pdf,
             self.reports_route.customer_statement_pdf,
             self.reports_route.email_customer_statement,
+            self.reports_route.send_monthly_statements,
             self.reports_route.send_overdue_statements,
         ]:
             self._assert_accounts_manage_gate(func)
@@ -185,6 +187,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 stmt_email_auth = self._auth_dependency(self.reports_route.email_customer_statement)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                monthly_stmt_auth = self._auth_dependency(self.reports_route.send_monthly_statements)(
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 batch_stmt_auth = self._auth_dependency(self.reports_route.send_overdue_statements)(
@@ -257,6 +262,20 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db,
                     auth=stmt_email_auth,
                 )
+                monthly_stmt = self.reports_route.send_monthly_statements(
+                    self.reports_route.BatchMonthlyStatementRequest(
+                        as_of_date=date(2026, 4, 30),
+                        recipients=[
+                            self.reports_route.MonthlyStatementRecipient(
+                                customer_id=self.customer_id,
+                                recipient="customer@example.com",
+                            )
+                        ],
+                    ),
+                    db=db,
+                    auth=monthly_stmt_auth,
+                    request=None,
+                )
                 batch_stmt = self.reports_route.send_overdue_statements(
                     self.reports_route.BatchOverdueStatementRequest(
                         as_of_date=date(2026, 4, 30),
@@ -283,6 +302,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
         self.assertEqual(ibc_pdf.media_type, "application/pdf")
         self.assertEqual(stmt_pdf.media_type, "application/pdf")
         self.assertEqual(stmt_email["status"], "sent")
+        self.assertEqual(monthly_stmt["sent_count"], 1)
         self.assertEqual(batch_stmt["sent_count"], 1)
 
 

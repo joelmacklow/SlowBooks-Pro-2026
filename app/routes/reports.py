@@ -187,6 +187,26 @@ def _overdue_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
     return sorted(results, key=lambda row: (row["oldest_due_date"], row["customer_name"]))
 
 
+def _monthly_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
+    customers = (
+        db.query(Customer)
+        .filter(Customer.is_active == True)
+        .filter(Customer.monthly_statements_enabled == True)
+        .order_by(Customer.name, Customer.id)
+        .all()
+    )
+
+    return [
+        {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "recipient": (customer.email or "").strip(),
+            "statement_balance": float(customer.balance or 0),
+        }
+        for customer in customers
+    ]
+
+
 
 
 def _invoice_reminder_preview_items(db: Session, as_of_date: date) -> list[dict]:
@@ -1595,6 +1615,19 @@ def overdue_statement_candidates(
     }
 
 
+@router.get("/monthly-statements/candidates")
+def monthly_statement_candidates(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    as_of_date = as_of_date or date.today()
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "items": _monthly_statement_candidates(db, as_of_date),
+    }
+
+
 class OverdueStatementRecipient(BaseModel):
     customer_id: int
     recipient: str
@@ -1604,6 +1637,17 @@ class OverdueStatementRecipient(BaseModel):
 class BatchOverdueStatementRequest(BaseModel):
     as_of_date: date | None = None
     recipients: list[OverdueStatementRecipient]
+
+
+class MonthlyStatementRecipient(BaseModel):
+    customer_id: int
+    recipient: str
+    subject: str | None = None
+
+
+class BatchMonthlyStatementRequest(BaseModel):
+    as_of_date: date | None = None
+    recipients: list[MonthlyStatementRecipient]
 
 
 @router.post("/overdue-statements/send")
@@ -1667,6 +1711,94 @@ def send_overdue_statements(
                 "detail": None,
             })
         except Exception as exc:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "failed",
+                "detail": "Email delivery failed",
+            })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "results": results,
+        "sent_count": sum(1 for row in results if row["status"] == "sent"),
+        "failed_count": sum(1 for row in results if row["status"] == "failed"),
+        "skipped_count": sum(1 for row in results if row["status"] == "skipped"),
+    }
+
+
+@router.post("/monthly-statements/send")
+def send_monthly_statements(
+    data: BatchMonthlyStatementRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
+):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=3,
+        window_seconds=60,
+        detail="Too many batch document email requests. Please wait and try again.",
+    )
+    as_of_date = data.as_of_date or date.today()
+    allowed = {
+        row["customer_id"]: row
+        for row in _monthly_statement_candidates(db, as_of_date)
+    }
+    company = get_settings(db)
+    results = []
+
+    for recipient in data.recipients:
+        candidate = allowed.get(recipient.customer_id)
+        if not candidate:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "status": "skipped",
+                "detail": "Customer is not currently a monthly statement candidate",
+            })
+            continue
+
+        if not (recipient.recipient or "").strip():
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "skipped",
+                "detail": "Customer does not have an email address",
+            })
+            continue
+
+        try:
+            customer, invoices, payments = _customer_statement_context(db, recipient.customer_id, as_of_date)
+            pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
+            html_body = render_document_email(
+                document_label="Statement",
+                recipient_name=customer.name,
+                company_settings=company,
+                action_label="As of",
+                action_value=as_of_date,
+                message="Please find attached your monthly customer statement.",
+            )
+            send_document_email(
+                db,
+                to_email=recipient.recipient,
+                subject=recipient.subject or f"Monthly statement as at {as_of_date.isoformat()}",
+                html_body=html_body,
+                attachment_bytes=pdf_bytes,
+                attachment_name=f"Statement_{recipient.customer_id}_{as_of_date.isoformat()}.pdf",
+                entity_type="statement",
+                entity_id=customer.id,
+            )
+            results.append({
+                "customer_id": customer.id,
+                "customer_name": customer.name,
+                "recipient": recipient.recipient,
+                "status": "sent",
+                "detail": None,
+            })
+        except Exception:
             results.append({
                 "customer_id": recipient.customer_id,
                 "customer_name": candidate["customer_name"],

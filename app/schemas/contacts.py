@@ -10,6 +10,7 @@ class CustomerCreate(BaseModel):
     company: Optional[str] = None
     email: Optional[str] = None
     invoice_reminders_enabled: bool = True
+    monthly_statements_enabled: bool = False
     phone: Optional[str] = None
     mobile: Optional[str] = None
     fax: Optional[str] = None
@@ -38,6 +39,7 @@ class CustomerUpdate(BaseModel):
     company: Optional[str] = None
     email: Optional[str] = None
     invoice_reminders_enabled: Optional[bool] = None
+    monthly_statements_enabled: Optional[bool] = None
     phone: Optional[str] = None
     mobile: Optional[str] = None
     fax: Optional[str] = None
@@ -68,6 +70,7 @@ class CustomerResponse(BaseModel):
     company: Optional[str]
     email: Optional[str]
     invoice_reminders_enabled: bool
+    monthly_statements_enabled: bool
     phone: Optional[str]
     mobile: Optional[str]
     fax: Optional[str]

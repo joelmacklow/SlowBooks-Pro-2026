@@ -15,6 +15,7 @@ const context = {
                     id: 5,
                     name: 'Aroha Ltd',
                     invoice_reminders_enabled: false,
+                    monthly_statements_enabled: true,
                 };
             }
             return [];
@@ -55,6 +56,7 @@ vm.runInContext(code, context);
         target: {
             data: { name: 'Reminder Co', email: 'x@example.com' },
             invoice_reminders_enabled: { checked: false },
+            monthly_statements_enabled: { checked: true },
         },
     }, null);
 
@@ -63,13 +65,16 @@ vm.runInContext(code, context);
         target: {
             data: { name: 'Aroha Ltd', email: 'a@example.com' },
             invoice_reminders_enabled: { checked: true },
+            monthly_statements_enabled: { checked: false },
         },
     }, 5);
 
     assert.strictEqual(posts[0].path, '/customers');
     assert.strictEqual(posts[0].body.invoice_reminders_enabled, false);
+    assert.strictEqual(posts[0].body.monthly_statements_enabled, true);
     assert.strictEqual(puts[0].path, '/customers/5');
     assert.strictEqual(puts[0].body.invoice_reminders_enabled, true);
+    assert.strictEqual(puts[0].body.monthly_statements_enabled, false);
     assert.ok(toasts.includes('Customer created'));
     assert.ok(toasts.includes('Customer updated'));
 })().catch((err) => {
