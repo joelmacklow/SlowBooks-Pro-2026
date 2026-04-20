@@ -6,6 +6,7 @@ const code = `${fs.readFileSync('app/static/js/customers.js', 'utf8')}\nthis.Cus
 const posts = [];
 const puts = [];
 const toasts = [];
+let modalHtml = '';
 
 const context = {
     API: {
@@ -39,7 +40,7 @@ const context = {
     },
     App: { navigate() {}, hasPermission: () => true },
     closeModal() {},
-    openModal() {},
+    openModal(_title, html) { modalHtml = html; },
     toast: (message) => { toasts.push(message); },
     escapeHtml: (value) => String(value ?? ''),
     formatCurrency: (value) => `$${Number(value || 0).toFixed(2)}`,
@@ -51,6 +52,11 @@ vm.createContext(context);
 vm.runInContext(code, context);
 
 (async () => {
+    await context.CustomersPage.showForm(5);
+    assert.ok(modalHtml.includes('Customer Communications'));
+    assert.ok(modalHtml.includes('Monthly Statements'));
+    assert.ok(modalHtml.includes('monthly_statements_enabled'));
+
     await context.CustomersPage.save({
         preventDefault() {},
         target: {

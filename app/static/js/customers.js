@@ -148,16 +148,6 @@ const CustomersPage = {
                         <input name="company" value="${escapeHtml(c.company || '')}"></div>
                     <div class="form-group"><label>Email</label>
                         <input name="email" type="email" value="${escapeHtml(c.email || '')}"></div>
-                    <div class="form-group"><label>Invoice Reminders</label>
-                        <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
-                            <input name="invoice_reminders_enabled" type="checkbox" ${c.invoice_reminders_enabled !== false ? 'checked' : ''}>
-                            <span>Allow company invoice reminders for this customer</span>
-                        </label></div>
-                    <div class="form-group"><label>Monthly Statements</label>
-                        <label style="display:flex; gap:8px; align-items:center; min-height:34px;">
-                            <input name="monthly_statements_enabled" type="checkbox" ${c.monthly_statements_enabled ? 'checked' : ''}>
-                            <span>Include this customer in monthly statement runs even when balance is zero</span>
-                        </label></div>
                     <div class="form-group"><label>Phone</label>
                         <input name="phone" value="${escapeHtml(c.phone || '')}"></div>
                     <div class="form-group"><label>Mobile</label>
@@ -171,6 +161,25 @@ const CustomersPage = {
                             ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
                                 `<option ${c.terms===t?'selected':''}>${t}</option>`).join('')}
                         </select></div>
+                    <div class="form-group full-width">
+                        <label>Customer Communications</label>
+                        <div class="card" style="padding:12px; display:grid; gap:10px;">
+                            <label style="display:flex; gap:8px; align-items:flex-start;">
+                                <input name="invoice_reminders_enabled" type="checkbox" ${c.invoice_reminders_enabled !== false ? 'checked' : ''} style="margin-top:2px;">
+                                <span>
+                                    <strong>Invoice Reminders</strong><br>
+                                    <span style="font-size:10px; color:var(--text-muted);">Allow company invoice reminders for this customer.</span>
+                                </span>
+                            </label>
+                            <label style="display:flex; gap:8px; align-items:flex-start;">
+                                <input name="monthly_statements_enabled" type="checkbox" ${c.monthly_statements_enabled ? 'checked' : ''} style="margin-top:2px;">
+                                <span>
+                                    <strong>Monthly Statements</strong><br>
+                                    <span style="font-size:10px; color:var(--text-muted);">Include this customer in monthly statement runs even when balance is zero.</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <h3 style="margin:16px 0 8px; font-size:14px; color:var(--gray-600);">Billing Address</h3>
                 <div class="form-grid">
