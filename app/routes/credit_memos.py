@@ -18,7 +18,7 @@ from app.models.contacts import Customer
 from app.models.items import Item
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.credit_memos import (
-    CreditMemoCreate, CreditMemoResponse, CreditApplicationCreate, CreditMemoUpdate,
+    CreditApplicationCreate, CreditApplicationResponse, CreditMemoCreate, CreditMemoResponse, CreditMemoUpdate,
 )
 from app.services.accounting import (
     create_journal_entry, reverse_journal_entry, get_ar_account_id,
@@ -108,12 +108,12 @@ def _credit_memo_response(cm: CreditMemo) -> CreditMemoResponse:
     if cm.customer:
         resp.customer_name = cm.customer.name
     resp.applications = [
-        {
-            "id": application.id,
-            "invoice_id": application.invoice_id,
-            "invoice_number": application.invoice.invoice_number if application.invoice else None,
-            "amount": application.amount,
-        }
+        CreditApplicationResponse(
+            id=application.id,
+            invoice_id=application.invoice_id,
+            invoice_number=application.invoice.invoice_number if application.invoice else None,
+            amount=application.amount,
+        )
         for application in cm.applications
     ]
     return resp

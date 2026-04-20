@@ -15,6 +15,7 @@ const App = {
         '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
         '/':              { page: 'dashboard',       label: 'Dashboard',          authRequired: true, render: () => App.renderDashboard() },
         '/customers':     { page: 'customers',       label: 'Customer Center',    permission: 'contacts.view', render: () => CustomersPage.render() },
+        '/customers/detail': { page: 'customers',    label: 'Customer',           permission: 'contacts.view', render: () => CustomersPage.renderDetailScreen() },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      permission: 'contacts.view', render: () => VendorsPage.render() },
         '/items':         { page: 'items',           label: 'Item List',          permission: 'items.view', render: () => ItemsPage.render() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    permission: 'sales.view', render: () => InvoicesPage.render() },
@@ -629,11 +630,12 @@ const App = {
                 const results = await API.get(`/search?q=${encodeURIComponent(query)}`);
                 let html = '';
                 const sections = [
-                    { key: 'customers', label: 'Customers', onClick: (item) => `App.navigate('#/customers');closeSearchDropdown();` },
+                    { key: 'customers', label: 'Customers', onClick: (item) => `CustomersPage.view(${item.id});closeSearchDropdown();` },
                     { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
                     { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
                     { key: 'invoices', label: 'Invoices', onClick: (item) => `InvoicesPage.view(${item.id});closeSearchDropdown();` },
-                    { key: 'estimates', label: 'Estimates', onClick: (item) => `App.navigate('#/estimates');closeSearchDropdown();` },
+                    { key: 'estimates', label: 'Estimates', onClick: (item) => `EstimatesPage.view(${item.id});closeSearchDropdown();` },
+                    { key: 'credit_memos', label: 'Credit Notes', onClick: (item) => `CreditMemosPage.open(${item.id});closeSearchDropdown();` },
                     { key: 'payments', label: 'Payments', onClick: (item) => `App.navigate('#/payments');closeSearchDropdown();` },
                 ];
                 for (const sec of sections) {
@@ -641,7 +643,7 @@ const App = {
                     if (items && items.length > 0) {
                         html += `<div class="search-section">${sec.label}</div>`;
                         items.forEach(item => {
-                            const label = item.display || item.name || item.invoice_number || `#${item.id}`;
+                            const label = item.display || item.name || item.invoice_number || item.estimate_number || item.memo_number || `#${item.id}`;
                             html += `<div class="search-item" onclick="${sec.onClick(item)}">${escapeHtml(label)}</div>`;
                         });
                     }

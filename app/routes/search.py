@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.contacts import Customer, Vendor
+from app.models.credit_memos import CreditMemo
 from app.models.estimates import Estimate
 from app.models.invoices import Invoice
 from app.models.items import Item
@@ -37,11 +38,36 @@ def unified_search(
 
     invoices = db.query(Invoice).filter(Invoice.invoice_number.ilike(pattern)).order_by(Invoice.date.desc()).limit(LIMIT_PER).all()
     if invoices:
-        results['invoices'] = [{"id": inv.id, "invoice_number": inv.invoice_number, "customer_name": inv.customer.name if inv.customer else "", "total": float(inv.total), "status": inv.status.value} for inv in invoices]
+        results['invoices'] = [{
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "customer_name": inv.customer.name if inv.customer else "",
+            "total": float(inv.total),
+            "status": inv.status.value,
+            "display": f"{inv.invoice_number} · {inv.customer.name if inv.customer else ''}".strip(" ·"),
+        } for inv in invoices]
 
     estimates = db.query(Estimate).filter(Estimate.estimate_number.ilike(pattern)).order_by(Estimate.date.desc()).limit(LIMIT_PER).all()
     if estimates:
-        results['estimates'] = [{"id": e.id, "estimate_number": e.estimate_number, "customer_name": e.customer.name if e.customer else "", "total": float(e.total), "status": e.status.value} for e in estimates]
+        results['estimates'] = [{
+            "id": e.id,
+            "estimate_number": e.estimate_number,
+            "customer_name": e.customer.name if e.customer else "",
+            "total": float(e.total),
+            "status": e.status.value,
+            "display": f"{e.estimate_number} · {e.customer.name if e.customer else ''}".strip(" ·"),
+        } for e in estimates]
+
+    credit_memos = db.query(CreditMemo).filter(CreditMemo.memo_number.ilike(pattern)).order_by(CreditMemo.date.desc()).limit(LIMIT_PER).all()
+    if credit_memos:
+        results['credit_memos'] = [{
+            "id": memo.id,
+            "memo_number": memo.memo_number,
+            "customer_name": memo.customer.name if memo.customer else "",
+            "total": float(memo.total),
+            "status": memo.status.value,
+            "display": f"{memo.memo_number} · {memo.customer.name if memo.customer else ''}".strip(" ·"),
+        } for memo in credit_memos]
 
     payments = db.query(Payment).filter((Payment.reference.ilike(pattern) | Payment.check_number.ilike(pattern))).order_by(Payment.date.desc()).limit(LIMIT_PER).all()
     if payments:
