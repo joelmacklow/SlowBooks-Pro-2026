@@ -117,5 +117,6 @@ class Reconciliation(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    balance_applied_at = Column(DateTime(timezone=True), nullable=True)
 
     bank_account = relationship("BankAccount")

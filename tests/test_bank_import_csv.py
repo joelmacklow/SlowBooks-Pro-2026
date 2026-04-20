@@ -106,7 +106,7 @@ class BankImportCsvTests(unittest.TestCase):
             db.commit()
 
             first = import_transactions(db, bank_account.id, parsed["transactions"], import_source=parsed["format"])
-            summary = statement_summary(parsed["transactions"], ending_balance=first["ending_balance"])
+            summary = statement_summary(parsed["transactions"])
             second = import_transactions(db, bank_account.id, parsed["transactions"], import_source=parsed["format"])
             txns = db.query(BankTransaction).filter(BankTransaction.bank_account_id == bank_account.id).all()
             db.refresh(bank_account)
@@ -119,9 +119,8 @@ class BankImportCsvTests(unittest.TestCase):
         self.assertEqual(txns[0].import_source, "csv")
         self.assertEqual(summary["statement_date"], "2026-04-10")
         self.assertEqual(summary["statement_total"], 3173.86)
-        self.assertEqual(summary["statement_balance"], 3173.86)
         self.assertTrue(first["import_batch_id"])
-        self.assertEqual(Decimal(str(bank_account.balance)), Decimal("3173.86"))
+        self.assertEqual(Decimal(str(bank_account.balance)), Decimal("0.00"))
 
 
 if __name__ == "__main__":

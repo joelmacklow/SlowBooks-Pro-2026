@@ -60,7 +60,7 @@ async def import_statement(
     try:
         parsed = parse_statement_file(content, filename=file.filename)
         result = import_transactions(db, bank_account_id, parsed["transactions"], import_source=parsed["format"])
-        summary = statement_summary(parsed["transactions"], ending_balance=result.get("ending_balance"), import_batch_id=result.get("import_batch_id"))
+        summary = statement_summary(parsed["transactions"], import_batch_id=result.get("import_batch_id"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

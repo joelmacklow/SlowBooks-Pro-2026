@@ -352,6 +352,7 @@ const BankingPage = {
                 ${ruleSuggestion}
                 ${suggestionHtml || '<span style="font-size:11px; color:var(--text-muted);">No likely matches yet</span>'}
                 <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.showMatchModal(${reconId}, ${transaction.id})">Find & Match</button>
+                <button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.showSplitCodeModal(${transaction.id}, ${reconId})">Split Code</button>
             </div>`;
     },
 
@@ -473,6 +474,89 @@ const BankingPage = {
                     <button class="btn btn-secondary" type="button" onclick="closeModal()">Close</button>
                 </div>
             </div>`);
+    },
+
+    async showSplitCodeModal(txnId, reconId) {
+        const [suggestionData, accounts] = await Promise.all([
+            API.get(`/banking/transactions/${txnId}/suggestions`),
+            API.get('/accounts?active_only=true'),
+        ]);
+        BankingPage._splitCodeAccounts = accounts.filter(account => ['expense', 'income', 'asset', 'liability', 'equity', 'cogs'].includes(account.account_type));
+        const txn = suggestionData.transaction;
+        openModal('Split Code Statement Line', `
+            <div style="margin-bottom:12px;">
+                <strong>${escapeHtml(txn.payee || 'Statement line')}</strong><br>
+                <span style="font-size:11px; color:var(--text-muted);">${formatDate(txn.date)} · ${escapeHtml(txn.description || '')}</span><br>
+                <span style="font-size:11px; color:var(--text-muted);">Reference: ${escapeHtml(txn.reference || '—')} · Code: ${escapeHtml(txn.code || '—')}</span><br>
+                <span style="font-size:11px; color:var(--text-muted);">Amount to split: ${formatCurrency(Math.abs(txn.amount || 0))}</span>
+            </div>
+            <div id="split-code-lines"></div>
+            <button class="btn btn-sm btn-secondary" type="button" style="margin-bottom:12px;" onclick="BankingPage.addSplitCodeLine()">+ Add Split Line</button>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Split total: <span id="split-code-total">${formatCurrency(0)}</span></div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" type="button" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" type="button" onclick="BankingPage.submitSplitCode(${txnId}, ${reconId}, ${Math.abs(txn.amount || 0)})">Apply Split Coding</button>
+            </div>`);
+        BankingPage._splitCodeLineCount = 0;
+        BankingPage.addSplitCodeLine();
+        BankingPage.addSplitCodeLine();
+    },
+
+    splitCodeLineHtml(idx) {
+        const options = (BankingPage._splitCodeAccounts || []).map(account =>
+            `<option value="${account.id}">${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`
+        ).join('');
+        return `<div class="form-grid split-code-line" data-split-line="${idx}" style="margin-bottom:8px;">
+            <div class="form-group"><label>Account</label><select class="split-account"><option value="">Select account...</option>${options}</select></div>
+            <div class="form-group"><label>Amount</label><input class="split-amount" type="number" step="0.01" value="0" oninput="BankingPage.recalcSplitCode()"></div>
+            <div class="form-group full-width"><label>Description</label><input class="split-description"></div>
+            <div class="form-group"><button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.removeSplitCodeLine(${idx})">Remove</button></div>
+        </div>`;
+    },
+
+    addSplitCodeLine() {
+        const idx = BankingPage._splitCodeLineCount++;
+        $('#split-code-lines').insertAdjacentHTML('beforeend', BankingPage.splitCodeLineHtml(idx));
+    },
+
+    removeSplitCodeLine(idx) {
+        const row = $(`[data-split-line="${idx}"]`);
+        if (row) row.remove();
+        BankingPage.recalcSplitCode();
+    },
+
+    recalcSplitCode() {
+        let total = 0;
+        $$('.split-code-line').forEach((row) => {
+            total += parseFloat(row.querySelector('.split-amount')?.value) || 0;
+        });
+        const totalEl = $('#split-code-total');
+        if (totalEl) totalEl.textContent = formatCurrency(total);
+    },
+
+    async submitSplitCode(txnId, reconId, absoluteAmount) {
+        const splits = $$('.split-code-line')
+            .map((row) => ({
+                account_id: row.querySelector('.split-account')?.value ? parseInt(row.querySelector('.split-account').value, 10) : null,
+                amount: parseFloat(row.querySelector('.split-amount')?.value) || 0,
+                description: row.querySelector('.split-description')?.value || null,
+            }))
+            .filter((line) => line.account_id && line.amount > 0);
+        if (splits.length < 2) {
+            toast('Add at least two split lines', 'error');
+            return;
+        }
+        const total = splits.reduce((sum, line) => sum + line.amount, 0);
+        if (Math.abs(total - absoluteAmount) > 0.009) {
+            toast('Split lines must total the statement amount exactly', 'error');
+            return;
+        }
+        try {
+            await API.post(`/banking/transactions/${txnId}/code-split`, { splits });
+            toast('Statement line split coded');
+            closeModal();
+            await BankingPage.showReconcileView(reconId);
+        } catch (err) { toast(err.message, 'error'); }
     },
 
     async searchMatches(txnId, reconId) {

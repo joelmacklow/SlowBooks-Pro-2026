@@ -5,7 +5,7 @@
 # 0x001F0890. Toggle cleared items, then validate sum matches statement.
 # ============================================================================
 
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import func as sqlfunc
 from decimal import Decimal
 
@@ -27,7 +27,7 @@ from app.schemas.banking import (
     BankTransactionCreate, BankTransactionResponse,
     ReconciliationCreate, ReconciliationResponse,
     BankTransactionMatchApproval, BankTransactionCodeApproval,
-    BankTransactionRuleApproval, BankRuleCreate, BankRuleResponse, BankRuleUpdate,
+    BankTransactionRuleApproval, BankTransactionSplitCodeApproval, BankRuleCreate, BankRuleResponse, BankRuleUpdate,
 )
 from app.schemas.bills import BillPaymentAllocationCreate, BillPaymentCreate
 from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
@@ -55,6 +55,13 @@ def _bank_transaction_payload(db: Session, bank_txn: BankTransaction) -> dict:
             matched_label = "Matched to customer payment"
         elif source_type == "bill_payment":
             matched_label = "Matched to bill payment"
+        elif source_type == "bank_transaction_split_code":
+            bank_account_id = bank_txn.bank_account.account_id if bank_txn.bank_account else None
+            split_count = len([
+                line for line in (bank_txn.transaction.lines if bank_txn.transaction else [])
+                if line.account_id != bank_account_id
+            ])
+            matched_label = f"Split coded across {split_count} accounts" if split_count else "Split coded"
         else:
             matched_label = "Matched transaction"
 
@@ -136,6 +143,10 @@ def _assert_transaction_matchable(bank_txn: BankTransaction) -> None:
         raise HTTPException(status_code=400, detail="Bank transaction is already linked to an accounting transaction")
     if bank_txn.match_status == "coded":
         raise HTTPException(status_code=400, detail="Bank transaction is already coded")
+
+
+def _posting_description(bank_txn: BankTransaction, fallback: str) -> str:
+    return fallback or bank_txn.description or bank_txn.payee or f"Bank statement line {bank_txn.id}"
 
 
 @router.get("/rules", response_model=list[BankRuleResponse])
@@ -418,7 +429,7 @@ def code_bank_transaction(txn_id: int, data: BankTransactionCodeApproval, db: Se
     check_closing_date(db, bank_txn.date)
     amount = Decimal(str(bank_txn.amount or 0))
     absolute_amount = abs(amount)
-    description = data.description or bank_txn.description or bank_txn.payee or f"Bank statement line {bank_txn.id}"
+    description = _posting_description(bank_txn, data.description)
 
     if amount >= 0:
         journal_lines = [
@@ -449,6 +460,83 @@ def code_bank_transaction(txn_id: int, data: BankTransactionCodeApproval, db: Se
     bank_txn.rule_match_reason = None
     db.commit()
     return {"status": "coded", "transaction_id": bank_txn.id, "matched_label": f"Coded to {target_account.name}"}
+
+
+@router.post("/transactions/{txn_id}/code-split")
+def split_code_bank_transaction(txn_id: int, data: BankTransactionSplitCodeApproval, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    _assert_transaction_matchable(bank_txn)
+    bank_account = _linked_bank_account_or_400(db, bank_txn)
+    check_closing_date(db, bank_txn.date)
+
+    splits = [split for split in data.splits if Decimal(str(split.amount or 0)) > 0]
+    if len(splits) < 2:
+        raise HTTPException(status_code=400, detail="Split coding requires at least two split lines")
+
+    amount = Decimal(str(bank_txn.amount or 0))
+    absolute_amount = abs(amount)
+    split_total = sum((Decimal(str(split.amount)) for split in splits), Decimal("0.00"))
+    if abs(split_total - absolute_amount) > Decimal("0.01"):
+        raise HTTPException(status_code=400, detail="Split lines must total the statement amount exactly")
+
+    journal_lines = []
+    for split in splits:
+        target_account = db.query(Account).filter(Account.id == split.account_id, Account.is_active == True).first()
+        if not target_account:
+            raise HTTPException(status_code=404, detail="Split account not found")
+        if target_account.id == bank_account.account_id:
+            raise HTTPException(status_code=400, detail="Split lines cannot target the linked bank account")
+        split_amount = Decimal(str(split.amount))
+        description = _posting_description(bank_txn, split.description)
+        if amount >= 0:
+            journal_lines.append({
+                "account_id": target_account.id,
+                "debit": Decimal("0"),
+                "credit": split_amount,
+                "description": description,
+            })
+        else:
+            journal_lines.append({
+                "account_id": target_account.id,
+                "debit": split_amount,
+                "credit": Decimal("0"),
+                "description": description,
+            })
+
+    bank_description = _posting_description(bank_txn, None)
+    if amount >= 0:
+        journal_lines.insert(0, {
+            "account_id": bank_account.account_id,
+            "debit": absolute_amount,
+            "credit": Decimal("0"),
+            "description": bank_description,
+        })
+    else:
+        journal_lines.append({
+            "account_id": bank_account.account_id,
+            "debit": Decimal("0"),
+            "credit": absolute_amount,
+            "description": bank_description,
+        })
+
+    txn = create_journal_entry(
+        db,
+        bank_txn.date,
+        bank_description,
+        journal_lines,
+        source_type="bank_transaction_split_code",
+        source_id=bank_txn.id,
+        reference=bank_txn.reference or bank_txn.code or str(bank_txn.id),
+    )
+    bank_txn.transaction_id = txn.id
+    bank_txn.category_account_id = None
+    bank_txn.match_status = "coded"
+    bank_txn.reconciled = True
+    bank_txn.suggested_rule_id = None
+    bank_txn.suggested_account_id = None
+    bank_txn.rule_match_reason = None
+    db.commit()
+    return {"status": "coded", "transaction_id": bank_txn.id, "matched_label": f"Split coded across {len(splits)} accounts"}
 
 
 @router.post("/transactions/{txn_id}/apply-rule")
@@ -506,6 +594,14 @@ def create_reconciliation(data: ReconciliationCreate, db: Session = Depends(get_
     ba = db.query(BankAccount).filter(BankAccount.id == data.bank_account_id).first()
     if not ba:
         raise HTTPException(status_code=404, detail="Bank account not found")
+    if data.import_batch_id:
+        existing = db.query(Reconciliation).filter(
+            Reconciliation.bank_account_id == data.bank_account_id,
+            Reconciliation.import_batch_id == data.import_batch_id,
+            Reconciliation.status == ReconciliationStatus.IN_PROGRESS,
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="A reconciliation already exists for this import batch")
     recon = Reconciliation(**data.model_dump())
     db.add(recon)
     db.commit()
@@ -627,7 +723,24 @@ def complete_reconciliation(recon_id: int, db: Session = Depends(get_db), auth=D
             detail=f"Difference is ${float(recon.statement_balance - cleared_total):.2f} — must be $0.00 to complete",
         )
 
+    if recon.import_batch_id:
+        existing_applied = db.query(Reconciliation).filter(
+            Reconciliation.bank_account_id == recon.bank_account_id,
+            Reconciliation.import_batch_id == recon.import_batch_id,
+            Reconciliation.balance_applied_at.isnot(None),
+            Reconciliation.id != recon.id,
+        ).first()
+        if existing_applied:
+            raise HTTPException(status_code=400, detail="This import batch has already been applied to the bank account balance")
+
+        if recon.balance_applied_at is None:
+            bank_account = db.query(BankAccount).filter(BankAccount.id == recon.bank_account_id).first()
+            if not bank_account:
+                raise HTTPException(status_code=404, detail="Bank account not found")
+            bank_account.balance = Decimal(str(bank_account.balance or 0)) + Decimal(str(recon.statement_balance))
+            recon.balance_applied_at = datetime.now(UTC)
+
     recon.status = ReconciliationStatus.COMPLETED
-    recon.completed_at = datetime.utcnow()
+    recon.completed_at = datetime.now(UTC)
     db.commit()
     return {"status": "completed", "reconciliation_id": recon.id}

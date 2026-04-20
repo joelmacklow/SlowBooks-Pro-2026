@@ -181,7 +181,6 @@ def statement_summary(transactions: list[dict], ending_balance: Decimal | None =
 def import_transactions(db: Session, bank_account_id: int, transactions: list[dict], import_source: str | None = None) -> dict:
     imported = 0
     skipped = 0
-    total_amount = Decimal("0")
     import_batch_id = uuid.uuid4().hex
     bank_account = db.query(BankAccount).filter(BankAccount.id == bank_account_id).first()
     if not bank_account:
@@ -225,9 +224,7 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
         db.flush()
         apply_bank_rule_suggestion(db, bt, persist=True)
         imported += 1
-        total_amount += amount
 
-    bank_account.balance = Decimal(str(bank_account.balance or 0)) + total_amount
     ending_balance = Decimal(str(bank_account.balance or 0))
     db.commit()
     return {"imported": imported, "skipped": skipped, "total": len(transactions), "ending_balance": ending_balance, "import_batch_id": import_batch_id}

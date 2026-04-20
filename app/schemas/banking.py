@@ -82,6 +82,16 @@ class BankTransactionCodeApproval(BaseModel):
     description: Optional[str] = None
 
 
+class BankTransactionSplitLine(BaseModel):
+    account_id: int
+    amount: Decimal
+    description: Optional[str] = None
+
+
+class BankTransactionSplitCodeApproval(BaseModel):
+    splits: list[BankTransactionSplitLine]
+
+
 class BankTransactionRuleApproval(BaseModel):
     rule_id: Optional[int] = None
 
@@ -151,5 +161,6 @@ class ReconciliationResponse(BaseModel):
     status: ReconciliationStatus
     created_at: datetime
     completed_at: Optional[datetime]
+    balance_applied_at: Optional[datetime]
 
     model_config = {"from_attributes": True}

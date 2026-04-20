@@ -17,10 +17,13 @@ const reconcileTransactions = [{
     reconciled: false,
     matched_label: null,
     suggestions: [{ kind: 'invoice', target_id: 7, document_number: 'INV-8746', label: 'Invoice INV-8746 · Learn Innovations Limited' }],
+    rule_suggestion: null,
 }];
 const elements = {
     '#page-content': { innerHTML: '' },
     '#statement-file': { files: [{}] },
+    '#split-code-lines': { innerHTML: '', insertAdjacentHTML(_where, html) { this.innerHTML += html; } },
+    '#split-code-total': { textContent: '' },
 };
 
 const context = {
@@ -90,6 +93,11 @@ const context = {
                 reconcileTransactions[0].matched_label = 'Coded to Wages Expense';
                 return { status: 'coded' };
             }
+            if (path === '/banking/transactions/10/code-split') {
+                reconcileTransactions[0].reconciled = true;
+                reconcileTransactions[0].matched_label = 'Split coded across 2 accounts';
+                return { status: 'coded' };
+            }
             if (path === '/banking/reconciliations/5/toggle/10') return { id: 10, reconciled: true };
             if (path === '/banking/reconciliations') return { id: 6, import_batch_id: data ? data.import_batch_id : null };
             return { id: 1 };
@@ -146,6 +154,7 @@ vm.runInContext(code, context);
 
     await context.BankingPage.showReconcileView(5);
     assert.ok(elements['#page-content'].innerHTML.includes('Find & Match'));
+    assert.ok(elements['#page-content'].innerHTML.includes('Split Code'));
     assert.ok(elements['#page-content'].innerHTML.includes('Transactions to clear'));
     assert.ok(elements['#page-content'].innerHTML.includes('INV-8746'));
     assert.ok(!elements['#page-content'].innerHTML.includes('Check #'));
@@ -156,6 +165,35 @@ vm.runInContext(code, context);
     assert.ok(modalHtml.includes('Search payee, amount, reference, description, or code'));
     assert.ok(modalHtml.includes('Wages Expense'));
     assert.ok(modalHtml.includes('reference/number match'));
+
+    await context.BankingPage.showSplitCodeModal(10, 5);
+    assert.ok(modalHtml.includes('Apply Split Coding'));
+    assert.ok(modalHtml.includes('Amount to split'));
+    const splitRows = [
+        {
+            querySelector(sel) {
+                if (sel === '.split-account') return { value: '477' };
+                if (sel === '.split-amount') return { value: '30' };
+                if (sel === '.split-description') return { value: 'Part A' };
+                return null;
+            },
+        },
+        {
+            querySelector(sel) {
+                if (sel === '.split-account') return { value: '985' };
+                if (sel === '.split-amount') return { value: '23.91' };
+                if (sel === '.split-description') return { value: 'Part B' };
+                return null;
+            },
+        },
+    ];
+    context.$$ = (selector) => {
+        if (selector === '.split-code-line') return splitRows;
+        return [];
+    };
+    await context.BankingPage.submitSplitCode(10, 5, 53.91);
+    assert.ok(posts.some(call => call.path === '/banking/transactions/10/code-split'));
+    assert.ok(elements['#page-content'].innerHTML.includes('Split coded across 2 accounts'));
 
     elements['#bank-match-query-10'] = { value: '8746' };
     elements['#bank-match-results-10'] = { innerHTML: '' };
