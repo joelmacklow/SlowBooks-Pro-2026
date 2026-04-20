@@ -5,10 +5,12 @@
 const CompaniesPage = {
     _databaseNameTouched: false,
     _lastSuggestedDatabaseName: '',
+    _companies: [],
 
     async render() {
         const canManageCompanies = App.hasPermission ? App.hasPermission('companies.manage') : true;
         const companies = await API.get('/companies');
+        CompaniesPage._companies = companies;
         let html = `
             <div class="page-header">
                 <h2>Company Files</h2>
@@ -27,7 +29,9 @@ const CompaniesPage = {
                     <div class="card-header">${escapeHtml(c.name)}${c.is_default ? ' <span class="badge badge-draft">Default</span>' : ''}</div>
                     <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.database_name)}</div>
                     ${c.description ? `<div style="font-size:11px;margin-top:4px;">${escapeHtml(c.description)}</div>` : ''}
+                    <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Org Lock: ${escapeHtml(c.org_lock_date || 'Not set')}</div>
                     <div style="font-size:9px;color:var(--text-light);margin-top:4px;">Last accessed: ${c.last_accessed ? formatDate(c.last_accessed) : 'Never'}</div>
+                    ${canManageCompanies ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); CompaniesPage.showEdit(${c.id === null ? 'null' : c.id})">Edit</button></div>` : ''}
                 </div>`;
             }
             html += '</div>';
@@ -80,12 +84,45 @@ const CompaniesPage = {
             </form>`);
     },
 
+    showEdit(companyId) {
+        const company = CompaniesPage._companies.find(c => (companyId === null ? c.id === null : c.id === companyId));
+        if (!company) return;
+        openModal('Edit Company', `
+            <form onsubmit="CompaniesPage.update(event, ${company.id === null ? 'null' : company.id})">
+                <div class="form-grid">
+                    <div class="form-group"><label>Company Name *</label>
+                        <input name="name" required value="${escapeHtml(company.name || '')}"></div>
+                    <div class="form-group"><label>Database Name</label>
+                        <input name="database_name" disabled value="${escapeHtml(company.database_name || '')}"></div>
+                    <div class="form-group full-width"><label>Description</label>
+                        <textarea name="description">${escapeHtml(company.description || '')}</textarea></div>
+                    <div class="form-group"><label>Organization Lock Date</label>
+                        <input name="org_lock_date" type="date" value="${escapeHtml(company.org_lock_date || '')}"></div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Company</button>
+                </div>
+            </form>`);
+    },
+
     async create(e) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
         try {
             await API.post('/companies', data);
             toast('Company created');
+            closeModal();
+            App.navigate('#/companies');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async update(e, companyId = null) {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        try {
+            await API.put(companyId === null ? '/companies/default' : `/companies/${companyId}`, data);
+            toast('Company updated');
             closeModal();
             App.navigate('#/companies');
         } catch (err) { toast(err.message, 'error'); }

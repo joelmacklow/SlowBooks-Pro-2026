@@ -124,6 +124,10 @@ const SettingsPage = {
                                 <option value="false" ${s.prices_include_gst !== 'true' ? 'selected' : ''}>No</option>
                                 <option value="true" ${s.prices_include_gst === 'true' ? 'selected' : ''}>Yes</option>
                             </select></div>
+                        <div class="form-group"><label>Financial Year Start</label>
+                            <input name="financial_year_start" type="date" value="${escapeHtml(s.financial_year_start || '')}"></div>
+                        <div class="form-group"><label>Financial Year End</label>
+                            <input name="financial_year_end" type="date" value="${escapeHtml(s.financial_year_end || '')}"></div>
                     </div>
                 </div>
 
@@ -143,9 +147,9 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
-                    <h3>Closing Date</h3>
+                    <h3>Company Admin Lock</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
-                        Prevent modifications to transactions before this date.
+                        Company admins can block modifications before this date. Organization locks are managed separately from the Company Files admin surface.
                     </div>
                     <div class="form-grid">
                         <div class="form-group"><label>Closing Date</label>
@@ -153,7 +157,12 @@ const SettingsPage = {
                         <div class="form-group"><label>Password (optional)</label>
                             <input name="closing_date_password" type="password" value="${escapeHtml(s.closing_date_password || '')}"
                                 placeholder="Enter a new password to set or change the override"></div>
+                        <div class="form-group"><label>Organization Lock</label>
+                            <input type="date" value="${escapeHtml(s.org_lock_date || '')}" disabled></div>
+                        <div class="form-group"><label>Effective Lock</label>
+                            <input type="date" value="${escapeHtml(s.effective_lock_date || '')}" disabled></div>
                     </div>
+                    ${s.effective_lock_layer ? `<div style="font-size:10px; color:var(--text-muted); margin-top:8px;">Current blocking layer: ${escapeHtml(s.effective_lock_layer)}</div>` : ''}
                 </div>
 
                 <div class="settings-section">

@@ -1,27 +1,96 @@
 # ============================================================================
-# Closing Date Enforcement — prevent modifications before closing date
-# Feature 10: Configurable closing date with optional password override
+# Closing Date Enforcement — layered company/org date locks with optional override
 # ============================================================================
 
 import hmac
+from dataclasses import dataclass
 from datetime import date
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
+from app.models.companies import Company
 from app.models.settings import Settings
 from app.services.auth import hash_password, verify_password
 
 
-def get_closing_date(db: Session) -> date | None:
-    """Get the configured closing date, or None if not set."""
-    row = db.query(Settings).filter(Settings.key == "closing_date").first()
+@dataclass(frozen=True)
+class LockContext:
+    company_lock_date: date | None
+    org_lock_date: date | None
+    effective_lock_date: date | None
+    effective_lock_layer: str | None
+
+
+def _open_master_session():
+    return SessionLocal()
+
+
+def _database_name_for_session(db: Session) -> str:
+    bind = db.get_bind()
+    database = getattr(bind.url, "database", None) or urlparse(str(bind.url)).path.lstrip("/")
+    if not database:
+        return "bookkeeper"
+    database = str(database).rsplit("/", 1)[-1]
+    if database.endswith(".db"):
+        database = database.rsplit(".", 1)[0]
+    return database or "bookkeeper"
+
+
+def _read_date_setting(db: Session, key: str) -> date | None:
+    row = db.query(Settings).filter(Settings.key == key).first()
     if row and row.value:
         try:
             return date.fromisoformat(row.value)
         except ValueError:
             return None
     return None
+
+
+def get_closing_date(db: Session) -> date | None:
+    return _read_date_setting(db, "closing_date")
+
+
+def get_org_lock_date(db: Session) -> date | None:
+    database_name = _database_name_for_session(db)
+    master_db = _open_master_session()
+    try:
+        company = master_db.query(Company).filter(Company.database_name == database_name, Company.is_active == True).first()
+        return company.org_lock_date if company else None
+    finally:
+        master_db.close()
+
+
+def resolve_lock_context(db: Session) -> LockContext:
+    company_lock_date = get_closing_date(db)
+    org_lock_date = get_org_lock_date(db)
+    effective_lock_date = None
+    effective_lock_layer = None
+
+    if org_lock_date and (company_lock_date is None or org_lock_date >= company_lock_date):
+        effective_lock_date = org_lock_date
+        effective_lock_layer = "org_admin"
+    elif company_lock_date:
+        effective_lock_date = company_lock_date
+        effective_lock_layer = "company_admin"
+
+    return LockContext(
+        company_lock_date=company_lock_date,
+        org_lock_date=org_lock_date,
+        effective_lock_date=effective_lock_date,
+        effective_lock_layer=effective_lock_layer,
+    )
+
+
+def lock_context_for_client(db: Session) -> dict:
+    context = resolve_lock_context(db)
+    return {
+        "org_lock_date": context.org_lock_date.isoformat() if context.org_lock_date else "",
+        "effective_lock_date": context.effective_lock_date.isoformat() if context.effective_lock_date else "",
+        "effective_lock_layer": context.effective_lock_layer or "",
+    }
 
 
 def hash_closing_date_password(password: str | None) -> str:
@@ -41,23 +110,60 @@ def verify_closing_date_password(password: str | None, stored_value: str | None)
     return hmac.compare_digest(candidate, stored)
 
 
-def check_closing_date(db: Session, txn_date: date, password: str = None):
-    """Raise HTTPException if txn_date is on or before the closing date.
-    If a closing_date_password is set and the caller provides it, allow override."""
-    closing = get_closing_date(db)
-    if closing is None:
-        return  # No closing date configured
+def validate_financial_year_dates(start_value: str | None, end_value: str | None) -> None:
+    if not start_value and not end_value:
+        return
+    if not start_value or not end_value:
+        raise HTTPException(status_code=400, detail="Financial year start and end dates must both be set")
+    try:
+        start_date = date.fromisoformat(str(start_value))
+        end_date = date.fromisoformat(str(end_value))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Financial year dates must be valid ISO dates") from exc
+    if end_date <= start_date:
+        raise HTTPException(status_code=400, detail="Financial year end must be after the financial year start")
+    if (end_date - start_date).days > 370:
+        raise HTTPException(status_code=400, detail="Financial year range is too long")
 
-    if txn_date <= closing:
-        # Check if password override is available
-        pw_row = db.query(Settings).filter(Settings.key == "closing_date_password").first()
-        if pw_row and pw_row.value and verify_closing_date_password(password, pw_row.value):
-            if not pw_row.value.startswith("pbkdf2_sha256$"):
-                pw_row.value = hash_closing_date_password(password)
-                db.flush()
-            return  # Password override accepted
+
+def check_closing_date(db: Session, txn_date: date, password: str = None):
+    """Raise HTTPException if txn_date is on or before the effective layered lock date."""
+    context = resolve_lock_context(db)
+    if context.effective_lock_date is None:
+        return
+
+    if txn_date <= context.effective_lock_date:
+        company_password_can_override = (
+            context.company_lock_date is not None
+            and txn_date <= context.company_lock_date
+            and (context.org_lock_date is None or txn_date > context.org_lock_date)
+        )
+        if company_password_can_override:
+            pw_row = db.query(Settings).filter(Settings.key == "closing_date_password").first()
+            if pw_row and pw_row.value and verify_closing_date_password(password, pw_row.value):
+                if not pw_row.value.startswith("pbkdf2_sha256$"):
+                    pw_row.value = hash_closing_date_password(password)
+                    db.flush()
+                return
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Transaction date {txn_date} is on or before the company admin lock date "
+                    f"({context.company_lock_date}). Modifications to closed periods are not allowed without the company override password."
+                ),
+            )
+        if context.org_lock_date and txn_date <= context.org_lock_date:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Transaction date {txn_date} is on or before the organization lock date "
+                    f"({context.org_lock_date}). Company override passwords cannot bypass organization locks."
+                ),
+            )
         raise HTTPException(
             status_code=403,
-            detail=f"Transaction date {txn_date} is on or before the closing date ({closing}). "
-                   f"Modifications to closed periods are not allowed."
+            detail=(
+                f"Transaction date {txn_date} is on or before the effective lock date "
+                f"({context.effective_lock_date}). Modifications to closed periods are not allowed."
+            ),
         )

@@ -23,7 +23,7 @@ from app.services.chart_setup_status import (
     mark_chart_setup_ready,
 )
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
-from app.services.closing_date import hash_closing_date_password
+from app.services.closing_date import hash_closing_date_password, lock_context_for_client, validate_financial_year_dates
 from app.services.invoice_reminders import (
     default_invoice_reminder_body_template,
     default_invoice_reminder_subject_template,
@@ -58,6 +58,14 @@ def _settings_for_client(settings: dict) -> dict:
     result["closing_date_password"] = ""
     result["smtp_password"] = ""
     return result
+
+
+def _validate_period_settings(data: dict) -> None:
+    start_value = data.get("financial_year_start")
+    end_value = data.get("financial_year_end")
+    if start_value is None and end_value is None:
+        return
+    validate_financial_year_dates(start_value, end_value)
 
 
 def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
@@ -128,6 +136,7 @@ def get_settings(
     auth=Depends(require_permissions("settings.manage")),
 ):
     settings = _apply_smtp_secret_status(db, _get_all(db))
+    settings.update(lock_context_for_client(db))
     db.commit()
     return _settings_for_client(settings)
 
@@ -138,6 +147,7 @@ def update_settings(
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("settings.manage")),
 ):
+    _validate_period_settings(data)
     for key, value in data.items():
         if key in DEFAULT_SETTINGS:
             if key == "closing_date_password":
@@ -153,6 +163,7 @@ def update_settings(
                 continue
             _set(db, key, str(value) if value is not None else "")
     settings = _apply_smtp_secret_status(db, _get_all(db))
+    settings.update(lock_context_for_client(db))
     db.commit()
     return _settings_for_client(settings)
 
