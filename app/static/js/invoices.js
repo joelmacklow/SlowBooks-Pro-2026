@@ -159,26 +159,21 @@ const InvoicesPage = {
         return [...new Set(values)];
     },
 
-    findItemByPickerValue(value) {
-        const needle = String(value || '').trim().toLowerCase();
-        if (!needle) return null;
-        return (InvoicesPage._items || []).find(item =>
-            InvoicesPage.itemSearchValues(item).some(candidate => candidate.toLowerCase() === needle)
-        ) || null;
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return InvoicesPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
     },
 
-    itemDatalistOptionsHtml(items) {
-        return items.map(item =>
-            InvoicesPage.itemSearchValues(item).map(value => `<option value="${escapeHtml(value)}"></option>`).join('')
-        ).join('');
+    filteredItems(query, selectedItemId = null) {
+        return (InvoicesPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return InvoicesPage.itemMatchesFilter(item, query);
+        });
     },
 
-    selectedItemDisplayValue(line, items) {
-        if (line.item_id) {
-            const selected = (items || []).find(item => String(item.id) === String(line.item_id));
-            if (selected) return InvoicesPage.itemOptionLabel(selected);
-        }
-        return line.item_picker_value || '';
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${InvoicesPage.itemOptionLabel(i)}</option>`).join('');
     },
 
     renderDetailScreen() {
@@ -426,15 +421,10 @@ const InvoicesPage = {
     },
 
     lineRowHtml(idx, line, items, canManage = true) {
-        const datalistId = `invoice-line-items-${idx}`;
-        const pickerValue = InvoicesPage.selectedItemDisplayValue(line, items);
-        const itemOpts = InvoicesPage.itemDatalistOptionsHtml(items);
+        const itemOpts = InvoicesPage.itemOptionsHtml(items, line.item_id);
         return `<tr data-line="${idx}">
-            <td>
-                <input class="line-item-picker" list="${datalistId}" value="${escapeHtml(pickerValue)}" oninput="InvoicesPage.itemInputChanged(${idx}, this.value)" placeholder="Select item by code or name" ${canManage ? '' : 'disabled'}>
-                <datalist id="${datalistId}">${itemOpts}</datalist>
-                <input class="line-item" type="hidden" value="${line.item_id || ''}">
-            </td>
+            <td><select class="line-item" onchange="InvoicesPage.itemSelected(${idx})" onkeydown="InvoicesPage.handleItemKeydown(${idx}, event)" onblur="InvoicesPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}>
+                <option value="">--</option>${itemOpts}</select></td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -461,26 +451,56 @@ const InvoicesPage = {
         const itemId = row.querySelector('.line-item').value;
         const item = InvoicesPage._items.find(i => i.id == itemId);
         if (item) {
-            const picker = row.querySelector('.line-item-picker');
-            if (picker) picker.value = InvoicesPage.itemOptionLabel(item);
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.rate;
             InvoicesPage.recalc();
         }
     },
 
-    itemInputChanged(idx, value) {
+    applyItemFilter(idx, query) {
         const row = $(`[data-line="${idx}"]`);
         if (!row) return;
-        const itemInput = row.querySelector('.line-item');
-        if (!itemInput) return;
-        const matched = InvoicesPage.findItemByPickerValue(value);
-        if (matched) {
-            itemInput.value = matched.id;
-            InvoicesPage.itemSelected(idx);
-        } else if (!String(value || '').trim()) {
-            itemInput.value = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = InvoicesPage.filteredItems(query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
         }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            InvoicesPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            InvoicesPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            InvoicesPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(InvoicesPage._items || [], currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
     },
 
     recalc() {

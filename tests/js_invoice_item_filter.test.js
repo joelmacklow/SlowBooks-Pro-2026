@@ -40,12 +40,12 @@ assert.ok(label.includes('100-20'));
 assert.ok(label.includes('Pens'));
 
 assert.strictEqual(JSON.stringify(context.InvoicesPage.itemSearchValues(context.InvoicesPage._items[0])), JSON.stringify(['100-20', 'Pens', '100-20 — Pens']));
-assert.strictEqual(context.InvoicesPage.findItemByPickerValue('100-20').id, 2);
-assert.strictEqual(context.InvoicesPage.findItemByPickerValue('Paper').id, 3);
+assert.deepStrictEqual(context.InvoicesPage.filteredItems('100', null).map(item => item.id), [2]);
+assert.deepStrictEqual(context.InvoicesPage.filteredItems('Paper', null).map(item => item.id), [3]);
 
 const html = context.InvoicesPage.lineRowHtml(0, { item_id: 2, description: '', quantity: 1, rate: 50, gst_code: 'GST15' }, context.InvoicesPage._items, true);
-assert.ok(html.includes('Select item by code or name'));
-assert.ok(!html.includes('line-item-filter'));
-assert.ok(html.includes('datalist'));
+assert.ok(html.includes('<select class="line-item"'));
+assert.ok(!html.includes('line-item-picker'));
+assert.ok(!html.includes('datalist'));
 assert.ok(html.includes('100-20'));
 assert.ok(html.includes('Paper'));

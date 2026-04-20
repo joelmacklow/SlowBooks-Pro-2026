@@ -138,6 +138,8 @@ vm.runInContext(poCode, poContext);
     assert.ok(vendorOneLine.includes('Pens'));
     assert.ok(vendorOneLine.includes('100-20'));
     assert.ok(!vendorOneLine.includes('Paper'));
+    assert.ok(vendorOneLine.includes('<select class="line-item"'));
+    assert.ok(!vendorOneLine.includes('line-item-picker'));
 
     poContext.PurchaseOrdersPage._detailState.vendor_id = 2;
     const vendorTwoLine = poContext.PurchaseOrdersPage.lineHtml(0, { item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }, poContext.PurchaseOrdersPage._itemsForVendor(2), true);
@@ -146,9 +148,9 @@ vm.runInContext(poCode, poContext);
     assert.ok(!vendorTwoLine.includes('Pens'));
 
     assert.strictEqual(JSON.stringify(poContext.PurchaseOrdersPage.itemSearchValues(poContext.PurchaseOrdersPage._items[0])), JSON.stringify(['100-20', 'Pens', '100-20 — Pens']));
-    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(1, '100-20', null).name, 'Pens');
-    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(2, 'Paper', null).name, 'Paper');
-    assert.strictEqual(poContext.PurchaseOrdersPage._itemsForVendorByPickerValue(1, 'Paper', null), null);
+    assert.deepStrictEqual(poContext.PurchaseOrdersPage._filteredItemsForLine(1, '100', null).map(item => item.name), ['Pens']);
+    assert.deepStrictEqual(poContext.PurchaseOrdersPage._filteredItemsForLine(2, 'Paper', null).map(item => item.name), ['Paper']);
+    assert.deepStrictEqual(poContext.PurchaseOrdersPage._filteredItemsForLine(1, 'Paper', null).map(item => item.name), []);
 })().catch(err => {
     console.error(err);
     process.exit(1);

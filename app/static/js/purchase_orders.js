@@ -111,6 +111,12 @@ const PurchaseOrdersPage = {
         return [...new Set(values)];
     },
 
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return PurchaseOrdersPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
+    },
+
     _itemsForVendor(vendorId, selectedItemId = null) {
         return (PurchaseOrdersPage._items || []).filter(item => {
             if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
@@ -119,26 +125,15 @@ const PurchaseOrdersPage = {
         });
     },
 
-    _itemsForVendorByPickerValue(vendorId, value, selectedItemId = null) {
-        const needle = String(value || '').trim().toLowerCase();
-        if (!needle) return null;
-        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).find(item =>
-            PurchaseOrdersPage.itemSearchValues(item).some(candidate => candidate.toLowerCase() === needle)
-        ) || null;
+    _filteredItemsForLine(vendorId, query, selectedItemId = null) {
+        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return PurchaseOrdersPage.itemMatchesFilter(item, query);
+        });
     },
 
-    itemDatalistOptionsHtml(items) {
-        return items.map(item =>
-            PurchaseOrdersPage.itemSearchValues(item).map(value => `<option value="${escapeHtml(value)}"></option>`).join('')
-        ).join('');
-    },
-
-    selectedItemDisplayValue(line, items) {
-        if (line.item_id) {
-            const selected = (items || []).find(item => String(item.id) === String(line.item_id));
-            if (selected) return PurchaseOrdersPage.itemOptionLabel(selected);
-        }
-        return line.item_picker_value || '';
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${PurchaseOrdersPage.itemOptionLabel(i)}</option>`).join('');
     },
 
     _snapshotLinesFromDom() {
@@ -148,7 +143,6 @@ const PurchaseOrdersPage = {
             const gst = readGstLinePayload(row);
             return {
                 item_id: row.querySelector('.line-item')?.value ? parseInt(row.querySelector('.line-item').value) : null,
-                item_picker_value: row.querySelector('.line-item-picker')?.value || '',
                 description: row.querySelector('.line-desc')?.value || '',
                 quantity: row.querySelector('.line-qty')?.value || 1,
                 rate: row.querySelector('.line-rate')?.value || 0,
@@ -245,15 +239,9 @@ const PurchaseOrdersPage = {
     },
 
     lineHtml(idx, line, items, canManage = true, vendorId = null) {
-        const datalistId = `po-line-items-${idx}`;
-        const pickerValue = PurchaseOrdersPage.selectedItemDisplayValue(line, items);
-        const opts = PurchaseOrdersPage.itemDatalistOptionsHtml(items);
+        const opts = PurchaseOrdersPage.itemOptionsHtml(items, line.item_id);
         return `<tr data-poline="${idx}">
-            <td>
-                <input class="line-item-picker" list="${datalistId}" value="${escapeHtml(pickerValue)}" oninput="PurchaseOrdersPage.itemPickerChanged(${idx}, this.value)" placeholder="Select item by code or name" ${canManage ? '' : 'disabled'}>
-                <datalist id="${datalistId}">${opts}</datalist>
-                <input class="line-item" type="hidden" value="${line.item_id || ''}">
-            </td>
+            <td><select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" onkeydown="PurchaseOrdersPage.handleItemKeydown(${idx}, event)" onblur="PurchaseOrdersPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select></td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -280,28 +268,58 @@ const PurchaseOrdersPage = {
         const row = $(`[data-poline="${idx}"]`);
         const item = PurchaseOrdersPage._items.find(i => i.id == row.querySelector('.line-item').value);
         if (item) {
-            const picker = row.querySelector('.line-item-picker');
-            if (picker) picker.value = PurchaseOrdersPage.itemOptionLabel(item);
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.cost || item.rate;
         }
         PurchaseOrdersPage.updateTotals();
     },
 
-    itemPickerChanged(idx, value) {
+    applyItemFilter(idx, query) {
         const row = $(`[data-poline="${idx}"]`);
         if (!row) return;
-        const itemInput = row.querySelector('.line-item');
-        if (!itemInput) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
         const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
-        const currentValue = itemInput.value;
-        const matched = PurchaseOrdersPage._itemsForVendorByPickerValue(vendorId, value, currentValue);
-        if (matched) {
-            itemInput.value = matched.id;
-            PurchaseOrdersPage.itemSel(idx);
-        } else if (!String(value || '').trim()) {
-            itemInput.value = '';
+        const currentValue = itemSelect.value;
+        const filtered = PurchaseOrdersPage._filteredItemsForLine(vendorId, query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
         }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-poline="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            PurchaseOrdersPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            PurchaseOrdersPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            PurchaseOrdersPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-poline="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
+        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(PurchaseOrdersPage._itemsForVendor(vendorId, currentValue), currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
     },
 
     async vendorChanged(value) {
