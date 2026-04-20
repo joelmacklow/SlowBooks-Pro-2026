@@ -18,6 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 direction_enum = sa.Enum("any", "inflow", "outflow", name="bankruledirection")
+direction_enum_column = sa.Enum("any", "inflow", "outflow", name="bankruledirection", create_type=False)
 
 
 def upgrade() -> None:
@@ -30,7 +31,7 @@ def upgrade() -> None:
         sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("bank_account_id", sa.Integer(), nullable=True),
-        sa.Column("direction", direction_enum, nullable=False, server_default="any"),
+        sa.Column("direction", direction_enum_column, nullable=False, server_default="any"),
         sa.Column("payee_contains", sa.String(length=200), nullable=True),
         sa.Column("description_contains", sa.String(length=200), nullable=True),
         sa.Column("reference_contains", sa.String(length=200), nullable=True),

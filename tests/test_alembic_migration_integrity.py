@@ -44,6 +44,11 @@ class AlembicMigrationIntegrityTests(unittest.TestCase):
 
         self.assertEqual(len(chain), len(migrations), "migration chain does not cover every revision")
 
+    def test_bank_rules_migration_does_not_create_postgres_enum_twice(self):
+        text = Path("alembic/versions/o5d6e7f8g9h0_add_bank_rules_mvp.py").read_text()
+        self.assertIn('create_type=False', text)
+        self.assertIn('direction_enum.create(op.get_bind(), checkfirst=True)', text)
+
 
 if __name__ == "__main__":
     unittest.main()
