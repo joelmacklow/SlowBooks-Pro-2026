@@ -11,12 +11,13 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func as sqlfunc
 from starlette.requests import Request
 
 from app.database import get_db
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
+from app.models.invoice_reminders import InvoiceReminderAudit
 from app.models.items import Item
 from app.models.contacts import Customer
 from app.models.credit_memos import CreditApplication
@@ -55,10 +56,23 @@ def _next_invoice_number(db: Session) -> str:
 
 
 
-def _invoice_response(inv: Invoice) -> InvoiceResponse:
+def _invoice_response(
+    inv: Invoice,
+    *,
+    reminder_counts: dict[int, int] | None = None,
+) -> InvoiceResponse:
     resp = InvoiceResponse.model_validate(inv)
     if inv.customer:
         resp.customer_name = inv.customer.name
+        resp.invoice_reminders_enabled = inv.customer.invoice_reminders_enabled
+    reminder_count = int((reminder_counts or {}).get(inv.id, 0))
+    resp.reminder_count = reminder_count
+    if resp.invoice_reminders_enabled is False:
+        resp.reminder_summary = "Turned off"
+    elif reminder_count > 0:
+        resp.reminder_summary = f"{reminder_count} sent"
+    else:
+        resp.reminder_summary = ""
     resp.applied_credits = [
         InvoiceCreditApplicationResponse(
             credit_memo_id=application.credit_memo_id,
@@ -126,15 +140,27 @@ def _post_invoice_journal(db: Session, invoice: Invoice, customer: Customer, lin
 
 @router.get("", response_model=list[InvoiceResponse])
 def list_invoices(status: str = None, customer_id: int = None, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.view"))):
-    q = db.query(Invoice)
+    q = db.query(Invoice).options(joinedload(Invoice.customer))
     if status:
         q = q.filter(Invoice.status == status)
     if customer_id:
         q = q.filter(Invoice.customer_id == customer_id)
     invoices = q.order_by(Invoice.date.desc()).all()
+    reminder_counts = {}
+    if invoices:
+        reminder_counts = {
+            int(invoice_id): int(count or 0)
+            for invoice_id, count in (
+                db.query(InvoiceReminderAudit.invoice_id, sqlfunc.count(InvoiceReminderAudit.id))
+                .filter(InvoiceReminderAudit.invoice_id.in_([inv.id for inv in invoices]))
+                .filter(InvoiceReminderAudit.status == "sent")
+                .group_by(InvoiceReminderAudit.invoice_id)
+                .all()
+            )
+        }
     results = []
     for inv in invoices:
-        results.append(_invoice_response(inv))
+        results.append(_invoice_response(inv, reminder_counts=reminder_counts))
     return results
 
 

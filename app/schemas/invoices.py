@@ -104,6 +104,9 @@ class InvoiceResponse(BaseModel):
     lines: list[InvoiceLineResponse] = []
     applied_credits: list[InvoiceCreditApplicationResponse] = []
     customer_name: Optional[str] = None
+    invoice_reminders_enabled: Optional[bool] = None
+    reminder_count: int = 0
+    reminder_summary: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

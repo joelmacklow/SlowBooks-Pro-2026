@@ -33,6 +33,7 @@ class DashboardSnapshotMetricsTests(unittest.TestCase):
         from app.models.contacts import Customer
         from app.models.invoices import Invoice, InvoiceStatus
         from app.models.payments import Payment
+        from app.models.settings import Settings
         from app.services.accounting import create_journal_entry
 
         engine = create_engine("sqlite:///:memory:")
@@ -59,6 +60,11 @@ class DashboardSnapshotMetricsTests(unittest.TestCase):
                 is_active=True,
             ))
             db.flush()
+
+            db.add_all([
+                Settings(key="financial_year_start", value="04-01"),
+                Settings(key="financial_year_end", value="03-31"),
+            ])
 
             create_journal_entry(db, date(2025, 11, 10), "November sale", [
                 {"account_id": bank.id, "debit": Decimal("700.00"), "credit": Decimal("0.00")},
@@ -177,9 +183,10 @@ class DashboardSnapshotMetricsTests(unittest.TestCase):
 
         self.assertIn("profit_summary", payload)
         self.assertIn("cash_flow", payload)
-        self.assertEqual(payload["profit_summary"]["income"], 1500.0)
-        self.assertEqual(payload["profit_summary"]["expenses"], 480.0)
-        self.assertEqual(payload["profit_summary"]["net_profit"], 1020.0)
+        self.assertEqual(payload["profit_summary"]["period_label"], "1 Apr - 21 Apr 2026")
+        self.assertEqual(payload["profit_summary"]["income"], 200.0)
+        self.assertEqual(payload["profit_summary"]["expenses"], 230.0)
+        self.assertEqual(payload["profit_summary"]["net_profit"], -30.0)
         self.assertEqual(payload["cash_flow"]["cash_in_total"], 2200.0)
         self.assertEqual(payload["cash_flow"]["cash_out_total"], 580.0)
         self.assertEqual(payload["cash_flow"]["net_total"], 1620.0)

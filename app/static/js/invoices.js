@@ -10,6 +10,7 @@ const InvoicesPage = {
     _customers: [],
     _items: [],
     _settings: {},
+    _listState: { invoices: [], statusFilter: '', sortKey: 'date', sortDirection: 'desc' },
     _detailState: null,
     _availableCredits: [],
     _pendingCreditApplications: null,
@@ -25,9 +26,162 @@ const InvoicesPage = {
         return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
     },
 
+    parseDateValue(value) {
+        if (!value) return null;
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    },
+
+    todayDate() {
+        return InvoicesPage.parseDateValue(todayISO());
+    },
+
+    isOverdue(inv) {
+        if (!inv || !inv.due_date) return false;
+        if (['paid', 'void'].includes(String(inv.status || '').toLowerCase())) return false;
+        if (Number(inv.balance_due || 0) <= 0) return false;
+        const dueDate = InvoicesPage.parseDateValue(inv.due_date);
+        const today = InvoicesPage.todayDate();
+        if (!dueDate || !today) return false;
+        return dueDate < today;
+    },
+
+    overdueDays(inv) {
+        if (!InvoicesPage.isOverdue(inv)) return 0;
+        const dueDate = InvoicesPage.parseDateValue(inv.due_date);
+        const today = InvoicesPage.todayDate();
+        return Math.round((today - dueDate) / 86400000);
+    },
+
+    overdueLabel(inv) {
+        const days = InvoicesPage.overdueDays(inv);
+        return days > 0 ? `${days} day${days === 1 ? '' : 's'}` : '';
+    },
+
+    reminderSummary(inv) {
+        if (typeof inv?.reminder_summary === 'string' && inv.reminder_summary.trim()) return inv.reminder_summary;
+        if (inv?.invoice_reminders_enabled === false) return 'Turned off';
+        const count = Number(inv?.reminder_count || 0);
+        return count > 0 ? `${count} sent` : '';
+    },
+
+    statusMatchesFilter(inv, statusFilter) {
+        if (!statusFilter) return true;
+        if (statusFilter === 'overdue') return InvoicesPage.isOverdue(inv);
+        return String(inv?.status || '') === statusFilter;
+    },
+
+    filteredInvoices(invoices = [], statusFilter = '') {
+        return invoices.filter(inv => InvoicesPage.statusMatchesFilter(inv, statusFilter));
+    },
+
+    sortValue(inv, sortKey) {
+        switch (sortKey) {
+            case 'invoice_number':
+                return String(inv.invoice_number || '');
+            case 'customer_name':
+                return String(inv.customer_name || '');
+            case 'date':
+            case 'due_date':
+                return String(inv[sortKey] || '');
+            case 'overdue_days':
+                return InvoicesPage.overdueDays(inv);
+            case 'amount_paid':
+                return Number(inv.amount_paid || 0);
+            case 'balance_due':
+                return Number(inv.balance_due || 0);
+            case 'status':
+                return String(inv.status || '');
+            case 'reminder_summary':
+                return InvoicesPage.reminderSummary(inv);
+            default:
+                return inv[sortKey];
+        }
+    },
+
+    sortInvoices(invoices = [], sortKey = 'date', sortDirection = 'desc') {
+        const factor = sortDirection === 'asc' ? 1 : -1;
+        return [...invoices].sort((a, b) => {
+            const left = InvoicesPage.sortValue(a, sortKey);
+            const right = InvoicesPage.sortValue(b, sortKey);
+            if (typeof left === 'number' || typeof right === 'number') {
+                return ((Number(left || 0) - Number(right || 0)) || String(a.invoice_number || '').localeCompare(String(b.invoice_number || ''), undefined, { numeric: true })) * factor;
+            }
+            return (String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' }) || String(a.invoice_number || '').localeCompare(String(b.invoice_number || ''), undefined, { numeric: true })) * factor;
+        });
+    },
+
+    visibleInvoices() {
+        const state = InvoicesPage._listState || {};
+        return InvoicesPage.sortInvoices(
+            InvoicesPage.filteredInvoices(state.invoices || [], state.statusFilter || ''),
+            state.sortKey || 'date',
+            state.sortDirection || 'desc',
+        );
+    },
+
+    sortIndicator(sortKey) {
+        const state = InvoicesPage._listState || {};
+        if (state.sortKey !== sortKey) return '';
+        return state.sortDirection === 'asc' ? ' ▲' : ' ▼';
+    },
+
+    sortHeader(label, sortKey, extraClass = '') {
+        return `<button type="button" class="invoice-sort-button ${extraClass}" onclick="InvoicesPage.sortBy('${sortKey}')">${escapeHtml(label)}${InvoicesPage.sortIndicator(sortKey)}</button>`;
+    },
+
+    renderListRow(inv) {
+        const overdue = InvoicesPage.isOverdue(inv);
+        const dueDateClass = overdue ? 'invoice-due-date--overdue' : '';
+        const reminderSummary = InvoicesPage.reminderSummary(inv);
+        return `<tr class="inv-row" data-status="${escapeHtml(inv.status)}" data-overdue="${overdue ? 'true' : 'false'}">
+            <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
+            <td>${escapeHtml(inv.customer_name || '')}</td>
+            <td>${formatDate(inv.date)}</td>
+            <td class="${dueDateClass}">${formatDate(inv.due_date)}</td>
+            <td class="${overdue ? 'invoice-overdue-days' : ''}">${escapeHtml(InvoicesPage.overdueLabel(inv))}</td>
+            <td class="amount">${formatCurrency(inv.amount_paid || 0)}</td>
+            <td class="amount">${formatCurrency(inv.balance_due || 0)}</td>
+            <td>${statusBadge(inv.status)}</td>
+            <td class="${reminderSummary ? '' : 'invoice-reminder-muted'}">${escapeHtml(reminderSummary || '—')}</td>
+            <td class="actions">
+                <button class="btn btn-sm btn-secondary" onclick="InvoicesPage.open(${inv.id})">Open</button>
+                ${InvoicesPage.canSendDraft(inv) ? `<button class="btn btn-sm btn-primary" onclick="InvoicesPage.markSent(${inv.id}, '#/invoices')">Send</button>` : ''}
+            </td>
+        </tr>`;
+    },
+
+    renderListTable(invoices = []) {
+        if (!invoices.length) {
+            const allInvoices = InvoicesPage._listState?.invoices || [];
+            return `<div class="empty-state"><p>${allInvoices.length ? 'No invoices match the current filter' : 'No invoices yet'}</p></div>`;
+        }
+        return `<div class="table-container"><table>
+            <thead><tr>
+                <th>${InvoicesPage.sortHeader('Number', 'invoice_number')}</th>
+                <th>${InvoicesPage.sortHeader('Customer', 'customer_name')}</th>
+                <th>${InvoicesPage.sortHeader('Date', 'date')}</th>
+                <th>${InvoicesPage.sortHeader('Due Date', 'due_date')}</th>
+                <th>${InvoicesPage.sortHeader('Overdue by', 'overdue_days')}</th>
+                <th class="amount">${InvoicesPage.sortHeader('Paid', 'amount_paid', 'amount')}</th>
+                <th class="amount">${InvoicesPage.sortHeader('Due', 'balance_due', 'amount')}</th>
+                <th>${InvoicesPage.sortHeader('Status', 'status')}</th>
+                <th>${InvoicesPage.sortHeader('Reminders', 'reminder_summary')}</th>
+                <th>Actions</th>
+            </tr></thead>
+            <tbody id="inv-tbody">${invoices.map(inv => InvoicesPage.renderListRow(inv)).join('')}</tbody>
+        </table></div>`;
+    },
+
     async render() {
         const invoices = await API.get('/invoices');
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
+        InvoicesPage._listState = {
+            invoices,
+            statusFilter: InvoicesPage._listState?.statusFilter || '',
+            sortKey: InvoicesPage._listState?.sortKey || 'date',
+            sortDirection: InvoicesPage._listState?.sortDirection || 'desc',
+        };
         let html = `
             <div class="page-header">
                 <h2>Invoices</h2>
@@ -35,48 +189,45 @@ const InvoicesPage = {
             </div>
             <div class="toolbar">
                 <select id="inv-status-filter" onchange="InvoicesPage.applyFilter()">
-                    <option value="">All Statuses</option>
-                    <option value="draft">Draft</option>
-                    <option value="sent">Sent</option>
-                    <option value="partial">Partial</option>
-                    <option value="paid">Paid</option>
-                    <option value="void">Void</option>
+                    <option value="" ${InvoicesPage._listState.statusFilter === '' ? 'selected' : ''}>All Statuses</option>
+                    <option value="draft" ${InvoicesPage._listState.statusFilter === 'draft' ? 'selected' : ''}>Draft</option>
+                    <option value="sent" ${InvoicesPage._listState.statusFilter === 'sent' ? 'selected' : ''}>Sent</option>
+                    <option value="partial" ${InvoicesPage._listState.statusFilter === 'partial' ? 'selected' : ''}>Partial</option>
+                    <option value="overdue" ${InvoicesPage._listState.statusFilter === 'overdue' ? 'selected' : ''}>Overdue</option>
+                    <option value="paid" ${InvoicesPage._listState.statusFilter === 'paid' ? 'selected' : ''}>Paid</option>
+                    <option value="void" ${InvoicesPage._listState.statusFilter === 'void' ? 'selected' : ''}>Void</option>
                 </select>
-            </div>`;
-
-        if (invoices.length === 0) {
-            html += `<div class="empty-state"><p>No invoices yet</p></div>`;
-        } else {
-            html += `<div class="table-container"><table>
-                <thead><tr>
-                    <th>#</th><th>Customer</th><th>Date</th><th>Due Date</th>
-                    <th>Status</th><th class="amount">Total</th><th class="amount">Balance</th><th>Actions</th>
-                </tr></thead><tbody id="inv-tbody">`;
-            for (const inv of invoices) {
-                html += `<tr class="inv-row" data-status="${inv.status}">
-                    <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
-                    <td>${escapeHtml(inv.customer_name || '')}</td>
-                    <td>${formatDate(inv.date)}</td>
-                    <td>${formatDate(inv.due_date)}</td>
-                    <td>${statusBadge(inv.status)}</td>
-                    <td class="amount">${formatCurrency(inv.total)}</td>
-                    <td class="amount">${formatCurrency(inv.balance_due)}</td>
-                    <td class="actions">
-                        <button class="btn btn-sm btn-secondary" onclick="InvoicesPage.open(${inv.id})">Open</button>
-                        ${InvoicesPage.canSendDraft(inv) ? `<button class="btn btn-sm btn-primary" onclick="InvoicesPage.markSent(${inv.id}, '#/invoices')">Send</button>` : ''}
-                    </td>
-                </tr>`;
-            }
-            html += `</tbody></table></div>`;
-        }
+            </div>
+            <div id="inv-table-wrap">${InvoicesPage.renderListTable(InvoicesPage.visibleInvoices())}</div>`;
         return html;
     },
 
     applyFilter() {
-        const status = $('#inv-status-filter')?.value;
-        $$('.inv-row').forEach(row => {
-            row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
-        });
+        InvoicesPage._listState.statusFilter = $('#inv-status-filter')?.value || '';
+        InvoicesPage.refreshList();
+    },
+
+    sortBy(sortKey) {
+        const state = InvoicesPage._listState || {};
+        if (state.sortKey === sortKey) {
+            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            state.sortKey = sortKey;
+            state.sortDirection = ['date', 'due_date', 'overdue_days', 'amount_paid', 'balance_due'].includes(sortKey) ? 'desc' : 'asc';
+        }
+        InvoicesPage._listState = state;
+        InvoicesPage.refreshList();
+    },
+
+    refreshList() {
+        const container = $('#inv-table-wrap') || $('#page-content');
+        if (!container) return;
+        const tableMarkup = InvoicesPage.renderListTable(InvoicesPage.visibleInvoices());
+        if (container.id === 'page-content') {
+            container.innerHTML = tableMarkup;
+            return;
+        }
+        container.innerHTML = tableMarkup;
     },
 
     canSendDraft(inv) {

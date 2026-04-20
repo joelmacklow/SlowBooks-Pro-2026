@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func as sqlfunc
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.accounts import Account, AccountType
 from app.models.banking import BankAccount, BankTransaction, Reconciliation, ReconciliationStatus
 from app.models.invoices import Invoice, InvoiceStatus
+from app.models.settings import Settings
 from app.models.transactions import Transaction, TransactionLine
 from app.services.accounting import get_default_bank_account_id
 
@@ -29,6 +30,24 @@ def _shift_month(day: date, delta_months: int) -> date:
 
 def _period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.day} {start_date.strftime('%b')} - {end_date.day} {end_date.strftime('%b %Y')}"
+
+
+def _financial_year_start(db: Session, today: date) -> date:
+    start_value = (
+        db.query(Settings.value)
+        .filter(Settings.key == "financial_year_start")
+        .scalar()
+    ) or ""
+    start_value = str(start_value or "").strip()
+    if not start_value:
+        return date(today.year, 1, 1)
+
+    month = int(start_value[:2])
+    day = int(start_value[3:])
+    candidate = date(today.year, month, day)
+    if today < candidate:
+        candidate = date(today.year - 1, month, day)
+    return candidate
 
 
 def natural_balance_amount(account_type: AccountType, debit_total, credit_total) -> Decimal:
@@ -246,13 +265,12 @@ def _profit_totals(db: Session, start_date: date, end_date: date) -> tuple[Decim
 
 def build_dashboard_profit_summary(db: Session, today: date | None = None) -> dict:
     today = today or date.today()
-    start_of_year = date(today.year, 1, 1)
+    start_of_year = _financial_year_start(db, today)
     income, expenses, net_profit = _profit_totals(db, start_of_year, today)
 
-    prior_year = today.year - 1
-    prior_end_day = min(today.day, monthrange(prior_year, today.month)[1])
-    prior_start = date(prior_year, 1, 1)
-    prior_end = date(prior_year, today.month, prior_end_day)
+    elapsed_days = (today - start_of_year).days
+    prior_start = date(start_of_year.year - 1, start_of_year.month, start_of_year.day)
+    prior_end = prior_start + timedelta(days=elapsed_days)
     _previous_income, _previous_expenses, previous_net_profit = _profit_totals(db, prior_start, prior_end)
     profit_change = net_profit - previous_net_profit
     profit_change_pct = None
