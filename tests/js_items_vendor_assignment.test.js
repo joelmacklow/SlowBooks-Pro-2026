@@ -60,9 +60,9 @@ const poContext = {
             if (path === '/vendors?active_only=true') return [{ id: 1, name: 'Harbour Supplies' }, { id: 2, name: 'Office Goods' }];
             if (path === '/items?active_only=true') {
                 return [
-                    { id: 2, name: 'Pens', description: 'Pens', cost: 15, vendor_id: 1 },
-                    { id: 3, name: 'Paper', description: 'Paper', cost: 6, vendor_id: 2 },
-                    { id: 4, name: 'Stapler', description: 'Stapler', cost: 12, vendor_id: null },
+                    { id: 2, code: '100-20', name: 'Pens', description: 'Pens', cost: 15, vendor_id: 1 },
+                    { id: 3, code: '200-10', name: 'Paper', description: 'Paper', cost: 6, vendor_id: 2 },
+                    { id: 4, code: '300-01', name: 'Stapler', description: 'Stapler', cost: 12, vendor_id: null },
                 ];
             }
             if (path === '/settings/public') return { default_tax_rate: '15', prices_include_gst: 'false' };
@@ -100,12 +100,14 @@ vm.runInContext(poCode, poContext);
 
 (async () => {
     await itemContext.ItemsPage.showForm();
+    assert.ok(itemModalHtml.includes('<label>Code</label>'));
     assert.ok(itemModalHtml.includes('<label>Preferred Vendor</label>'));
     assert.ok(itemModalHtml.includes('Harbour Supplies'));
 
     await itemContext.ItemsPage.save({
         preventDefault() {},
         target: {
+            code: { value: '100-20' },
             name: { value: 'Pens' },
             item_type: { value: 'service' },
             description: { value: 'Blue pens' },
@@ -119,6 +121,7 @@ vm.runInContext(poCode, poContext);
     }, null);
     assert.strictEqual(itemPosts.length, 1);
     assert.strictEqual(itemPosts[0][0], '/items');
+    assert.strictEqual(itemPosts[0][1].code, '100-20');
     assert.strictEqual(itemPosts[0][1].name, 'Pens');
     assert.strictEqual(itemPosts[0][1].item_type, 'service');
     assert.strictEqual(itemPosts[0][1].description, 'Blue pens');
@@ -133,12 +136,19 @@ vm.runInContext(poCode, poContext);
     poContext.PurchaseOrdersPage._detailState.vendor_id = 1;
     const vendorOneLine = poContext.PurchaseOrdersPage.lineHtml(0, { item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }, poContext.PurchaseOrdersPage._itemsForVendor(1), true);
     assert.ok(vendorOneLine.includes('Pens'));
+    assert.ok(vendorOneLine.includes('100-20'));
     assert.ok(!vendorOneLine.includes('Paper'));
 
     poContext.PurchaseOrdersPage._detailState.vendor_id = 2;
     const vendorTwoLine = poContext.PurchaseOrdersPage.lineHtml(0, { item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }, poContext.PurchaseOrdersPage._itemsForVendor(2), true);
     assert.ok(vendorTwoLine.includes('Paper'));
+    assert.ok(vendorTwoLine.includes('200-10'));
     assert.ok(!vendorTwoLine.includes('Pens'));
+
+    const byVendorAndCode = poContext.PurchaseOrdersPage._filteredItemsForLine(1, '100', null);
+    assert.deepStrictEqual(byVendorAndCode.map(item => item.name), ['Pens']);
+    const byVendorAndName = poContext.PurchaseOrdersPage._filteredItemsForLine(2, 'pap', null);
+    assert.deepStrictEqual(byVendorAndName.map(item => item.name), ['Paper']);
 })().catch(err => {
     console.error(err);
     process.exit(1);

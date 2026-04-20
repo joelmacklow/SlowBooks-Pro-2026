@@ -4,6 +4,7 @@ import types
 import unittest
 from decimal import Decimal
 
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -63,6 +64,39 @@ class ItemVendorAssignmentTests(unittest.TestCase):
         self.assertEqual([item.name for item in vendor_a_items], ["Paper", "Pens"])
         self.assertEqual([item.vendor_id for item in vendor_a_items], [vendor_a.id, vendor_a.id])
         self.assertEqual(vendor_b_items, [])
+
+    def test_item_codes_validate_and_search_by_code_or_name(self):
+        from app.models.items import ItemType
+        from app.routes.items import create_item, list_items
+        from app.schemas.items import ItemCreate
+
+        with self.assertRaises(ValidationError):
+            ItemCreate(name="Bad Code", code="ABC-1", item_type=ItemType.SERVICE)
+
+        with self.Session() as db:
+            coded = create_item(ItemCreate(
+                code="100-20",
+                name="Pens",
+                item_type=ItemType.SERVICE,
+                description="Blue pens",
+                rate=Decimal("12.50"),
+                cost=Decimal("7.25"),
+            ), db=db)
+            uncoded = create_item(ItemCreate(
+                name="Paper",
+                item_type=ItemType.MATERIAL,
+                description="A4 ream",
+                rate=Decimal("9.00"),
+                cost=Decimal("4.50"),
+            ), db=db)
+
+            by_code = list_items(search="100-20", db=db)
+            by_name = list_items(search="Paper", db=db)
+
+        self.assertEqual(coded.code, "100-20")
+        self.assertIsNone(uncoded.code)
+        self.assertEqual([item.name for item in by_code], ["Pens"])
+        self.assertEqual([item.name for item in by_name], ["Paper"])
 
 
 if __name__ == "__main__":

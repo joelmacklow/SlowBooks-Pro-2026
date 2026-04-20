@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -26,7 +27,8 @@ def list_items(
     if vendor_id:
         q = q.filter(Item.vendor_id == vendor_id)
     if search:
-        q = q.filter(Item.name.ilike(f"%{search}%"))
+        needle = search.strip()
+        q = q.filter(or_(Item.name.ilike(f"%{needle}%"), Item.code.ilike(f"%{needle}%")))
     return q.order_by(Item.name).all()
 
 

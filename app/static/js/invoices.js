@@ -147,6 +147,28 @@ const InvoicesPage = {
         })));
     },
 
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return String(item.code || '').toLowerCase().includes(needle)
+            || String(item.name || '').toLowerCase().includes(needle);
+    },
+
+    filteredItems(query, selectedItemId = null) {
+        return (InvoicesPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return InvoicesPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${InvoicesPage.itemOptionLabel(i)}</option>`).join('');
+    },
+
     renderDetailScreen() {
         const inv = InvoicesPage._detailState;
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -392,10 +414,20 @@ const InvoicesPage = {
     },
 
     lineRowHtml(idx, line, items, canManage = true) {
-        const itemOpts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
+        const filterQuery = line.item_filter_query || '';
+        const filteredItems = items.filter(item => {
+            if (line.item_id && String(item.id) === String(line.item_id)) return true;
+            return InvoicesPage.itemMatchesFilter(item, filterQuery);
+        });
+        const itemOpts = InvoicesPage.itemOptionsHtml(filteredItems, line.item_id);
         return `<tr data-line="${idx}">
-            <td><select class="line-item" onchange="InvoicesPage.itemSelected(${idx})" ${canManage ? '' : 'disabled'}>
-                <option value="">--</option>${itemOpts}</select></td>
+            <td>
+                <div style="display:grid; gap:4px;">
+                    <input class="line-item-filter" placeholder="Filter by code or name" value="${escapeHtml(filterQuery)}" oninput="InvoicesPage.filterLineItems(${idx}, this.value)" ${canManage ? '' : 'disabled'}>
+                    <select class="line-item" onchange="InvoicesPage.itemSelected(${idx})" ${canManage ? '' : 'disabled'}>
+                        <option value="">--</option>${itemOpts}</select>
+                </div>
+            </td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -425,6 +457,19 @@ const InvoicesPage = {
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.rate;
             InvoicesPage.recalc();
+        }
+    },
+
+    filterLineItems(idx, query) {
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = InvoicesPage.filteredItems(query, currentValue);
+        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
         }
     },
 

@@ -7,6 +7,7 @@ this.InvoicesPage = InvoicesPage;`;
 
 const posts = [];
 const navigations = [];
+const detailOrigins = {};
 
 const context = {
     console,
@@ -55,6 +56,10 @@ const context = {
         gstCodes: [],
         settings: { prices_include_gst: 'false' },
         showDocumentEmailModal() {},
+        setDetailOrigin(detailHash, originHash = null) { detailOrigins[detailHash] = originHash; },
+        getDetailOrigin(detailHash) { return detailOrigins[detailHash] || null; },
+        detailBackLabel(_detailHash, _fallbackHash, fallback = 'Previous') { return `Back to ${fallback}`; },
+        navigateBackToDetailOrigin(detailHash, fallbackHash) { navigations.push(detailOrigins[detailHash] || fallbackHash); },
     },
     escapeHtml: value => String(value || ''),
     formatDate: value => String(value || ''),

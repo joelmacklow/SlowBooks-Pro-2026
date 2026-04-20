@@ -26,6 +26,7 @@ class Item(Base):
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), nullable=True)
     name = Column(String(200), nullable=False)
     item_type = Column(Enum(ItemType), nullable=False)
     description = Column(Text, nullable=True)

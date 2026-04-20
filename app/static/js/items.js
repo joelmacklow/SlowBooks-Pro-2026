@@ -21,11 +21,12 @@ const ItemsPage = {
         } else {
             html += `<div class="table-container"><table>
                 <thead><tr>
-                    <th>Name</th><th>Type</th><th>Description</th>
+                    <th>Code</th><th>Name</th><th>Type</th><th>Description</th>
                     <th class="amount">Rate</th><th class="amount">Cost</th><th>Actions</th>
                 </tr></thead><tbody>`;
             for (const item of items) {
                 html += `<tr>
+                    <td>${escapeHtml(item.code || '')}</td>
                     <td><strong>${escapeHtml(item.name)}</strong></td>
                     <td>${statusBadge(item.item_type)}</td>
                     <td>${escapeHtml(item.description) || ''}</td>
@@ -42,7 +43,7 @@ const ItemsPage = {
     },
 
     async showForm(id = null) {
-        let item = { name:'', item_type:'service', description:'', rate:0, cost:0,
+        let item = { code:'', name:'', item_type:'service', description:'', rate:0, cost:0,
             vendor_id:'', income_account_id:'', expense_account_id:'', is_taxable:true };
         if (id) item = await API.get(`/items/${id}`);
 
@@ -57,6 +58,9 @@ const ItemsPage = {
         openModal(id ? 'Edit Item' : 'New Item', `
             <form id="item-form" onsubmit="ItemsPage.save(event, ${id})">
                 <div class="form-grid">
+                    <div class="form-group"><label>Code</label>
+                        <input name="code" inputmode="numeric" pattern="[0-9-]*" title="Numbers and dashes only" value="${escapeHtml(item.code || '')}">
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Optional item code. Numbers and dashes only.</div></div>
                     <div class="form-group"><label>Name *</label>
                         <input name="name" required value="${escapeHtml(item.name)}"></div>
                     <div class="form-group"><label>Type *</label>
@@ -100,6 +104,7 @@ const ItemsPage = {
         e.preventDefault();
         const form = e.target;
         const data = {
+            code: form.code.value.trim() || null,
             name: form.name.value,
             item_type: form.item_type.value,
             description: form.description.value,

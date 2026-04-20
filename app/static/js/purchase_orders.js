@@ -99,12 +99,34 @@ const PurchaseOrdersPage = {
         })), PurchaseOrdersPage._settings);
     },
 
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return String(item.code || '').toLowerCase().includes(needle)
+            || String(item.name || '').toLowerCase().includes(needle);
+    },
+
     _itemsForVendor(vendorId, selectedItemId = null) {
         return (PurchaseOrdersPage._items || []).filter(item => {
             if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
             if (!vendorId) return true;
             return String(item.vendor_id || '') === String(vendorId);
         });
+    },
+
+    _filteredItemsForLine(vendorId, query, selectedItemId = null) {
+        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return PurchaseOrdersPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${PurchaseOrdersPage.itemOptionLabel(i)}</option>`).join('');
     },
 
     _snapshotLinesFromDom() {
@@ -114,6 +136,7 @@ const PurchaseOrdersPage = {
             const gst = readGstLinePayload(row);
             return {
                 item_id: row.querySelector('.line-item')?.value ? parseInt(row.querySelector('.line-item').value) : null,
+                item_filter_query: row.querySelector('.line-item-filter')?.value || '',
                 description: row.querySelector('.line-desc')?.value || '',
                 quantity: row.querySelector('.line-qty')?.value || 1,
                 rate: row.querySelector('.line-rate')?.value || 0,
@@ -210,9 +233,19 @@ const PurchaseOrdersPage = {
     },
 
     lineHtml(idx, line, items, canManage = true, vendorId = null) {
-        const opts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
+        const filterQuery = line.item_filter_query || '';
+        const filteredItems = items.filter(item => {
+            if (line.item_id && String(item.id) === String(line.item_id)) return true;
+            return PurchaseOrdersPage.itemMatchesFilter(item, filterQuery);
+        });
+        const opts = PurchaseOrdersPage.itemOptionsHtml(filteredItems, line.item_id);
         return `<tr data-poline="${idx}">
-            <td><select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select></td>
+            <td>
+                <div style="display:grid; gap:4px;">
+                    <input class="line-item-filter" placeholder="Filter by code or name" value="${escapeHtml(filterQuery)}" oninput="PurchaseOrdersPage.filterLineItems(${idx}, this.value)" ${canManage ? '' : 'disabled'}>
+                    <select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select>
+                </div>
+            </td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -243,6 +276,20 @@ const PurchaseOrdersPage = {
             row.querySelector('.line-rate').value = item.cost || item.rate;
         }
         PurchaseOrdersPage.updateTotals();
+    },
+
+    filterLineItems(idx, query) {
+        const row = $(`[data-poline="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
+        const filtered = PurchaseOrdersPage._filteredItemsForLine(vendorId, query, currentValue);
+        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
+        }
     },
 
     async vendorChanged(value) {
