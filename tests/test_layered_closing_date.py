@@ -59,14 +59,14 @@ class LayeredClosingDateTests(unittest.TestCase):
 
         with self.Session() as db:
             update_settings({
-                "financial_year_start": "2026-04-01",
-                "financial_year_end": "2027-03-31",
+                "financial_year_start": "04-01",
+                "financial_year_end": "03-31",
                 "closing_date": "2026-02-28",
             }, db=db, auth=True)
             settings = get_settings(db=db, auth=True)
 
-        self.assertEqual(settings["financial_year_start"], "2026-04-01")
-        self.assertEqual(settings["financial_year_end"], "2027-03-31")
+        self.assertEqual(settings["financial_year_start"], "04-01")
+        self.assertEqual(settings["financial_year_end"], "03-31")
         self.assertEqual(settings["org_lock_date"], "2026-03-31")
         self.assertEqual(settings["effective_lock_date"], "2026-03-31")
         self.assertEqual(settings["effective_lock_layer"], "org_admin")
@@ -111,14 +111,14 @@ class LayeredClosingDateTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn("organization lock", ctx.exception.detail.lower())
 
-    def test_financial_year_dates_require_valid_ordering(self):
+    def test_financial_year_dates_require_valid_boundaries(self):
         from app.routes.settings import update_settings
 
         with self.Session() as db:
             with self.assertRaises(HTTPException) as ctx:
                 update_settings({
-                    "financial_year_start": "2026-04-01",
-                    "financial_year_end": "2026-03-31",
+                    "financial_year_start": "04-01",
+                    "financial_year_end": "02-30",
                 }, db=db, auth=True)
 
         self.assertEqual(ctx.exception.status_code, 400)

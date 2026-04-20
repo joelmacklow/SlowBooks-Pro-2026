@@ -28,8 +28,8 @@ const context = {
                 gst_basis: 'invoice',
                 gst_period: 'two-monthly',
                 prices_include_gst: 'false',
-                financial_year_start: '2026-04-01',
-                financial_year_end: '2027-03-31',
+                financial_year_start: '04-01',
+                financial_year_end: '03-31',
                 closing_date: '2026-02-28',
                 org_lock_date: '2026-03-31',
                 effective_lock_date: '2026-03-31',
@@ -56,9 +56,16 @@ vm.runInContext(code, context);
     const html = await context.SettingsPage.render();
     assert.ok(html.includes('Financial Year Start'));
     assert.ok(html.includes('Financial Year End'));
-    assert.ok(html.includes('value="2026-04-01"'));
-    assert.ok(html.includes('value="2027-03-31"'));
+    assert.ok(html.includes('name="financial_year_start_day"'));
+    assert.ok(html.includes('name="financial_year_start_month"'));
+    assert.ok(html.includes('name="financial_year_end_day"'));
+    assert.ok(html.includes('name="financial_year_end_month"'));
+    assert.ok(html.includes('<option value="01" selected>01</option>'));
+    assert.ok(html.includes('<option value="04" selected>April</option>'));
+    assert.ok(html.includes('<option value="03" selected>March</option>'));
     assert.ok(html.includes('Company Admin Lock'));
     assert.ok(html.includes('Organization Lock'));
+    assert.ok(html.includes('cannot be bypassed by the company override password'));
+    assert.ok(html.includes('The stricter of the company-admin lock and organization lock'));
     assert.ok(html.includes('2026-03-31'));
 })();

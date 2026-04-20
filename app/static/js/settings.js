@@ -6,6 +6,34 @@
  * PostgreSQL INSERTs. Progress.
  */
 const SettingsPage = {
+    _monthOptions() {
+        return [
+            ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+            ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+            ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+        ];
+    },
+
+    _parseFinancialYearBoundary(value) {
+        const raw = String(value || '');
+        if (raw.length === 5 && raw.includes('-')) return { month: raw.slice(0, 2), day: raw.slice(3, 5) };
+        if (raw.length >= 10 && raw.includes('-')) return { month: raw.slice(5, 7), day: raw.slice(8, 10) };
+        return { month: '', day: '' };
+    },
+
+    _financialYearSelectHtml(prefix, value) {
+        const boundary = SettingsPage._parseFinancialYearBoundary(value);
+        const dayOptions = Array.from({ length: 31 }, (_value, idx) => String(idx + 1).padStart(2, '0'))
+            .map(day => `<option value="${day}" ${boundary.day === day ? 'selected' : ''}>${day}</option>`).join('');
+        const monthOptions = SettingsPage._monthOptions()
+            .map(([month, label]) => `<option value="${month}" ${boundary.month === month ? 'selected' : ''}>${label}</option>`).join('');
+        return `
+            <div style="display:flex; gap:8px;">
+                <select name="${prefix}_day"><option value="">Day...</option>${dayOptions}</select>
+                <select name="${prefix}_month"><option value="">Month...</option>${monthOptions}</select>
+            </div>`;
+    },
+
     async render() {
         const s = await API.get('/settings');
         setTimeout(() => SettingsPage.loadBackups(), 0);
@@ -125,9 +153,11 @@ const SettingsPage = {
                                 <option value="true" ${s.prices_include_gst === 'true' ? 'selected' : ''}>Yes</option>
                             </select></div>
                         <div class="form-group"><label>Financial Year Start</label>
-                            <input name="financial_year_start" type="date" value="${escapeHtml(s.financial_year_start || '')}"></div>
+                            ${SettingsPage._financialYearSelectHtml('financial_year_start', s.financial_year_start)}
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Set the recurring day/month that each financial year begins on.</div></div>
                         <div class="form-group"><label>Financial Year End</label>
-                            <input name="financial_year_end" type="date" value="${escapeHtml(s.financial_year_end || '')}"></div>
+                            ${SettingsPage._financialYearSelectHtml('financial_year_end', s.financial_year_end)}
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Use the recurring day/month boundary, e.g. 31 March for a 1 April to 31 March year.</div></div>
                     </div>
                 </div>
 
@@ -158,9 +188,11 @@ const SettingsPage = {
                             <input name="closing_date_password" type="password" value="${escapeHtml(s.closing_date_password || '')}"
                                 placeholder="Enter a new password to set or change the override"></div>
                         <div class="form-group"><label>Organization Lock</label>
-                            <input type="date" value="${escapeHtml(s.org_lock_date || '')}" disabled></div>
+                            <input value="${escapeHtml(s.org_lock_date || 'Not set')}" readonly>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Set by organization admins from Company Files. It applies across the whole company and cannot be bypassed by the company override password.</div></div>
                         <div class="form-group"><label>Effective Lock</label>
-                            <input type="date" value="${escapeHtml(s.effective_lock_date || '')}" disabled></div>
+                            <input value="${escapeHtml(s.effective_lock_date || 'Not set')}" readonly>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">The stricter of the company-admin lock and organization lock. Transactions on or before this date are blocked.</div></div>
                     </div>
                     ${s.effective_lock_layer ? `<div style="font-size:10px; color:var(--text-muted); margin-top:8px;">Current blocking layer: ${escapeHtml(s.effective_lock_layer)}</div>` : ''}
                 </div>
@@ -249,6 +281,16 @@ const SettingsPage = {
     async save(e) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
+        const startDay = data.financial_year_start_day || '';
+        const startMonth = data.financial_year_start_month || '';
+        const endDay = data.financial_year_end_day || '';
+        const endMonth = data.financial_year_end_month || '';
+        data.financial_year_start = startDay && startMonth ? `${startMonth}-${startDay}` : '';
+        data.financial_year_end = endDay && endMonth ? `${endMonth}-${endDay}` : '';
+        delete data.financial_year_start_day;
+        delete data.financial_year_start_month;
+        delete data.financial_year_end_day;
+        delete data.financial_year_end_month;
         // Remove file input from data
         delete data.file;
         try {

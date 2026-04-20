@@ -110,18 +110,37 @@ def verify_closing_date_password(password: str | None, stored_value: str | None)
     return hmac.compare_digest(candidate, stored)
 
 
+def normalize_financial_year_boundary(value: str | None) -> str:
+    if value is None:
+        return ""
+    candidate = str(value).strip()
+    if not candidate:
+        return ""
+    try:
+        if len(candidate) == 5 and candidate[2] == "-":
+            month = int(candidate[:2])
+            day = int(candidate[3:])
+        else:
+            parsed = date.fromisoformat(candidate)
+            month = parsed.month
+            day = parsed.day
+        date(2001, month, day)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Financial year dates must use a valid day and month") from exc
+    return f"{month:02d}-{day:02d}"
+
+
 def validate_financial_year_dates(start_value: str | None, end_value: str | None) -> None:
     if not start_value and not end_value:
         return
     if not start_value or not end_value:
         raise HTTPException(status_code=400, detail="Financial year start and end dates must both be set")
-    try:
-        start_date = date.fromisoformat(str(start_value))
-        end_date = date.fromisoformat(str(end_value))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Financial year dates must be valid ISO dates") from exc
+    start_boundary = normalize_financial_year_boundary(start_value)
+    end_boundary = normalize_financial_year_boundary(end_value)
+    start_date = date(2001, int(start_boundary[:2]), int(start_boundary[3:]))
+    end_date = date(2001, int(end_boundary[:2]), int(end_boundary[3:]))
     if end_date <= start_date:
-        raise HTTPException(status_code=400, detail="Financial year end must be after the financial year start")
+        end_date = date(2002, int(end_boundary[:2]), int(end_boundary[3:]))
     if (end_date - start_date).days > 370:
         raise HTTPException(status_code=400, detail="Financial year range is too long")
 

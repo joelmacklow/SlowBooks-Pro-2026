@@ -97,7 +97,8 @@ const CompaniesPage = {
                     <div class="form-group full-width"><label>Description</label>
                         <textarea name="description">${escapeHtml(company.description || '')}</textarea></div>
                     <div class="form-group"><label>Organization Lock Date</label>
-                        <input name="org_lock_date" type="date" value="${escapeHtml(company.org_lock_date || '')}"></div>
+                        <input name="org_lock_date" type="date" value="${escapeHtml(company.org_lock_date || '')}">
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">This is the organization-admin lock date for this company. It blocks transactions on or before the selected date and cannot be bypassed by company-level override passwords.</div></div>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>

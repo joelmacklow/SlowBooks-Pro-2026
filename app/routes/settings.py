@@ -23,7 +23,12 @@ from app.services.chart_setup_status import (
     mark_chart_setup_ready,
 )
 from app.services.chart_template_loader import load_chart_template as run_chart_template_load
-from app.services.closing_date import hash_closing_date_password, lock_context_for_client, validate_financial_year_dates
+from app.services.closing_date import (
+    hash_closing_date_password,
+    lock_context_for_client,
+    normalize_financial_year_boundary,
+    validate_financial_year_dates,
+)
 from app.services.invoice_reminders import (
     default_invoice_reminder_body_template,
     default_invoice_reminder_subject_template,
@@ -160,6 +165,9 @@ def update_settings(
                         _set(db, key, "")
                 continue
             if key == "smtp_password":
+                continue
+            if key in ("financial_year_start", "financial_year_end"):
+                _set(db, key, normalize_financial_year_boundary(str(value) if value is not None else ""))
                 continue
             _set(db, key, str(value) if value is not None else "")
     settings = _apply_smtp_secret_status(db, _get_all(db))
