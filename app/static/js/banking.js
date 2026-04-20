@@ -497,6 +497,7 @@ const BankingPage = {
         ]);
         BankingPage._splitCodeAccounts = accounts.filter(account => ['expense', 'income', 'asset', 'liability', 'equity', 'cogs'].includes(account.account_type));
         const txn = suggestionData.transaction;
+        const allowPurchaseGst = Number(txn.amount || 0) < 0;
         openModal('Split Code Statement Line', `
             <div style="margin-bottom:12px;">
                 <strong>${escapeHtml(txn.payee || 'Statement line')}</strong><br>
@@ -504,9 +505,20 @@ const BankingPage = {
                 <span style="font-size:11px; color:var(--text-muted);">Reference: ${escapeHtml(txn.reference || '—')} · Code: ${escapeHtml(txn.code || '—')}</span><br>
                 <span style="font-size:11px; color:var(--text-muted);">Amount to split: ${formatCurrency(Math.abs(txn.amount || 0))}</span>
             </div>
+            ${allowPurchaseGst ? `<div class="form-group" style="margin-bottom:12px;">
+                <label><input id="split-code-use-purchase-gst" type="checkbox" checked onchange="BankingPage.toggleSplitCodeGstMode()"> Allocate purchase GST on split lines</label>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Use gross split amounts so the subtotal, GST, and grand total balance back to the bank statement line.</div>
+            </div>` : ''}
             <div id="split-code-lines"></div>
             <button class="btn btn-sm btn-secondary" type="button" style="margin-bottom:12px;" onclick="BankingPage.addSplitCodeLine()">+ Add Split Line</button>
-            <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Split total: <span id="split-code-total">${formatCurrency(0)}</span></div>
+            <div class="table-container" style="margin-bottom:12px;">
+                <table><tbody>
+                    <tr><td><strong>Split total</strong></td><td class="amount" id="split-code-total">${formatCurrency(0)}</td></tr>
+                    ${allowPurchaseGst ? `<tr class="split-code-gst-summary"><td><strong>Subtotal</strong></td><td class="amount" id="split-code-subtotal">${formatCurrency(0)}</td></tr>
+                    <tr class="split-code-gst-summary"><td><strong>GST</strong></td><td class="amount" id="split-code-tax">${formatCurrency(0)}</td></tr>
+                    <tr class="split-code-gst-summary"><td><strong>Grand Total</strong></td><td class="amount" id="split-code-grand-total">${formatCurrency(0)}</td></tr>` : ''}
+                </tbody></table>
+            </div>
             <div class="form-actions">
                 <button class="btn btn-secondary" type="button" onclick="closeModal()">Cancel</button>
                 <button class="btn btn-primary" type="button" onclick="BankingPage.submitSplitCode(${txnId}, ${reconId}, ${Math.abs(txn.amount || 0)})">Apply Split Coding</button>
@@ -514,6 +526,7 @@ const BankingPage = {
         BankingPage._splitCodeLineCount = 0;
         BankingPage.addSplitCodeLine();
         BankingPage.addSplitCodeLine();
+        BankingPage.toggleSplitCodeGstMode();
     },
 
     splitCodeLineHtml(idx) {
@@ -522,6 +535,7 @@ const BankingPage = {
         ).join('');
         return `<div class="form-grid split-code-line" data-split-line="${idx}" style="margin-bottom:8px;">
             <div class="form-group"><label>Account</label><select class="split-account"><option value="">Select account...</option>${options}</select></div>
+            <div class="form-group split-gst-field"><label>GST</label><select class="split-gst" onchange="BankingPage.recalcSplitCode()">${gstOptionsHtml('GST15')}</select></div>
             <div class="form-group"><label>Amount</label><input class="split-amount" type="number" step="0.01" value="0" oninput="BankingPage.recalcSplitCode()"></div>
             <div class="form-group full-width"><label>Description</label><input class="split-description"></div>
             <div class="form-group"><button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.removeSplitCodeLine(${idx})">Remove</button></div>
@@ -539,21 +553,55 @@ const BankingPage = {
         BankingPage.recalcSplitCode();
     },
 
+    splitCodeUsesPurchaseGst() {
+        const toggle = $('#split-code-use-purchase-gst');
+        return !!(toggle && toggle.checked);
+    },
+
+    toggleSplitCodeGstMode() {
+        const usePurchaseGst = BankingPage.splitCodeUsesPurchaseGst();
+        $$('.split-gst-field').forEach((field) => {
+            field.style.display = usePurchaseGst ? '' : 'none';
+        });
+        $$('.split-code-gst-summary').forEach((row) => {
+            row.style.display = usePurchaseGst ? '' : 'none';
+        });
+        BankingPage.recalcSplitCode();
+    },
+
     recalcSplitCode() {
         let total = 0;
+        const usePurchaseGst = BankingPage.splitCodeUsesPurchaseGst();
+        const gstLines = [];
         $$('.split-code-line').forEach((row) => {
-            total += parseFloat(row.querySelector('.split-amount')?.value) || 0;
+            const amount = parseFloat(row.querySelector('.split-amount')?.value) || 0;
+            total += amount;
+            if (usePurchaseGst) {
+                gstLines.push({
+                    quantity: 1,
+                    rate: amount,
+                    gst_code: row.querySelector('.split-gst')?.value || 'GST15',
+                });
+            }
         });
         const totalEl = $('#split-code-total');
         if (totalEl) totalEl.textContent = formatCurrency(total);
+        if (usePurchaseGst) {
+            const totals = calculateGstTotals(gstLines, { prices_include_gst: 'true' });
+            if ($('#split-code-subtotal')) $('#split-code-subtotal').textContent = formatCurrency(totals.subtotal);
+            if ($('#split-code-tax')) $('#split-code-tax').textContent = formatCurrency(totals.tax_amount);
+            if ($('#split-code-grand-total')) $('#split-code-grand-total').textContent = formatCurrency(totals.total);
+        }
     },
 
     async submitSplitCode(txnId, reconId, absoluteAmount) {
+        const usePurchaseGst = BankingPage.splitCodeUsesPurchaseGst();
         const splits = $$('.split-code-line')
             .map((row) => ({
                 account_id: row.querySelector('.split-account')?.value ? parseInt(row.querySelector('.split-account').value, 10) : null,
                 amount: parseFloat(row.querySelector('.split-amount')?.value) || 0,
                 description: row.querySelector('.split-description')?.value || null,
+                gst_code: usePurchaseGst ? (row.querySelector('.split-gst')?.value || 'GST15') : null,
             }))
             .filter((line) => line.account_id && line.amount > 0);
         if (splits.length < 2) {
@@ -566,7 +614,7 @@ const BankingPage = {
             return;
         }
         try {
-            await API.post(`/banking/transactions/${txnId}/code-split`, { splits });
+            await API.post(`/banking/transactions/${txnId}/code-split`, { splits, use_purchase_gst: usePurchaseGst });
             toast('Statement line split coded');
             closeModal();
             await BankingPage.showReconcileView(reconId);

@@ -86,10 +86,13 @@ class BankTransactionSplitLine(BaseModel):
     account_id: int
     amount: Decimal
     description: Optional[str] = None
+    gst_code: Optional[str] = None
+    gst_rate: Optional[Decimal] = None
 
 
 class BankTransactionSplitCodeApproval(BaseModel):
     splits: list[BankTransactionSplitLine]
+    use_purchase_gst: bool = False
 
 
 class BankTransactionRuleApproval(BaseModel):

@@ -24,6 +24,10 @@ const elements = {
     '#statement-file': { files: [{}] },
     '#split-code-lines': { innerHTML: '', insertAdjacentHTML(_where, html) { this.innerHTML += html; } },
     '#split-code-total': { textContent: '' },
+    '#split-code-subtotal': { textContent: '' },
+    '#split-code-tax': { textContent: '' },
+    '#split-code-grand-total': { textContent: '' },
+    '#split-code-use-purchase-gst': { checked: true },
 };
 
 const context = {
@@ -59,7 +63,7 @@ const context = {
                     description: 'Learning Inn',
                     reference: 'Inv 8746',
                     code: 'Wheel Align',
-                    amount: 53.91,
+                    amount: -53.91,
                 },
                 suggestions: [{
                     kind: 'invoice',
@@ -105,12 +109,35 @@ const context = {
         },
         postForm: async () => ({ imported: 1, skipped_duplicates: 0, total: 1, format: 'csv', statement_date: '2026-04-16', statement_total: 53.91, statement_balance: 1000.00, import_batch_id: 'batch-1' }),
     },
-    App: { hasPermission: () => true, navigate() {} },
+    App: {
+        hasPermission: () => true,
+        navigate() {},
+        gstCodes: [
+            { code: 'GST15', name: 'GST 15%', rate: 0.15, category: 'taxable' },
+            { code: 'NO_GST', name: 'No GST', rate: 0, category: 'no_gst' },
+        ],
+    },
     openModal: (_title, html) => { modalHtml = html; },
     closeModal() {},
     escapeHtml: value => String(value || ''),
     formatDate: value => String(value || ''),
     formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
+    gstOptionsHtml(selectedCode = 'GST15') {
+        return context.App.gstCodes.map(g => `<option value="${g.code}" ${g.code === selectedCode ? 'selected' : ''}>${g.name}</option>`).join('');
+    },
+    calculateGstTotals(lines) {
+        let subtotal = 0;
+        let tax = 0;
+        let total = 0;
+        for (const line of lines) {
+            const gross = Number(line.rate || 0) * Number(line.quantity || 0);
+            const lineTax = line.gst_code === 'GST15' ? Math.round((gross * 0.15 / 1.15) * 100) / 100 : 0;
+            subtotal += gross - lineTax;
+            tax += lineTax;
+            total += gross;
+        }
+        return { subtotal, tax_amount: tax, total };
+    },
     todayISO: () => '2026-04-17',
     toast() {},
     confirm: () => true,
@@ -170,11 +197,13 @@ vm.runInContext(code, context);
     await context.BankingPage.showSplitCodeModal(10, 5);
     assert.ok(modalHtml.includes('Apply Split Coding'));
     assert.ok(modalHtml.includes('Amount to split'));
+    assert.ok(modalHtml.includes('Allocate purchase GST on split lines'));
     const splitRows = [
         {
             querySelector(sel) {
                 if (sel === '.split-account') return { value: '477' };
                 if (sel === '.split-amount') return { value: '30' };
+                if (sel === '.split-gst') return { value: 'GST15' };
                 if (sel === '.split-description') return { value: 'Part A' };
                 return null;
             },
@@ -183,6 +212,7 @@ vm.runInContext(code, context);
             querySelector(sel) {
                 if (sel === '.split-account') return { value: '985' };
                 if (sel === '.split-amount') return { value: '23.91' };
+                if (sel === '.split-gst') return { value: 'NO_GST' };
                 if (sel === '.split-description') return { value: 'Part B' };
                 return null;
             },
@@ -190,10 +220,15 @@ vm.runInContext(code, context);
     ];
     context.$$ = (selector) => {
         if (selector === '.split-code-line') return splitRows;
+        if (selector === '.split-gst-field') return [{ style: {} }, { style: {} }];
+        if (selector === '.split-code-gst-summary') return [{ style: {} }, { style: {} }, { style: {} }];
         return [];
     };
     await context.BankingPage.submitSplitCode(10, 5, 53.91);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/code-split'));
+    const splitPost = posts.find(call => call.path === '/banking/transactions/10/code-split');
+    assert.strictEqual(splitPost.data.use_purchase_gst, true);
+    assert.strictEqual(splitPost.data.splits[0].gst_code, 'GST15');
     assert.ok(elements['#page-content'].innerHTML.includes('Split coded across 2 accounts'));
 
     reconcileTransactions[0].reconciled = false;

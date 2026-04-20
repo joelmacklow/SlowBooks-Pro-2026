@@ -31,7 +31,7 @@ from app.schemas.banking import (
 )
 from app.schemas.bills import BillPaymentAllocationCreate, BillPaymentCreate
 from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
-from app.services.accounting import create_journal_entry, get_ap_account_id, get_ar_account_id
+from app.services.accounting import create_journal_entry, get_ap_account_id, get_ar_account_id, get_gst_account_id
 from app.services.auth import require_permissions
 from app.services.bank_rules import (
     bank_rule_payload,
@@ -40,6 +40,8 @@ from app.services.bank_rules import (
     validate_bank_rule_target_account,
 )
 from app.services.closing_date import check_closing_date
+from app.services.gst_calculations import GstLineInput, calculate_document_gst
+from app.services.gst_lines import resolve_line_gst_code
 from app.services.reconciliation_matching import search_candidates, suggestion_candidates, transaction_direction
 
 router = APIRouter(prefix="/api/banking", tags=["banking"])
@@ -120,6 +122,24 @@ def _validate_rule_bank_account(db: Session, bank_account_id: int | None) -> Non
     bank_account = db.query(BankAccount).filter(BankAccount.id == bank_account_id, BankAccount.is_active == True).first()
     if not bank_account:
         raise HTTPException(status_code=404, detail="Bank account not found")
+
+
+def _purchase_split_gst_totals(db: Session, splits) -> tuple:
+    gst_inputs = []
+    for split in splits:
+        gst_code = resolve_line_gst_code(db, split)
+        gst_inputs.append(GstLineInput(
+            quantity=Decimal("1"),
+            rate=Decimal(str(split.amount)),
+            gst_code=gst_code.code,
+            gst_rate=Decimal(str(gst_code.rate)),
+            category=gst_code.category,
+        ))
+    return calculate_document_gst(
+        gst_inputs,
+        prices_include_gst=True,
+        gst_context="purchase",
+    )
 
 
 def _get_bank_transaction_or_404(db: Session, txn_id: int) -> BankTransaction:
@@ -480,28 +500,55 @@ def split_code_bank_transaction(txn_id: int, data: BankTransactionSplitCodeAppro
         raise HTTPException(status_code=400, detail="Split lines must total the statement amount exactly")
 
     journal_lines = []
+    target_accounts = {}
     for split in splits:
         target_account = db.query(Account).filter(Account.id == split.account_id, Account.is_active == True).first()
         if not target_account:
             raise HTTPException(status_code=404, detail="Split account not found")
         if target_account.id == bank_account.account_id:
             raise HTTPException(status_code=400, detail="Split lines cannot target the linked bank account")
-        split_amount = Decimal(str(split.amount))
-        description = _posting_description(bank_txn, split.description)
+        target_accounts[split.account_id] = target_account
+
+    if data.use_purchase_gst:
         if amount >= 0:
+            raise HTTPException(status_code=400, detail="Purchase GST split coding is only available for payment-out statement lines")
+        gst_totals = _purchase_split_gst_totals(db, splits)
+        for idx, split in enumerate(splits):
+            description = _posting_description(bank_txn, split.description)
             journal_lines.append({
-                "account_id": target_account.id,
-                "debit": Decimal("0"),
-                "credit": split_amount,
-                "description": description,
-            })
-        else:
-            journal_lines.append({
-                "account_id": target_account.id,
-                "debit": split_amount,
+                "account_id": target_accounts[split.account_id].id,
+                "debit": gst_totals.lines[idx].net_amount,
                 "credit": Decimal("0"),
                 "description": description,
             })
+        if gst_totals.tax_amount > 0:
+            gst_account_id = get_gst_account_id(db)
+            if not gst_account_id:
+                raise HTTPException(status_code=400, detail="GST control account is not configured")
+            journal_lines.append({
+                "account_id": gst_account_id,
+                "debit": gst_totals.tax_amount,
+                "credit": Decimal("0"),
+                "description": _posting_description(bank_txn, "GST on reconciled purchase split"),
+            })
+    else:
+        for split in splits:
+            split_amount = Decimal(str(split.amount))
+            description = _posting_description(bank_txn, split.description)
+            if amount >= 0:
+                journal_lines.append({
+                    "account_id": target_accounts[split.account_id].id,
+                    "debit": Decimal("0"),
+                    "credit": split_amount,
+                    "description": description,
+                })
+            else:
+                journal_lines.append({
+                    "account_id": target_accounts[split.account_id].id,
+                    "debit": split_amount,
+                    "credit": Decimal("0"),
+                    "description": description,
+                })
 
     bank_description = _posting_description(bank_txn, None)
     if amount >= 0:

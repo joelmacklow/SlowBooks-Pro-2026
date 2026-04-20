@@ -233,6 +233,58 @@ class BankReconciliationSplitCodingTests(unittest.TestCase):
         self.assertEqual(credit_total, Decimal("100.00"))
         self.assertEqual(len(non_bank_lines), 2)
 
+    def test_purchase_gst_split_coding_extracts_input_gst_from_gross_statement_amount(self):
+        from app.models.banking import BankTransaction
+        from app.models.transactions import Transaction
+        from app.routes.banking import split_code_bank_transaction
+        from app.schemas.banking import BankTransactionSplitCodeApproval, BankTransactionSplitLine
+
+        with self.Session() as db:
+            bank_account, bank_gl, expense_a, expense_b = self._seed_banking(db)
+            bank_txn = BankTransaction(
+                bank_account_id=bank_account.id,
+                date=date(2026, 4, 20),
+                amount=Decimal("-115.00"),
+                payee="Harbour Supplies",
+                description="Supplier payment",
+                reference="B-900",
+                code="SUPPLIER",
+                reconciled=False,
+                match_status="unmatched",
+            )
+            db.add(bank_txn)
+            db.commit()
+
+            result = split_code_bank_transaction(
+                bank_txn.id,
+                BankTransactionSplitCodeApproval(
+                    use_purchase_gst=True,
+                    splits=[
+                        BankTransactionSplitLine(account_id=expense_a.id, amount=Decimal("57.50"), description="Stationery", gst_code="GST15"),
+                        BankTransactionSplitLine(account_id=expense_b.id, amount=Decimal("57.50"), description="Travel", gst_code="NO_GST"),
+                    ]
+                ),
+                db=db,
+                auth=True,
+            )
+
+            stored_txn = db.query(BankTransaction).filter(BankTransaction.id == bank_txn.id).one()
+            journal = db.query(Transaction).filter(Transaction.id == stored_txn.transaction_id).one()
+            debit_total = sum((Decimal(str(line.debit)) for line in journal.lines), Decimal("0.00"))
+            credit_total = sum((Decimal(str(line.credit)) for line in journal.lines), Decimal("0.00"))
+            non_bank_lines = [line for line in journal.lines if line.account_id != bank_gl.id]
+            gst_lines = [line for line in non_bank_lines if line.description == "GST on reconciled purchase split"]
+            expense_lines = [line for line in non_bank_lines if line.description != "GST on reconciled purchase split"]
+
+        self.assertEqual(result["status"], "coded")
+        self.assertEqual(stored_txn.match_status, "coded")
+        self.assertTrue(stored_txn.reconciled)
+        self.assertEqual(debit_total, Decimal("115.00"))
+        self.assertEqual(credit_total, Decimal("115.00"))
+        self.assertEqual(len(gst_lines), 1)
+        self.assertEqual(Decimal(str(gst_lines[0].debit)), Decimal("7.50"))
+        self.assertEqual(sorted(Decimal(str(line.debit)) for line in expense_lines), [Decimal("50.00"), Decimal("57.50")])
+
     def test_split_coding_rejects_unbalanced_lines(self):
         from app.models.banking import BankTransaction
         from app.routes.banking import split_code_bank_transaction
