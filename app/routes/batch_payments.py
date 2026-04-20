@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/batch-payments", tags=["batch_payments"])
 def create_batch_payment(
     data: BatchPaymentCreate,
     db: Session = Depends(get_db),
-    auth=Depends(require_permissions("sales.manage")),
+    auth=Depends(require_permissions("sales.batch_payments.manage")),
 ):
     if not data.allocations:
         raise HTTPException(status_code=400, detail="No allocations provided")

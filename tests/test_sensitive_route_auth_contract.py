@@ -158,6 +158,9 @@ EXPECTED_ROUTE_AUTH = {
         "email_credit_memo": ("permissions", ("sales.manage",)),
         "apply_credit": ("permissions", ("sales.manage",)),
     },
+    "app.routes.batch_payments": {
+        "create_batch_payment": ("permissions", ("sales.batch_payments.manage",)),
+    },
     "app.routes.purchase_orders": {
         "list_pos": ("permissions", ("purchasing.view",)),
         "list_delivery_locations": ("permissions", ("purchasing.view",)),
@@ -167,6 +170,13 @@ EXPECTED_ROUTE_AUTH = {
         "purchase_order_pdf": ("permissions", ("purchasing.view",)),
         "email_purchase_order": ("permissions", ("purchasing.manage",)),
         "convert_to_bill": ("permissions", ("purchasing.manage",)),
+    },
+    "app.routes.bills": {
+        "list_bills": ("permissions", ("purchasing.bills.view",)),
+        "get_bill": ("permissions", ("purchasing.bills.view",)),
+        "create_bill": ("permissions", ("purchasing.bills.manage",)),
+        "update_bill": ("permissions", ("purchasing.bills.manage",)),
+        "void_bill": ("permissions", ("purchasing.bills.manage",)),
     },
 }
 

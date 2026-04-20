@@ -15,7 +15,6 @@ class StaffRoleTemplatePermissionsTests(unittest.TestCase):
         from app.services.auth import ROLE_TEMPLATE_DEFINITIONS
 
         expected = {
-            'accounts.view',
             'companies.view',
             'contacts.manage',
             'contacts.view',

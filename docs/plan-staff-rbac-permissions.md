@@ -26,10 +26,11 @@ Update the `staff` RBAC role template to include the requested operational permi
 
 ## Implementation sketch
 1. Update `ROLE_TEMPLATE_DEFINITIONS['staff']['permissions']` in `app/services/auth.py`.
-2. Add/update a focused auth regression asserting the Staff role resolves the requested effective permissions.
-3. Run targeted auth contract tests.
+2. Because Bills and Batch Payments are currently gated by coarse permissions, split those modules onto dedicated permission keys so Staff can keep general sales/purchasing access without inheriting those pages.
+3. Add/update focused RBAC regressions for the Staff template and route permission contracts.
+4. Run targeted auth contract tests.
 
 ## Acceptance criteria
-- Staff users inherit the requested permissions by default.
+- Staff users inherit the requested permissions by default, except the explicitly excluded Chart of Accounts, Bills, and Batch Payments surfaces.
 - Auth metadata/role definitions expose the updated Staff permission set.
 - Existing route auth contracts remain unchanged.
