@@ -6,6 +6,8 @@
  * We flattened this because nobody actually liked that feature.
  */
 const CustomersPage = {
+    _detailState: null,
+
     async render() {
         const customers = await API.get('/customers');
         const canManageCustomers = App.hasPermission ? App.hasPermission('contacts.manage') : true;
@@ -29,7 +31,7 @@ const CustomersPage = {
                 </tr></thead>
                 <tbody id="customer-tbody">`;
             for (const c of customers) {
-                html += `<tr class="clickable customer-row" data-name="${escapeHtml(c.name).toLowerCase()}">
+                html += `<tr class="clickable customer-row" data-name="${escapeHtml(c.name).toLowerCase()}" onclick="CustomersPage.view(${c.id})">
                     <td><strong>${escapeHtml(c.name)}</strong></td>
                     <td>${escapeHtml(c.company) || ''}</td>
                     <td>${escapeHtml(c.phone) || ''}</td>
@@ -43,6 +45,82 @@ const CustomersPage = {
             html += `</tbody></table></div>`;
         }
         return html;
+    },
+
+    async view(id) {
+        const [customer, invoices, estimates, creditMemos] = await Promise.all([
+            API.get(`/customers/${id}`),
+            API.get(`/invoices?customer_id=${id}`),
+            API.get(`/estimates?customer_id=${id}`),
+            API.get(`/credit-memos?customer_id=${id}`),
+        ]);
+        CustomersPage._detailState = { customer, invoices, estimates, creditMemos };
+        App.navigate('#/customers/detail');
+    },
+
+    renderDetailScreen() {
+        const state = CustomersPage._detailState;
+        if (!state) {
+            return `<div class="empty-state"><p>Select a customer first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/customers')">Back to Customers</button></p></div>`;
+        }
+        const { customer, invoices, estimates, creditMemos } = state;
+        const invoiceRows = invoices.map(inv => `<tr>
+            <td><button class="btn btn-link" onclick="InvoicesPage.view(${inv.id})">${escapeHtml(inv.invoice_number)}</button></td>
+            <td>${formatDate(inv.date)}</td>
+            <td>${statusBadge(inv.status)}</td>
+            <td class="amount">${formatCurrency(inv.total)}</td>
+            <td class="amount">${formatCurrency(inv.balance_due)}</td>
+        </tr>`).join('') || '<tr><td colspan="5">No invoices yet</td></tr>';
+        const estimateRows = estimates.map(est => `<tr>
+            <td><button class="btn btn-link" onclick="EstimatesPage.view(${est.id})">${escapeHtml(est.estimate_number)}</button></td>
+            <td>${formatDate(est.date)}</td>
+            <td>${statusBadge(est.status)}</td>
+            <td class="amount">${formatCurrency(est.total)}</td>
+        </tr>`).join('') || '<tr><td colspan="4">No estimates yet</td></tr>';
+        const creditRows = creditMemos.map(memo => `<tr>
+            <td><button class="btn btn-link" onclick="CreditMemosPage.open(${memo.id})">${escapeHtml(memo.memo_number)}</button></td>
+            <td>${formatDate(memo.date)}</td>
+            <td>${statusBadge(memo.status)}</td>
+            <td class="amount">${formatCurrency(memo.total)}</td>
+            <td class="amount">${formatCurrency(memo.balance_remaining)}</td>
+        </tr>`).join('') || '<tr><td colspan="5">No credit notes yet</td></tr>';
+        return `
+            <div class="page-header">
+                <div>
+                    <h2>${escapeHtml(customer.name)}</h2>
+                    <div style="font-size:12px; color:var(--text-muted);">${escapeHtml(customer.company || '')}</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="App.navigate('#/customers')">Back to Customers</button>
+                    ${App.hasPermission && App.hasPermission('contacts.manage') ? `<button class="btn btn-primary" onclick="CustomersPage.showForm(${customer.id})">Edit Customer</button>` : ''}
+                </div>
+            </div>
+            <div class="card-grid">
+                <div class="card"><div class="card-header">Balance</div><div class="card-value">${formatCurrency(customer.balance)}</div></div>
+                <div class="card"><div class="card-header">Email</div><div>${escapeHtml(customer.email || '—')}</div></div>
+                <div class="card"><div class="card-header">Phone</div><div>${escapeHtml(customer.phone || customer.mobile || '—')}</div></div>
+            </div>
+            <div class="settings-section">
+                <h3>Customer Details</h3>
+                <div class="form-grid">
+                    <div><strong>Terms</strong><br>${escapeHtml(customer.terms || '—')}</div>
+                    <div><strong>Tax ID</strong><br>${escapeHtml(customer.tax_id || '—')}</div>
+                    <div><strong>Billing</strong><br>${escapeHtml([customer.bill_address1, customer.bill_address2, customer.bill_city, customer.bill_state, customer.bill_zip].filter(Boolean).join(', ') || '—')}</div>
+                    <div><strong>Shipping</strong><br>${escapeHtml([customer.ship_address1, customer.ship_address2, customer.ship_city, customer.ship_state, customer.ship_zip].filter(Boolean).join(', ') || '—')}</div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Invoice History</h3>
+                <div class="table-container"><table><thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th><th class="amount">Balance</th></tr></thead><tbody>${invoiceRows}</tbody></table></div>
+            </div>
+            <div class="settings-section">
+                <h3>Estimates</h3>
+                <div class="table-container"><table><thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th></tr></thead><tbody>${estimateRows}</tbody></table></div>
+            </div>
+            <div class="settings-section">
+                <h3>Credit Notes</h3>
+                <div class="table-container"><table><thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th><th class="amount">Remaining</th></tr></thead><tbody>${creditRows}</tbody></table></div>
+            </div>`;
     },
 
     filter(query) {
