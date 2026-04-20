@@ -112,8 +112,18 @@ ROLE_TEMPLATE_DEFINITIONS = {
     },
     "staff": {
         "label": "Staff",
-        "description": "Base template with no sensitive/admin capabilities by default.",
-        "permissions": set(),
+        "description": "Operational staff access across contacts, sales, purchasing, items, accounts, and company views.",
+        "permissions": {
+            "accounts.view",
+            "companies.view",
+            "contacts.manage",
+            "contacts.view",
+            "items.view",
+            "purchasing.manage",
+            "purchasing.view",
+            "sales.manage",
+            "sales.view",
+        },
     },
 }
 

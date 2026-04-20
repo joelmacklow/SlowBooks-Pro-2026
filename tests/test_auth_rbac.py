@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -20,10 +21,33 @@ from app.database import Base
 class AuthRbacTests(unittest.TestCase):
     def setUp(self):
         import app.models  # noqa: F401
+        from app.services import closing_date as closing_date_service
 
-        engine = create_engine("sqlite:///:memory:")
-        Base.metadata.create_all(bind=engine)
-        self.Session = sessionmaker(bind=engine)
+        company_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        master_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=company_engine)
+        Base.metadata.create_all(bind=master_engine)
+        self.Session = sessionmaker(bind=company_engine)
+        self.MasterSession = sessionmaker(bind=master_engine)
+        self.closing_date_service = closing_date_service
+        self._original_open_master_session = getattr(closing_date_service, "_open_master_session", None)
+        self._original_database_name_for_session = getattr(closing_date_service, "_database_name_for_session", None)
+        closing_date_service._open_master_session = self.MasterSession
+        closing_date_service._database_name_for_session = lambda _db: "bookkeeper"
+
+    def tearDown(self):
+        if self._original_open_master_session is not None:
+            self.closing_date_service._open_master_session = self._original_open_master_session
+        if self._original_database_name_for_session is not None:
+            self.closing_date_service._database_name_for_session = self._original_database_name_for_session
 
     def _seed_payroll_basics(self, db):
         from app.models.accounts import Account, AccountType
