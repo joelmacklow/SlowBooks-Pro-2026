@@ -582,7 +582,26 @@ const BankingPage = {
             const amount = roundMoney((BankingPage._splitCodeAbsoluteAmount || 0) * percent / 100);
             amountInput.value = amount.toFixed(2);
         }
+        BankingPage.rebalanceSplitCodePercentRemainder(idx);
         BankingPage.recalcSplitCode();
+    },
+
+    rebalanceSplitCodePercentRemainder(idx) {
+        const rows = $$('.split-code-line');
+        const totalPercent = rows.reduce((sum, row) => (
+            sum + (parseFloat(row.querySelector('.split-percent')?.value) || 0)
+        ), 0);
+        if (Math.abs(totalPercent - 100) > 0.01) return;
+        const totalAmount = rows.reduce((sum, row) => (
+            sum + (parseFloat(row.querySelector('.split-amount')?.value) || 0)
+        ), 0);
+        const remainder = roundMoney((BankingPage._splitCodeAbsoluteAmount || 0) - totalAmount);
+        if (Math.abs(remainder) < 0.009) return;
+        const row = $(`[data-split-line="${idx}"]`);
+        const amountInput = row?.querySelector('.split-amount');
+        if (!amountInput) return;
+        const adjustedAmount = roundMoney((parseFloat(amountInput.value) || 0) + remainder);
+        amountInput.value = adjustedAmount.toFixed(2);
     },
 
     toggleSplitCodeGstMode() {
