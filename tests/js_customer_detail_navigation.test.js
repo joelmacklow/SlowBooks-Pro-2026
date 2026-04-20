@@ -14,6 +14,7 @@ const context = {
                     name: 'Aroha Ltd',
                     company: 'Aroha Holdings',
                     email: 'admin@aroha.test',
+                    invoice_reminders_enabled: false,
                     monthly_statements_enabled: true,
                     phone: '021 123 456',
                     mobile: null,
@@ -73,6 +74,9 @@ vm.runInContext(code, context);
     assert.ok(html.includes('E-101'));
     assert.ok(html.includes('CM-0001'));
     assert.ok(html.includes('$115.00'));
+    assert.ok(html.includes('Customer Communications'));
+    assert.ok(html.includes('Invoice Reminders'));
+    assert.ok(html.includes('Disabled'));
     assert.ok(html.includes('Monthly Statements'));
     assert.ok(html.includes('Enabled'));
 })().catch((err) => {

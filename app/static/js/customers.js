@@ -104,10 +104,16 @@ const CustomersPage = {
                 <h3>Customer Details</h3>
                 <div class="form-grid">
                     <div><strong>Terms</strong><br>${escapeHtml(customer.terms || '—')}</div>
-                    <div><strong>Monthly Statements</strong><br>${customer.monthly_statements_enabled ? 'Enabled' : 'Disabled'}</div>
                     <div><strong>Tax ID</strong><br>${escapeHtml(customer.tax_id || '—')}</div>
                     <div><strong>Billing</strong><br>${escapeHtml([customer.bill_address1, customer.bill_address2, customer.bill_city, customer.bill_state, customer.bill_zip].filter(Boolean).join(', ') || '—')}</div>
                     <div><strong>Shipping</strong><br>${escapeHtml([customer.ship_address1, customer.ship_address2, customer.ship_city, customer.ship_state, customer.ship_zip].filter(Boolean).join(', ') || '—')}</div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Customer Communications</h3>
+                <div class="form-grid">
+                    <div><strong>Invoice Reminders</strong><br>${customer.invoice_reminders_enabled !== false ? 'Enabled' : 'Disabled'}</div>
+                    <div><strong>Monthly Statements</strong><br>${customer.monthly_statements_enabled ? 'Enabled' : 'Disabled'}</div>
                 </div>
             </div>
             <div class="settings-section">
