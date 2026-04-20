@@ -61,6 +61,7 @@ const App = {
         '/credit-memos/detail': { page: 'credit-memos', label: 'Credit Memo',    permission: 'sales.view', render: () => CreditMemosPage.renderDetailScreen() },
         // Phase 3: Productivity
         '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', permission: 'sales.view', render: () => RecurringPage.render() },
+        '/recurring/detail': { page: 'recurring',    label: 'Recurring Invoice',  permission: 'sales.view', render: () => RecurringPage.renderDetailScreen() },
         '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     permission: 'sales.batch_payments.view', render: () => BatchPaymentsPage.render() },
         // Phase 4: CSV Import/Export
         '/csv':           { page: 'csv',             label: 'CSV Import/Export',  permission: 'import_export.view', render: () => App.renderCSV() },
