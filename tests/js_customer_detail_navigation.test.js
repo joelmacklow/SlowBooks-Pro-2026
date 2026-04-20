@@ -37,6 +37,8 @@ const context = {
                 { id: 9, invoice_number: '1009', date: '2026-04-20', status: 'sent', total: 115, balance_due: 115 },
                 { id: 10, invoice_number: '1010', date: '2026-04-18', status: 'partial', total: 90, balance_due: 40 },
                 { id: 11, invoice_number: '1011', date: '2026-04-10', status: 'paid', total: 75, balance_due: 0 },
+                { id: 12, invoice_number: '1012', date: '2026-04-09', status: 'draft', total: 50, balance_due: 50 },
+                { id: 13, invoice_number: '1013', date: '2026-04-08', status: 'void', total: 60, balance_due: 60 },
             ];
             if (path === '/estimates?customer_id=7') return [{ id: 2, estimate_number: 'E-101', date: '2026-04-18', status: 'pending', total: 57.5 }];
             if (path === '/credit-memos?customer_id=7') return [{ id: 3, memo_number: 'CM-0001', date: '2026-04-19', status: 'issued', total: 57.5, balance_remaining: 57.5 }];
@@ -79,6 +81,7 @@ vm.runInContext(code, context);
     assert.ok(html.includes('CM-0001'));
     assert.ok(html.includes('$115.00'));
     assert.ok(html.includes('$155.00'));
+    assert.ok(!html.includes('$215.00'));
     assert.ok(html.includes('Customer Communications'));
     assert.ok(html.includes('Invoice Reminders'));
     assert.ok(html.includes('Disabled'));

@@ -79,9 +79,10 @@ const CustomersPage = {
         }
         const { customer, invoices, estimates, creditMemos } = state;
         const outstandingBalance = (invoices || []).reduce((total, inv) => {
-            return String(inv.status || '').toLowerCase() === 'paid'
-                ? total
-                : total + Number(inv.balance_due || 0);
+            const status = String(inv.status || '').toLowerCase();
+            return ['sent', 'partial'].includes(status)
+                ? total + Number(inv.balance_due || 0)
+                : total;
         }, 0);
         const invoiceRows = invoices.map(inv => `<tr>
             <td><button class="btn btn-link" onclick="InvoicesPage.open(${inv.id}, '#/customers/detail')">${escapeHtml(inv.invoice_number)}</button></td>
