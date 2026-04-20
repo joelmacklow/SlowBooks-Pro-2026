@@ -259,6 +259,7 @@
     border-color: var(--panel-border);
 }
 
+[data-theme="dark"] .search-header { background: #14161c; color: var(--text-secondary); }
 [data-theme="dark"] .search-section { background: #14161c; color: var(--text-secondary); }
 [data-theme="dark"] .search-item { color: var(--text-primary); }
 [data-theme="dark"] .search-item:hover { background: #222838; }

@@ -63,9 +63,11 @@ vm.runInContext(code, context);
     assert.ok(searchHtml.includes('Aroha Ltd · Aroha Holdings'));
     assert.ok(searchHtml.includes('E-101 · Aroha Ltd'));
     assert.ok(searchHtml.includes('CM-0001 · Aroha Ltd'));
-    assert.ok(searchHtml.includes('CustomersPage.view(7)'));
-    assert.ok(searchHtml.includes('EstimatesPage.view(2)'));
-    assert.ok(searchHtml.includes('CreditMemosPage.open(3)'));
+    assert.ok(searchHtml.includes('onclick="closeSearchDropdown();CustomersPage.view(7);"'));
+    assert.ok(searchHtml.includes('onclick="closeSearchDropdown();EstimatesPage.view(2);"'));
+    assert.ok(searchHtml.includes('onclick="closeSearchDropdown();CreditMemosPage.open(3);"'));
+    assert.ok(searchHtml.includes('search-close'));
+    assert.ok(searchHtml.includes('Close search results'));
 })().catch((err) => {
     console.error(err);
     process.exit(1);

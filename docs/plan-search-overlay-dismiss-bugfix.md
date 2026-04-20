@@ -22,11 +22,14 @@ Ensure the global search results overlay reliably disappears after a user clicks
    - hides the dropdown
    - clears the search input
 2. Update global search rendering to only show results if the response still belongs to the active request and the input still matches the query.
-3. Make `closeSearchDropdown()` delegate to the App-level helper when available.
-4. Add a JS regression test that proves a stale search response cannot re-open the overlay after dismissal.
+3. Put dismissal first in result click handlers so the overlay hides before navigation logic runs.
+4. Add an explicit close control inside the search overlay as a fallback UX path.
+5. Make `closeSearchDropdown()` delegate to the App-level helper when available.
+6. Add JS regression tests for stale-response dismissal and close-control rendering.
 
 ## Acceptance criteria
 - Clicking any search result hides the overlay immediately.
+- The overlay includes a visible close control.
 - A stale async search response cannot re-open the overlay after dismissal.
 - Existing search result navigation remains unchanged.
 

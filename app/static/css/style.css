@@ -989,6 +989,33 @@ tr.clickable { cursor: pointer; }
     z-index: 200;
 }
 
+.search-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--content-bg);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.search-close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+}
+
+.search-close:hover {
+    color: var(--text-primary);
+}
+
 .search-section {
     padding: 4px 10px;
     font-size: 10px;

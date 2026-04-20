@@ -644,14 +644,17 @@ const App = {
                 if (!input || input.value !== query) return;
                 let html = '';
                 const sections = [
-                    { key: 'customers', label: 'Customers', onClick: (item) => `CustomersPage.view(${item.id});closeSearchDropdown();` },
-                    { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
-                    { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
-                    { key: 'invoices', label: 'Invoices', onClick: (item) => `InvoicesPage.view(${item.id});closeSearchDropdown();` },
-                    { key: 'estimates', label: 'Estimates', onClick: (item) => `EstimatesPage.view(${item.id});closeSearchDropdown();` },
-                    { key: 'credit_memos', label: 'Credit Notes', onClick: (item) => `CreditMemosPage.open(${item.id});closeSearchDropdown();` },
-                    { key: 'payments', label: 'Payments', onClick: (item) => `App.navigate('#/payments');closeSearchDropdown();` },
+                    { key: 'customers', label: 'Customers', onClick: (item) => `closeSearchDropdown();CustomersPage.view(${item.id});` },
+                    { key: 'vendors', label: 'Vendors', onClick: (item) => `closeSearchDropdown();App.navigate('#/vendors');` },
+                    { key: 'items', label: 'Items', onClick: (item) => `closeSearchDropdown();App.navigate('#/items');` },
+                    { key: 'invoices', label: 'Invoices', onClick: (item) => `closeSearchDropdown();InvoicesPage.view(${item.id});` },
+                    { key: 'estimates', label: 'Estimates', onClick: (item) => `closeSearchDropdown();EstimatesPage.view(${item.id});` },
+                    { key: 'credit_memos', label: 'Credit Notes', onClick: (item) => `closeSearchDropdown();CreditMemosPage.open(${item.id});` },
+                    { key: 'payments', label: 'Payments', onClick: (item) => `closeSearchDropdown();App.navigate('#/payments');` },
                 ];
+                if (Object.values(results).some(items => Array.isArray(items) && items.length > 0)) {
+                    html += `<div class="search-header"><span>Search results</span><button type="button" class="search-close" onclick="closeSearchDropdown()" aria-label="Close search results">&times;</button></div>`;
+                }
                 for (const sec of sections) {
                     const items = results[sec.key];
                     if (items && items.length > 0) {
