@@ -591,7 +591,7 @@ const BankingPage = {
         const totalPercent = rows.reduce((sum, row) => (
             sum + (parseFloat(row.querySelector('.split-percent')?.value) || 0)
         ), 0);
-        if (Math.abs(totalPercent - 100) > 0.01) return;
+        if (totalPercent < 99 || totalPercent > 100.01) return;
         const totalAmount = rows.reduce((sum, row) => (
             sum + (parseFloat(row.querySelector('.split-amount')?.value) || 0)
         ), 0);

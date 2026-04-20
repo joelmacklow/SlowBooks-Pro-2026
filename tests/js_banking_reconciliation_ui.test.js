@@ -229,12 +229,25 @@ vm.runInContext(code, context);
                 return null;
             },
         },
+        {
+            amountInput: { value: '0' },
+            percentInput: { value: '' },
+            querySelector(sel) {
+                if (sel === '.split-account') return { value: '477' };
+                if (sel === '.split-amount') return this.amountInput;
+                if (sel === '.split-percent') return this.percentInput;
+                if (sel === '.split-gst') return { value: 'GST15' };
+                if (sel === '.split-description') return { value: 'Part C' };
+                return null;
+            },
+        },
     ];
     elements['[data-split-line="0"]'] = splitRows[0];
     elements['[data-split-line="1"]'] = splitRows[1];
+    elements['[data-split-line="2"]'] = splitRows[2];
     context.$$ = (selector) => {
         if (selector === '.split-code-line') return splitRows;
-        if (selector === '.split-gst-field') return [{ style: {} }, { style: {} }];
+        if (selector === '.split-gst-field') return [{ style: {} }, { style: {} }, { style: {} }];
         if (selector === '.split-code-gst-summary') return [{ style: {} }, { style: {} }, { style: {} }];
         return [];
     };
@@ -253,10 +266,24 @@ vm.runInContext(code, context);
     assert.strictEqual(splitRows[1].amountInput.value, '7.96');
     assert.strictEqual(elements['#split-code-remaining'].textContent, '$0.00');
     context.BankingPage._splitCodeAbsoluteAmount = 53.91;
+    splitRows[0].percentInput.value = '33';
+    context.BankingPage.splitCodePercentChanged(0);
+    splitRows[1].percentInput.value = '33';
+    context.BankingPage.splitCodePercentChanged(1);
+    splitRows[2].percentInput.value = '33';
+    context.BankingPage.splitCodePercentChanged(2);
+    context.BankingPage.recalcSplitCode();
+    assert.strictEqual(splitRows[0].amountInput.value, '17.79');
+    assert.strictEqual(splitRows[1].amountInput.value, '17.79');
+    assert.strictEqual(splitRows[2].amountInput.value, '18.33');
+    assert.strictEqual(elements['#split-code-remaining'].textContent, '$0.00');
+    context.BankingPage._splitCodeAbsoluteAmount = 53.91;
     splitRows[0].percentInput.value = '';
     splitRows[1].percentInput.value = '';
+    splitRows[2].percentInput.value = '';
     splitRows[0].amountInput.value = '26.96';
     splitRows[1].amountInput.value = '26.95';
+    splitRows[2].amountInput.value = '0';
     context.BankingPage.splitCodeAmountChanged(1);
     await context.BankingPage.submitSplitCode(10, 5, 53.91);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/code-split'));
