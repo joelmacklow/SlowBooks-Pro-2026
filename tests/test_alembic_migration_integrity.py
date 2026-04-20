@@ -44,6 +44,13 @@ class AlembicMigrationIntegrityTests(unittest.TestCase):
 
         self.assertEqual(len(chain), len(migrations), "migration chain does not cover every revision")
 
+    def test_bank_rules_revision_exists_as_compatibility_placeholder(self):
+        path = Path("alembic/versions/o5d6e7f8g9h0_add_bank_rules_mvp.py")
+        text = path.read_text()
+        self.assertIn('revision: str = "o5d6e7f8g9h0"', text)
+        self.assertIn("compatibility placeholder", text)
+        self.assertIn("no-op", text)
+
 
 if __name__ == "__main__":
     unittest.main()
