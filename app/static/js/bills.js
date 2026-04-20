@@ -105,6 +105,7 @@ const BillsPage = {
     },
 
     _items: [],
+    _filteredItems: [],
     lineCount: 0,
 
     async showForm() {
@@ -116,16 +117,17 @@ const BillsPage = {
         ]);
         App.gstCodes = gstCodes;
         BillsPage._items = items;
+        BillsPage._filteredItems = items;
         BillsPage.lineCount = 1;
 
         const vendorOpts = vendors.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
-        const itemOpts = items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = BillsPage.itemOptionsHtml();
 
         openModal('Enter Bill', `
             <form onsubmit="BillsPage.save(event)">
                 <div class="form-grid">
                     <div class="form-group"><label>Vendor *</label>
-                        <select name="vendor_id" required><option value="">Select...</option>${vendorOpts}</select></div>
+                        <select name="vendor_id" required onchange="BillsPage.vendorSelected(this.value)"><option value="">Select...</option>${vendorOpts}</select></div>
                     <div class="form-group"><label>Bill Number *</label>
                         <input name="bill_number" required></div>
                     <div class="form-group"><label>Date *</label>
@@ -174,9 +176,34 @@ const BillsPage = {
         BillsPage.recalc();
     },
 
+    itemOptionsHtml(selectedId = null) {
+        return (BillsPage._filteredItems || []).map(i => (
+            `<option value="${i.id}" ${selectedId == i.id ? 'selected' : ''}>${escapeHtml(i.name)}</option>`
+        )).join('');
+    },
+
+    vendorSelected(vendorId) {
+        const numericVendorId = vendorId ? parseInt(vendorId, 10) : null;
+        BillsPage._filteredItems = numericVendorId
+            ? (BillsPage._items || []).filter(item => item.vendor_id === numericVendorId)
+            : (BillsPage._items || []);
+        $$('#bill-lines tr').forEach((row) => {
+            const itemSelect = row.querySelector('.line-item');
+            if (!itemSelect) return;
+            const currentValue = itemSelect.value;
+            itemSelect.innerHTML = `<option value="">--</option>${BillsPage.itemOptionsHtml(currentValue)}`;
+            if (!(BillsPage._filteredItems || []).some(item => String(item.id) === String(currentValue))) {
+                itemSelect.value = '';
+                if (row.querySelector('.line-desc')) row.querySelector('.line-desc').value = '';
+                if (row.querySelector('.line-rate')) row.querySelector('.line-rate').value = 0;
+            }
+        });
+        BillsPage.recalc();
+    },
+
     addLine() {
         const idx = BillsPage.lineCount++;
-        const itemOpts = BillsPage._items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = BillsPage.itemOptionsHtml();
         $('#bill-lines').insertAdjacentHTML('beforeend', `
             <tr data-billline="${idx}">
                 <td><select class="line-item" onchange="BillsPage.itemSelected(${idx})"><option value="">--</option>${itemOpts}</select></td>

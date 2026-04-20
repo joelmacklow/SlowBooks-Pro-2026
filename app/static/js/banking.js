@@ -498,6 +498,7 @@ const BankingPage = {
         BankingPage._splitCodeAccounts = accounts.filter(account => ['expense', 'income', 'asset', 'liability', 'equity', 'cogs'].includes(account.account_type));
         const txn = suggestionData.transaction;
         const allowPurchaseGst = Number(txn.amount || 0) < 0;
+        BankingPage._splitCodeAbsoluteAmount = Math.abs(Number(txn.amount || 0));
         openModal('Split Code Statement Line', `
             <div style="margin-bottom:12px;">
                 <strong>${escapeHtml(txn.payee || 'Statement line')}</strong><br>
@@ -514,6 +515,7 @@ const BankingPage = {
             <div class="table-container" style="margin-bottom:12px;">
                 <table><tbody>
                     <tr><td><strong>Split total</strong></td><td class="amount" id="split-code-total">${formatCurrency(0)}</td></tr>
+                    <tr><td><strong>Remaining to balance</strong></td><td class="amount" id="split-code-remaining">${formatCurrency(BankingPage._splitCodeAbsoluteAmount)}</td></tr>
                     ${allowPurchaseGst ? `<tr class="split-code-gst-summary"><td><strong>Subtotal</strong></td><td class="amount" id="split-code-subtotal">${formatCurrency(0)}</td></tr>
                     <tr class="split-code-gst-summary"><td><strong>GST</strong></td><td class="amount" id="split-code-tax">${formatCurrency(0)}</td></tr>
                     <tr class="split-code-gst-summary"><td><strong>Grand Total</strong></td><td class="amount" id="split-code-grand-total">${formatCurrency(0)}</td></tr>` : ''}
@@ -536,7 +538,8 @@ const BankingPage = {
         return `<div class="form-grid split-code-line" data-split-line="${idx}" style="margin-bottom:8px;">
             <div class="form-group"><label>Account</label><select class="split-account"><option value="">Select account...</option>${options}</select></div>
             <div class="form-group split-gst-field"><label>GST</label><select class="split-gst" onchange="BankingPage.recalcSplitCode()">${gstOptionsHtml('GST15')}</select></div>
-            <div class="form-group"><label>Amount</label><input class="split-amount" type="number" step="0.01" value="0" oninput="BankingPage.recalcSplitCode()"></div>
+            <div class="form-group"><label>Amount</label><input class="split-amount" type="number" step="0.01" value="0" oninput="BankingPage.splitCodeAmountChanged(${idx})"></div>
+            <div class="form-group"><label>Percent</label><input class="split-percent" type="number" step="0.01" value="0" oninput="BankingPage.splitCodePercentChanged(${idx})"></div>
             <div class="form-group full-width"><label>Description</label><input class="split-description"></div>
             <div class="form-group"><button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.removeSplitCodeLine(${idx})">Remove</button></div>
         </div>`;
@@ -556,6 +559,30 @@ const BankingPage = {
     splitCodeUsesPurchaseGst() {
         const toggle = $('#split-code-use-purchase-gst');
         return !!(toggle && toggle.checked);
+    },
+
+    splitCodeAmountChanged(idx) {
+        const row = $(`[data-split-line="${idx}"]`);
+        if (!row) return;
+        const amount = parseFloat(row.querySelector('.split-amount')?.value) || 0;
+        const percentInput = row.querySelector('.split-percent');
+        if (percentInput) {
+            const percent = BankingPage._splitCodeAbsoluteAmount > 0 ? roundMoney((amount / BankingPage._splitCodeAbsoluteAmount) * 100) : 0;
+            percentInput.value = String(percent);
+        }
+        BankingPage.recalcSplitCode();
+    },
+
+    splitCodePercentChanged(idx) {
+        const row = $(`[data-split-line="${idx}"]`);
+        if (!row) return;
+        const percent = parseFloat(row.querySelector('.split-percent')?.value) || 0;
+        const amountInput = row.querySelector('.split-amount');
+        if (amountInput) {
+            const amount = roundMoney((BankingPage._splitCodeAbsoluteAmount || 0) * percent / 100);
+            amountInput.value = amount.toFixed(2);
+        }
+        BankingPage.recalcSplitCode();
     },
 
     toggleSplitCodeGstMode() {
@@ -586,6 +613,8 @@ const BankingPage = {
         });
         const totalEl = $('#split-code-total');
         if (totalEl) totalEl.textContent = formatCurrency(total);
+        const remainingEl = $('#split-code-remaining');
+        if (remainingEl) remainingEl.textContent = formatCurrency(roundMoney((BankingPage._splitCodeAbsoluteAmount || 0) - total));
         if (usePurchaseGst) {
             const totals = calculateGstTotals(gstLines, { prices_include_gst: 'true' });
             if ($('#split-code-subtotal')) $('#split-code-subtotal').textContent = formatCurrency(totals.subtotal);

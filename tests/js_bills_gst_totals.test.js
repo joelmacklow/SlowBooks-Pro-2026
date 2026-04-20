@@ -10,18 +10,26 @@ const elements = {
     '#bill-subtotal': { textContent: '' },
     '#bill-tax': { textContent: '' },
     '#bill-total': { textContent: '' },
+    '[data-billline="0"]': null,
 };
+const lineItemSelect = { value: '1', innerHTML: '' };
+const lineDesc = { value: 'Paper' };
+const lineQty = { value: '2' };
+const lineGst = { value: 'GST15' };
+const lineRate = { value: '10' };
+const lineAmount = { textContent: '' };
 const billRows = [{
     querySelector(sel) {
-        if (sel === '.line-item') return { value: '1' };
-        if (sel === '.line-desc') return { value: 'Paper' };
-        if (sel === '.line-qty') return { value: '2' };
-        if (sel === '.line-gst') return { value: 'GST15' };
-        if (sel === '.line-rate') return { value: '10' };
-        if (sel === '.line-amount') return { textContent: '' };
+        if (sel === '.line-item') return lineItemSelect;
+        if (sel === '.line-desc') return lineDesc;
+        if (sel === '.line-qty') return lineQty;
+        if (sel === '.line-gst') return lineGst;
+        if (sel === '.line-rate') return lineRate;
+        if (sel === '.line-amount') return lineAmount;
         return null;
     },
 }];
+elements['[data-billline="0"]'] = billRows[0];
 
 const context = {
     console,
@@ -29,7 +37,10 @@ const context = {
     API: {
         get: async (path) => {
             if (path === '/vendors?active_only=true') return [{ id: 7, name: 'Harbour Supplies' }];
-            if (path === '/items?active_only=true') return [{ id: 1, name: 'Paper', description: 'Printer paper', rate: 10 }];
+            if (path === '/items?active_only=true') return [
+                { id: 1, name: 'Paper', description: 'Printer paper', rate: 10, vendor_id: 7 },
+                { id: 2, name: 'Coffee', description: 'Office coffee', rate: 12, vendor_id: 8 },
+            ];
             if (path === '/accounts?account_type=expense') return [{ id: 600, name: 'Office Expense' }];
             if (path === '/gst-codes') return [
                 { code: 'GST15', name: 'GST 15%', rate: 0.15, category: 'taxable' },
@@ -106,6 +117,14 @@ vm.runInContext(code, context);
     assert.strictEqual(elements['#bill-subtotal'].textContent, '$20.00');
     assert.strictEqual(elements['#bill-tax'].textContent, '$3.00');
     assert.strictEqual(elements['#bill-total'].textContent, '$23.00');
+    context.BillsPage.vendorSelected('7');
+    assert.ok(lineItemSelect.innerHTML.includes('Paper'));
+    assert.ok(!lineItemSelect.innerHTML.includes('Coffee'));
+
+    context.BillsPage.vendorSelected('8');
+    assert.ok(!lineItemSelect.innerHTML.includes('Paper'));
+    assert.ok(lineItemSelect.innerHTML.includes('Coffee'));
+    assert.strictEqual(lineItemSelect.value, '');
 
     await context.BillsPage.view(5);
     assert.ok(modalHtml.includes('Grand Total'));

@@ -24,6 +24,7 @@ const elements = {
     '#statement-file': { files: [{}] },
     '#split-code-lines': { innerHTML: '', insertAdjacentHTML(_where, html) { this.innerHTML += html; } },
     '#split-code-total': { textContent: '' },
+    '#split-code-remaining': { textContent: '' },
     '#split-code-subtotal': { textContent: '' },
     '#split-code-tax': { textContent: '' },
     '#split-code-grand-total': { textContent: '' },
@@ -138,6 +139,9 @@ const context = {
         }
         return { subtotal, tax_amount: tax, total };
     },
+    roundMoney(value) {
+        return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    },
     todayISO: () => '2026-04-17',
     toast() {},
     confirm: () => true,
@@ -198,32 +202,49 @@ vm.runInContext(code, context);
     assert.ok(modalHtml.includes('Apply Split Coding'));
     assert.ok(modalHtml.includes('Amount to split'));
     assert.ok(modalHtml.includes('Allocate purchase GST on split lines'));
+    assert.ok(modalHtml.includes('Remaining to balance'));
+    assert.ok(elements['#split-code-lines'].innerHTML.includes('split-percent'));
     const splitRows = [
         {
+            amountInput: { value: '30' },
+            percentInput: { value: '' },
             querySelector(sel) {
                 if (sel === '.split-account') return { value: '477' };
-                if (sel === '.split-amount') return { value: '30' };
+                if (sel === '.split-amount') return this.amountInput;
+                if (sel === '.split-percent') return this.percentInput;
                 if (sel === '.split-gst') return { value: 'GST15' };
                 if (sel === '.split-description') return { value: 'Part A' };
                 return null;
             },
         },
         {
+            amountInput: { value: '23.91' },
+            percentInput: { value: '' },
             querySelector(sel) {
                 if (sel === '.split-account') return { value: '985' };
-                if (sel === '.split-amount') return { value: '23.91' };
+                if (sel === '.split-amount') return this.amountInput;
+                if (sel === '.split-percent') return this.percentInput;
                 if (sel === '.split-gst') return { value: 'NO_GST' };
                 if (sel === '.split-description') return { value: 'Part B' };
                 return null;
             },
         },
     ];
+    elements['[data-split-line="0"]'] = splitRows[0];
+    elements['[data-split-line="1"]'] = splitRows[1];
     context.$$ = (selector) => {
         if (selector === '.split-code-line') return splitRows;
         if (selector === '.split-gst-field') return [{ style: {} }, { style: {} }];
         if (selector === '.split-code-gst-summary') return [{ style: {} }, { style: {} }, { style: {} }];
         return [];
     };
+    splitRows[0].percentInput.value = '50';
+    context.BankingPage.splitCodePercentChanged(0);
+    assert.strictEqual(splitRows[0].amountInput.value, '26.96');
+    context.BankingPage.recalcSplitCode();
+    assert.strictEqual(elements['#split-code-remaining'].textContent, '$3.04');
+    splitRows[1].amountInput.value = '26.95';
+    context.BankingPage.splitCodeAmountChanged(1);
     await context.BankingPage.submitSplitCode(10, 5, 53.91);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/code-split'));
     const splitPost = posts.find(call => call.path === '/banking/transactions/10/code-split');
