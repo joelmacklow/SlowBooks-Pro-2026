@@ -6,6 +6,16 @@
  * reverse — 47 different message types, all packed structs with no padding.
  */
 const API = {
+    shouldPromptForClosingDatePassword(status, detail, headers = {}) {
+        return (
+            status === 403
+            && !headers['X-Closing-Date-Password']
+            && typeof detail === 'string'
+            && detail.includes('company admin lock date')
+            && detail.includes('override password')
+        );
+    },
+
     authHeaders(path = '') {
         const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks-auth-token') : null;
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -37,6 +47,15 @@ const API = {
         const res = await fetch(`/api${path}`, opts);
         if (!res.ok) {
             const detail = await this._parseError(res);
+            if (this.shouldPromptForClosingDatePassword(res.status, detail, opts.headers) && typeof App !== 'undefined' && typeof App.promptClosingDatePassword === 'function') {
+                const overridePassword = await App.promptClosingDatePassword(detail);
+                if (overridePassword) {
+                    return this.raw(method, path, {
+                        body,
+                        headers: { ...headers, 'X-Closing-Date-Password': overridePassword },
+                    });
+                }
+            }
             if (res.status === 401 && typeof App !== 'undefined' && typeof App.handleUnauthorized === 'function') {
                 App.handleUnauthorized(path, detail || 'Authentication required');
             }

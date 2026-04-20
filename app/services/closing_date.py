@@ -3,6 +3,7 @@
 # ============================================================================
 
 import hmac
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
 from urllib.parse import urlparse
@@ -14,6 +15,8 @@ from app.database import SessionLocal
 from app.models.companies import Company
 from app.models.settings import Settings
 from app.services.auth import hash_password, verify_password
+
+_request_closing_date_password: ContextVar[str | None] = ContextVar("request_closing_date_password", default=None)
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,18 @@ def verify_closing_date_password(password: str | None, stored_value: str | None)
     return hmac.compare_digest(candidate, stored)
 
 
+def set_request_closing_date_password(password: str | None):
+    return _request_closing_date_password.set(password or None)
+
+
+def reset_request_closing_date_password(token) -> None:
+    _request_closing_date_password.reset(token)
+
+
+def get_request_closing_date_password() -> str | None:
+    return _request_closing_date_password.get()
+
+
 def normalize_financial_year_boundary(value: str | None) -> str:
     if value is None:
         return ""
@@ -147,6 +162,7 @@ def validate_financial_year_dates(start_value: str | None, end_value: str | None
 
 def check_closing_date(db: Session, txn_date: date, password: str = None):
     """Raise HTTPException if txn_date is on or before the effective layered lock date."""
+    password = password if password is not None else get_request_closing_date_password()
     context = resolve_lock_context(db)
     if context.effective_lock_date is None:
         return

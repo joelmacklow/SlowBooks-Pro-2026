@@ -407,7 +407,15 @@ const BankingPage = {
     async cancelReconcile(reconId) {
         const data = BankingPage._reconcileContext?.data;
         if (data?.import_batch_id) {
-            if (!confirm('Cancel this imported reconciliation and remove the staged imported transactions?')) return;
+            const confirmed = typeof App !== 'undefined' && typeof App.confirmAction === 'function'
+                ? await App.confirmAction({
+                    title: 'Cancel Imported Reconciliation',
+                    message: 'Cancel this imported reconciliation and remove the staged imported transactions?',
+                    confirmLabel: 'Cancel Reconciliation',
+                    cancelLabel: 'Keep Reconciling',
+                })
+                : confirm('Cancel this imported reconciliation and remove the staged imported transactions?');
+            if (!confirmed) return;
             try {
                 await API.post(`/banking/reconciliations/${reconId}/cancel`);
                 toast('Imported reconciliation cancelled');

@@ -6,6 +6,7 @@ const code = `${fs.readFileSync('app/static/js/banking.js', 'utf8')}\nthis.Banki
 
 let modalHtml = '';
 const posts = [];
+const confirmations = [];
 const reconcileTransactions = [{
     id: 10,
     date: '2026-04-16',
@@ -113,6 +114,7 @@ const context = {
     App: {
         hasPermission: () => true,
         navigate() {},
+        confirmAction: async (options) => { confirmations.push(options); return true; },
         gstCodes: [
             { code: 'GST15', name: 'GST 15%', rate: 0.15, category: 'taxable' },
             { code: 'NO_GST', name: 'No GST', rate: 0, category: 'no_gst' },
@@ -295,6 +297,7 @@ vm.runInContext(code, context);
     reconcileTransactions[0].reconciled = false;
     reconcileTransactions[0].matched_label = null;
     await context.BankingPage.cancelReconcile(5);
+    assert.strictEqual(confirmations[0].title, 'Cancel Imported Reconciliation');
     assert.ok(posts.some(call => call.path === '/banking/reconciliations/5/cancel'));
 
     elements['#bank-match-query-10'] = { value: '8746' };

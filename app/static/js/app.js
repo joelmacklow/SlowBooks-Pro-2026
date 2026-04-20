@@ -107,6 +107,49 @@ const App = {
         App.navigate(App.getDetailOrigin(detailHash) || fallbackHash);
     },
 
+    confirmAction({ title = 'Confirm', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel' } = {}) {
+        return new Promise((resolve) => {
+            openModal(title, `
+                <div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">${escapeHtml(message)}</div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal(); App._resolveConfirmAction(false)">` + cancelLabel + `</button>
+                    <button type="button" class="btn btn-primary" onclick="closeModal(); App._resolveConfirmAction(true)">` + confirmLabel + `</button>
+                </div>`);
+            App._resolveConfirmAction = (value) => {
+                resolve(value);
+                App._resolveConfirmAction = null;
+            };
+        });
+    },
+
+    promptClosingDatePassword(message = 'Enter the company override password to continue.') {
+        return new Promise((resolve) => {
+            openModal('Closed Period Override', `
+                <form onsubmit="App.submitClosingDatePasswordPrompt(event)">
+                    <div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">${escapeHtml(message)}</div>
+                    <div class="form-group">
+                        <label>Override Password</label>
+                        <input id="closing-date-password-input" type="password" autocomplete="current-password" autofocus>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal(); App._resolveClosingDatePasswordPrompt(null)">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Retry Action</button>
+                    </div>
+                </form>`);
+            App._resolveClosingDatePasswordPrompt = (value) => {
+                resolve(value);
+                App._resolveClosingDatePasswordPrompt = null;
+            };
+        });
+    },
+
+    submitClosingDatePasswordPrompt(e) {
+        e.preventDefault();
+        const value = $('#closing-date-password-input')?.value || '';
+        closeModal();
+        if (App._resolveClosingDatePasswordPrompt) App._resolveClosingDatePasswordPrompt(value || null);
+    },
+
     hasPermission(permission) {
         if (!permission) return true;
         const permissions = App.authState.user?.membership?.effective_permissions || [];

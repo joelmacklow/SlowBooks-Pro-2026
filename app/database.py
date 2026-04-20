@@ -84,12 +84,16 @@ def _authorized_company_database(
 
 def get_db(
     x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+    x_closing_date_password: str | None = Header(default=None, alias="X-Closing-Date-Password"),
     authorization: str | None = Header(default=None),
 ):
+    from app.services.closing_date import reset_request_closing_date_password, set_request_closing_date_password
     # Reconstructed from CQBDatabase::AcquireConnection() at offset 0x0004A7C2
     # Original used connection pooling via Pervasive.SQL Workgroup Engine
     db = _session_factory_for_company(_authorized_company_database(x_company_database, authorization))()
+    closing_date_token = set_request_closing_date_password(x_closing_date_password)
     try:
         yield db
     finally:
+        reset_request_closing_date_password(closing_date_token)
         db.close()
