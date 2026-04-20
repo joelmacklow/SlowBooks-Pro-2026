@@ -46,8 +46,10 @@ class AlembicMigrationIntegrityTests(unittest.TestCase):
 
     def test_bank_rules_migration_does_not_create_postgres_enum_twice(self):
         text = Path("alembic/versions/o5d6e7f8g9h0_add_bank_rules_mvp.py").read_text()
+        self.assertIn('postgresql.ENUM', text)
         self.assertIn('create_type=False', text)
-        self.assertIn('direction_enum.create(op.get_bind(), checkfirst=True)', text)
+        self.assertIn('CREATE TYPE bankruledirection AS ENUM', text)
+        self.assertIn('WHEN duplicate_object THEN NULL', text)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "o5d6e7f8g9h0"
@@ -17,12 +18,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-direction_enum = sa.Enum("any", "inflow", "outflow", name="bankruledirection")
-direction_enum_column = sa.Enum("any", "inflow", "outflow", name="bankruledirection", create_type=False)
+direction_enum = postgresql.ENUM("any", "inflow", "outflow", name="bankruledirection")
+direction_enum_column = postgresql.ENUM("any", "inflow", "outflow", name="bankruledirection", create_type=False)
 
 
 def upgrade() -> None:
-    direction_enum.create(op.get_bind(), checkfirst=True)
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            CREATE TYPE bankruledirection AS ENUM ('any', 'inflow', 'outflow');
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+        """
+    )
 
     op.create_table(
         "bank_rules",
