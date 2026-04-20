@@ -222,6 +222,8 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Cannot edit voided invoice")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=400, detail="Cannot edit paid invoice")
     old_transaction_id = invoice.transaction_id
     old_date = invoice.date
     update_values = data.model_dump(exclude_unset=True, exclude={"lines"})
@@ -321,6 +323,8 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(re
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Invoice already voided")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=400, detail="Cannot void paid invoice")
     check_closing_date(db, invoice.date)
 
     # Create reversing journal entry if original had one

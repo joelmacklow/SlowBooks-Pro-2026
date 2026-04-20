@@ -150,6 +150,7 @@ const InvoicesPage = {
     renderDetailScreen() {
         const inv = InvoicesPage._detailState;
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
+        const canEditInvoice = canManageSales && inv?.status !== 'paid';
         if (!inv) {
             return `<div class="empty-state"><p>Select an invoice or create a new one first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/invoices')">Back to Invoices</button></p></div>`;
         }
@@ -173,7 +174,7 @@ const InvoicesPage = {
                     <div class="form-grid">
                         <div class="form-group"><label>Customer *</label>
                             <div style="display:flex; gap:8px; align-items:center;">
-                                <select name="customer_id" required onchange="InvoicesPage.customerSelected(this.value)" style="flex:1;" ${canManageSales ? '' : 'disabled'}><option value="">Select...</option>${customerOptions}</select>
+                                <select name="customer_id" required onchange="InvoicesPage.customerSelected(this.value)" style="flex:1;" ${canEditInvoice ? '' : 'disabled'}><option value="">Select...</option>${customerOptions}</select>
                                 ${canCreateCustomers ? `<button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.toggleInlineCustomer()">+ New Customer</button>` : ''}
                             </div>
                             ${canCreateCustomers ? `<div id="invoice-inline-customer" class="card" style="display:none; margin-top:8px; padding:12px;">
@@ -187,11 +188,11 @@ const InvoicesPage = {
                             </div>` : ''}
                         </div>
                         <div class="form-group"><label>Date *</label>
-                            <input name="date" type="date" required value="${inv.date || ''}" ${canManageSales ? '' : 'disabled'}></div>
+                            <input name="date" type="date" required value="${inv.date || ''}" ${canEditInvoice ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Due Date</label>
-                            <input name="due_date" type="date" value="${inv.due_date || ''}" ${canManageSales ? '' : 'disabled'}></div>
+                            <input name="due_date" type="date" value="${inv.due_date || ''}" ${canEditInvoice ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Terms</label>
-                            <select name="terms" id="invoice-terms" ${canManageSales ? '' : 'disabled'}>
+                            <select name="terms" id="invoice-terms" ${canEditInvoice ? '' : 'disabled'}>
                                 ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t => `<option value="${t}" ${inv.terms===t?'selected':''}>${t}</option>`).join('')}
                             </select></div>
                         <div class="form-group"><label>Invoice Number</label>
@@ -199,7 +200,7 @@ const InvoicesPage = {
                         <div class="form-group"><label>Status</label>
                             <input value="${escapeHtml(inv.status || 'draft')}" disabled></div>
                         <div class="form-group"><label>PO #</label>
-                            <input name="po_number" value="${escapeHtml(inv.po_number || '')}" ${canManageSales ? '' : 'disabled'}></div>
+                            <input name="po_number" value="${escapeHtml(inv.po_number || '')}" ${canEditInvoice ? '' : 'disabled'}></div>
                         <input name="tax_rate" type="hidden" value="${(inv.tax_rate * 100) || 0}">
                     </div>
                 </div>
@@ -208,15 +209,15 @@ const InvoicesPage = {
                     <table class="line-items-table">
                         <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th><th></th></tr></thead>
                         <tbody id="inv-lines">
-                            ${(inv.lines || []).map((l, i) => InvoicesPage.lineRowHtml(i, l, InvoicesPage._items, canManageSales)).join('')}
+                            ${(inv.lines || []).map((l, i) => InvoicesPage.lineRowHtml(i, l, InvoicesPage._items, canEditInvoice)).join('')}
                         </tbody>
                     </table>
-                    ${canManageSales ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="InvoicesPage.addLine()">+ Add Line</button>' : ''}
+                    ${canEditInvoice ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="InvoicesPage.addLine()">+ Add Line</button>' : ''}
                 </div>
                 <div class="settings-section">
                     <div style="display:grid; grid-template-columns: 1.4fr 0.8fr; gap:16px; align-items:start;">
                         <div class="form-group"><label>Notes</label>
-                            <textarea name="notes" rows="5" ${canManageSales ? '' : 'disabled'}>${escapeHtml(inv.notes || '')}</textarea></div>
+                            <textarea name="notes" rows="5" ${canEditInvoice ? '' : 'disabled'}>${escapeHtml(inv.notes || '')}</textarea></div>
                         <div>
                             <div class="table-container"><table>
                                 <tbody>
@@ -257,13 +258,13 @@ const InvoicesPage = {
                 </div>` : ''}
                 ${canManageSales ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices')">Cancel</button>
-                    ${inv.id ? '' : `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
+                    ${inv.id ? '' : `${canEditInvoice ? `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>` : ''}`}
                     <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.openPdf(${inv.id}, '${escapeHtml(inv.invoice_number || '')}')` : `InvoicesPage.submitWithAction(event, null, 'pdf')`}">${inv.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
                     <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.emailInvoice(${inv.id})` : `InvoicesPage.submitWithAction(event, null, 'email')`}">${inv.id ? 'Email Invoice' : 'Create & Email'}</button>
                     ${inv.id ? `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.duplicate(${inv.id})">Duplicate</button>
                     ${InvoicesPage.canSendDraft(inv) ? `<button type="button" class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Send Invoice</button>` : ''}
-                    ${inv.status !== 'void' ? `<button type="button" class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}
-                    <button type="submit" class="btn btn-primary">Update Invoice</button>` : `<button type="submit" class="btn btn-primary">Create</button>`}
+                    ${inv.status !== 'void' && inv.status !== 'paid' ? `<button type="button" class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}
+                    ${canEditInvoice ? `<button type="submit" class="btn btn-primary">Update Invoice</button>` : ''}` : `${canEditInvoice ? `<button type="submit" class="btn btn-primary">Create</button>` : ''}`}
                 </div>` : ''}
             </form>`;
     },
