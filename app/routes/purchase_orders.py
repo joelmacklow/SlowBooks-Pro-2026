@@ -18,6 +18,7 @@ from app.schemas.email import DocumentEmailRequest
 from app.schemas.bills import BillCreate, BillLineCreate
 from app.schemas.purchase_orders import POCreate, POUpdate, POResponse
 from app.services.email_service import render_document_email, send_document_email
+from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.auth import require_permissions
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
@@ -108,11 +109,15 @@ def _validate_ship_to(ship_to: str | None, db: Session) -> None:
 
 
 def _next_po_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(PurchaseOrder.po_number)).scalar()
-    if last and last.replace("PO-", "").isdigit():
-        num = int(last.replace("PO-", "")) + 1
-        return f"PO-{num:04d}"
-    return "PO-0001"
+    return allocate_document_number(
+        db,
+        model=PurchaseOrder,
+        field_name="po_number",
+        prefix_key="purchase_order_prefix",
+        next_key="purchase_order_next_number",
+        default_prefix="PO-",
+        default_next_number="0001",
+    )
 
 
 @router.get("", response_model=list[POResponse])
@@ -304,7 +309,7 @@ def convert_to_bill(po_id: int, db: Session = Depends(get_db), auth=Depends(requ
         vendor_id=po.vendor_id,
         po_id=po.id,
         date=po.date,
-        terms="Net 30",
+        terms=get_settings(db).get("default_terms", "Net 30"),
         tax_rate=po.tax_rate,
         notes=f"From {po.po_number}",
         lines=[

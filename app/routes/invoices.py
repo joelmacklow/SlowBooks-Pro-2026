@@ -30,8 +30,10 @@ from app.services.accounting import (
 from app.routes.settings import _get_all as get_settings
 from app.services.closing_date import check_closing_date
 from app.services.email_service import render_invoice_email, send_document_email
+from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
+from app.services.payment_terms import resolve_due_date_for_terms
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
 
@@ -40,10 +42,15 @@ router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 def _next_invoice_number(db: Session) -> str:
     """Reconstructed from CInvoice::GetNextRefNumber() @ 0x0015C9F0"""
-    last = db.query(sqlfunc.max(Invoice.invoice_number)).scalar()
-    if last and last.isdigit():
-        return str(int(last) + 1).zfill(len(last))
-    return "1001"
+    return allocate_document_number(
+        db,
+        model=Invoice,
+        field_name="invoice_number",
+        prefix_key="invoice_prefix",
+        next_key="invoice_next_number",
+        default_prefix="",
+        default_next_number="1001",
+    )
 
 
 
@@ -151,11 +158,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), auth=Depe
     # Parse terms for due date
     due_date = data.due_date
     if not due_date and data.terms:
-        try:
-            days = int(data.terms.lower().replace("net ", ""))
-            due_date = data.date + timedelta(days=days)
-        except ValueError:
-            due_date = data.date + timedelta(days=30)
+        due_date = resolve_due_date_for_terms(data.date, data.terms, get_settings(db).get("payment_terms_config"))
 
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
     gst_totals = calculate_document_gst(
@@ -401,14 +404,7 @@ def duplicate_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depen
 
     today = date.today()
 
-    # Parse terms for due date
-    due_date = today + timedelta(days=30)
-    if original.terms:
-        try:
-            days = int(original.terms.lower().replace("net ", ""))
-            due_date = today + timedelta(days=days)
-        except ValueError:
-            pass
+    due_date = resolve_due_date_for_terms(today, original.terms, get_settings(db).get("payment_terms_config"))
 
     return create_invoice(InvoiceCreate(
         customer_id=original.customer_id,

@@ -33,6 +33,7 @@ from app.schemas.bills import BillPaymentAllocationCreate, BillPaymentCreate
 from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
 from app.services.accounting import create_journal_entry, get_ap_account_id, get_ar_account_id, get_gst_account_id
 from app.services.auth import require_permissions
+from app.services.document_sequences import allocate_document_number
 from app.services.bank_rules import (
     bank_rule_payload,
     bank_rule_reason_text,
@@ -233,11 +234,15 @@ def delete_bank_rule(rule_id: int, db: Session = Depends(get_db), auth=Depends(r
 
 
 def _next_credit_memo_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(CreditMemo.memo_number)).scalar()
-    if last and last.replace("CM-", "").isdigit():
-        num = int(last.replace("CM-", "")) + 1
-        return f"CM-{num:04d}"
-    return "CM-0001"
+    return allocate_document_number(
+        db,
+        model=CreditMemo,
+        field_name="memo_number",
+        prefix_key="credit_memo_prefix",
+        next_key="credit_memo_next_number",
+        default_prefix="CM-",
+        default_next_number="0001",
+    )
 
 
 def _create_overpayment_credit_note(db: Session, invoice: Invoice, excess_amount: Decimal, statement_reference: str | None, statement_code: str | None) -> CreditMemo:

@@ -9,6 +9,7 @@
 from sqlalchemy import Column, Integer, String, Numeric, DateTime, func
 
 from app.database import Base
+from app.services.payment_terms import DEFAULT_PAYMENT_TERMS_CONFIG
 
 
 class Settings(Base):
@@ -33,11 +34,16 @@ DEFAULT_SETTINGS = {
     "company_website": "",
     "company_tax_id": "",
     "default_terms": "Net 30",
+    "payment_terms_config": DEFAULT_PAYMENT_TERMS_CONFIG,
     "default_tax_rate": "0.0",
     "invoice_prefix": "",
     "invoice_next_number": "1001",
     "estimate_prefix": "E-",
     "estimate_next_number": "1001",
+    "credit_memo_prefix": "CM-",
+    "credit_memo_next_number": "0001",
+    "purchase_order_prefix": "PO-",
+    "purchase_order_next_number": "0001",
     "invoice_notes": "Thank you for your business.",
     "invoice_footer": "",
     # Feature 10: Closing Date Enforcement

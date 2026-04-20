@@ -8,6 +8,16 @@ const EstimatesPage = {
     _customers: [],
     _settings: {},
     _detailState: null,
+    paymentTermLabels() {
+        const raw = String(EstimatesPage._settings?.payment_terms_config || '').trim();
+        if (!raw) return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
 
     async render() {
         const estimates = await API.get('/estimates');
@@ -167,7 +177,7 @@ const EstimatesPage = {
                                     <div class="form-group"><label>Name *</label><input name="inline_customer_name"></div>
                                     <div class="form-group"><label>Email</label><input name="inline_customer_email" type="email"></div>
                                     <div class="form-group"><label>Phone</label><input name="inline_customer_phone"></div>
-                                    <div class="form-group"><label>Terms</label><select name="inline_customer_terms">${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t => `<option>${t}</option>`).join('')}</select></div>
+                                    <div class="form-group"><label>Terms</label><select name="inline_customer_terms">${EstimatesPage.paymentTermLabels().map(t => `<option>${t}</option>`).join('')}</select></div>
                                 </div>
                                 <div class="form-actions" style="margin-top:8px;"><button type="button" class="btn btn-primary" onclick="EstimatesPage.createInlineCustomer(event)">Create Customer</button></div>
                             </div>` : ''}
@@ -236,7 +246,7 @@ const EstimatesPage = {
                 name: form.inline_customer_name.value,
                 email: form.inline_customer_email.value || null,
                 phone: form.inline_customer_phone.value || null,
-                terms: form.inline_customer_terms.value || 'Net 30',
+                terms: form.inline_customer_terms.value || EstimatesPage._settings.default_terms || 'Net 30',
             });
             EstimatesPage._customers.push(customer);
             EstimatesPage._customers.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));

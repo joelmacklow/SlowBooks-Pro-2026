@@ -107,6 +107,20 @@ const BillsPage = {
     _items: [],
     _filteredItems: [],
     lineCount: 0,
+    _defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    _paymentTermLabels(settings = {}) {
+        const raw = String(settings.payment_terms_config || '').trim();
+        if (!raw) return BillsPage._defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : BillsPage._defaultPaymentTerms();
+    },
 
     async showForm() {
         const [vendors, items, accounts, gstCodes] = await Promise.all([
@@ -115,6 +129,10 @@ const BillsPage = {
             API.get('/accounts?account_type=expense'),
             API.get('/gst-codes'),
         ]);
+        let settings = {};
+        try {
+            settings = await API.get('/settings/public');
+        } catch (_err) {}
         App.gstCodes = gstCodes;
         BillsPage._items = items;
         BillsPage._filteredItems = items;
@@ -122,6 +140,8 @@ const BillsPage = {
 
         const vendorOpts = vendors.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
         const itemOpts = BillsPage.itemOptionsHtml();
+        const termOptions = BillsPage._paymentTermLabels(settings).map(t =>
+            `<option ${t===(settings.default_terms || 'Net 30')?'selected':''}>${t}</option>`).join('');
 
         openModal('Enter Bill', `
             <form onsubmit="BillsPage.save(event)">
@@ -134,8 +154,7 @@ const BillsPage = {
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${t==='Net 30'?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                 </div>
                 <h3 style="margin:12px 0 8px;font-size:14px;">Line Items</h3>

@@ -8,6 +8,16 @@ const RecurringPage = {
     _settings: {},
     _detailState: null,
     lineCount: 0,
+    paymentTermLabels() {
+        const raw = String(RecurringPage._settings?.payment_terms_config || '').trim();
+        if (!raw) return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
 
     async render() {
         const recs = await API.get('/recurring');
@@ -166,7 +176,7 @@ const RecurringPage = {
                             <input name="end_date" type="date" value="${rec.end_date || ''}" ${canManageSales ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Terms</label>
                             <select name="terms" id="recurring-terms" ${canManageSales ? '' : 'disabled'}>
-                                ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
+                                ${RecurringPage.paymentTermLabels().map(t =>
                                     `<option value="${t}" ${rec.terms===t?'selected':''}>${t}</option>`).join('')}
                             </select></div>
                         <div class="form-group"><label>Next Due</label>

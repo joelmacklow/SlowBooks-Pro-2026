@@ -81,6 +81,22 @@ const App = {
         };
     },
 
+    defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    paymentTermLabels(settings = null) {
+        const source = settings || App.settings || {};
+        const raw = String(source.payment_terms_config || '').trim();
+        if (!raw) return App.defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : App.defaultPaymentTerms();
+    },
+
     routePathFromHash(hash) {
         const rawPath = (hash || '').replace('#', '') || '/';
         return rawPath.split('?')[0] || '/';
@@ -846,6 +862,7 @@ const App = {
         App._qeItems = items;
         const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
         const itemOpts = items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const termOptions = App.paymentTermLabels().map(t => `<option ${t===App.settings.default_terms?'selected':''}>${t}</option>`).join('');
 
         return `
             <div class="page-header">
@@ -865,8 +882,7 @@ const App = {
                         <input name="date" id="qe-date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms" id="qe-terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${t==='Net 30'?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                     <div class="form-group"><label>PO #</label>
                         <input name="po_number" id="qe-po"></div>

@@ -7,6 +7,20 @@
  */
 const VendorsPage = {
     _detailState: null,
+    _defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    _paymentTermLabels(settings = {}) {
+        const raw = String(settings.payment_terms_config || '').trim();
+        if (!raw) return VendorsPage._defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : VendorsPage._defaultPaymentTerms();
+    },
 
     async render() {
         const vendors = await API.get('/vendors');
@@ -133,6 +147,13 @@ const VendorsPage = {
         const v = vendor || { name:'', company:'', email:'', phone:'', fax:'', website:'',
             address1:'', address2:'', city:'', state:'', zip:'', country:'NZ',
             terms:'Net 30', tax_id:'', account_number:'', default_expense_account_id:'', notes:'' };
+        let settings = {};
+        try {
+            settings = await API.get('/settings/public');
+        } catch (_err) {}
+        if (!id && settings.default_terms) v.terms = settings.default_terms;
+        const termOptions = VendorsPage._paymentTermLabels(settings).map(t =>
+            `<option ${v.terms===t?'selected':''}>${t}</option>`).join('');
         const expenseOptions = accounts.map(account => `<option value="${account.id}" ${String(v.default_expense_account_id || '') === String(account.id) ? 'selected' : ''}>${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`).join('');
 
         openModal(id ? 'Edit Vendor' : 'New Vendor', `
@@ -168,8 +189,7 @@ const VendorsPage = {
                 <div class="form-grid" style="margin-top:16px;">
                     <div class="form-group"><label>Terms</label>
                         <select name="terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${v.terms===t?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                     <div class="form-group"><label>Tax ID</label>
                         <input name="tax_id" value="${escapeHtml(v.tax_id || '')}"></div>

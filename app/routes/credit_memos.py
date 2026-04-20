@@ -25,6 +25,7 @@ from app.services.accounting import (
     get_default_income_account_id, get_gst_account_id,
 )
 from app.services.closing_date import check_closing_date
+from app.services.document_sequences import allocate_document_number
 from app.services.email_service import render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
@@ -37,11 +38,15 @@ router = APIRouter(prefix="/api/credit-memos", tags=["credit_memos"])
 
 
 def _next_cm_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(CreditMemo.memo_number)).scalar()
-    if last and last.replace("CM-", "").isdigit():
-        num = int(last.replace("CM-", "")) + 1
-        return f"CM-{num:04d}"
-    return "CM-0001"
+    return allocate_document_number(
+        db,
+        model=CreditMemo,
+        field_name="memo_number",
+        prefix_key="credit_memo_prefix",
+        next_key="credit_memo_next_number",
+        default_prefix="CM-",
+        default_next_number="0001",
+    )
 
 
 def _post_credit_memo_journal(db: Session, cm: CreditMemo, customer: Customer, lines, gst_totals):

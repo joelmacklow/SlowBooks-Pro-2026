@@ -35,6 +35,7 @@ from app.services.invoice_reminders import (
     ensure_default_invoice_reminder_rules,
     invoice_reminder_rule_label,
 )
+from app.services.payment_terms import payment_terms_labels, parse_payment_terms_config
 from app.services.rate_limit import enforce_rate_limit
 from scripts.seed_nz_demo_data import seed as run_demo_seed
 
@@ -71,6 +72,18 @@ def _validate_period_settings(data: dict) -> None:
     if start_value is None and end_value is None:
         return
     validate_financial_year_dates(start_value, end_value)
+
+
+def _validate_payment_terms_settings(data: dict, db: Session) -> None:
+    incoming_config = data.get("payment_terms_config")
+    current_settings = _get_all(db)
+    config_value = incoming_config if incoming_config is not None else current_settings.get("payment_terms_config")
+    labels = payment_terms_labels(config_value)
+    if not labels:
+        raise HTTPException(status_code=400, detail="At least one payment term must be configured")
+    default_terms = str(data.get("default_terms", current_settings.get("default_terms", labels[0])) or labels[0])
+    if default_terms not in labels:
+        raise HTTPException(status_code=400, detail="Default terms must match one of the configured payment terms")
 
 
 def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
@@ -122,6 +135,8 @@ def get_public_settings(db: Session = Depends(get_db)):
     result = _get_all(db)
     allowed_keys = (
         "company_name",
+        "default_terms",
+        "payment_terms_config",
         "default_tax_rate",
         "country",
         "currency",
@@ -153,6 +168,7 @@ def update_settings(
     auth=Depends(require_permissions("settings.manage")),
 ):
     _validate_period_settings(data)
+    _validate_payment_terms_settings(data, db)
     for key, value in data.items():
         if key in DEFAULT_SETTINGS:
             if key == "closing_date_password":

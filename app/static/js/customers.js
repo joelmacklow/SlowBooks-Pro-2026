@@ -7,6 +7,20 @@
  */
 const CustomersPage = {
     _detailState: null,
+    _defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    _paymentTermLabels(settings = {}) {
+        const raw = String(settings.payment_terms_config || '').trim();
+        if (!raw) return CustomersPage._defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : CustomersPage._defaultPaymentTerms();
+    },
 
     async render() {
         const customers = await API.get('/customers');
@@ -143,6 +157,13 @@ const CustomersPage = {
             ship_address1: '', ship_address2: '', ship_city: '', ship_state: '', ship_zip: '', ship_country: 'NZ',
             terms: 'Net 30', credit_limit: '', tax_id: '', is_taxable: true, notes: '' };
         if (id) c = await API.get(`/customers/${id}`);
+        let settings = {};
+        try {
+            settings = await API.get('/settings/public');
+        } catch (_err) {}
+        if (!id && settings.default_terms) c.terms = settings.default_terms;
+        const termOptions = CustomersPage._paymentTermLabels(settings).map(t =>
+            `<option ${c.terms===t?'selected':''}>${t}</option>`).join('');
 
         const title = id ? 'Edit Customer' : 'New Customer';
         openModal(title, `
@@ -164,8 +185,7 @@ const CustomersPage = {
                         <input name="website" value="${escapeHtml(c.website || '')}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${c.terms===t?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                     <div class="form-group full-width">
                         <label>Customer Communications</label>

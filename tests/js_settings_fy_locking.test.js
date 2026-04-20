@@ -12,11 +12,16 @@ const context = {
             if (path === '/settings') return {
                 company_name: 'SlowBooks NZ',
                 default_terms: 'Net 30',
+                payment_terms_config: 'Net 15|net:15\nNet 30|net:30\nDue on Receipt|days:0\nDue 1st of next month|next_month_day:1',
                 default_tax_rate: '15',
                 invoice_prefix: '',
                 invoice_next_number: '1001',
                 estimate_prefix: 'E-',
                 estimate_next_number: '1001',
+                credit_memo_prefix: 'CM-',
+                credit_memo_next_number: '0001',
+                purchase_order_prefix: 'PO-',
+                purchase_order_next_number: '0001',
                 invoice_notes: '',
                 invoice_footer: '',
                 country: 'NZ',
@@ -56,6 +61,13 @@ vm.runInContext(code, context);
     const html = await context.SettingsPage.render();
     assert.ok(html.includes('Financial Year Start'));
     assert.ok(html.includes('Financial Year End'));
+    assert.ok(html.includes('Payment Terms & Document Sequencing'));
+    assert.ok(html.includes('name="payment_terms_config"'));
+    assert.ok(html.includes('Credit Note Prefix'));
+    assert.ok(html.includes('Next Credit Note #'));
+    assert.ok(html.includes('Purchase Order Prefix'));
+    assert.ok(html.includes('Next Purchase Order #'));
+    assert.ok(html.includes('Due 1st of next month|next_month_day:1'));
     assert.ok(html.includes('name="financial_year_start_day"'));
     assert.ok(html.includes('name="financial_year_start_month"'));
     assert.ok(html.includes('name="financial_year_end_day"'));

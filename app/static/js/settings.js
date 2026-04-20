@@ -6,6 +6,37 @@
  * PostgreSQL INSERTs. Progress.
  */
 const SettingsPage = {
+    _defaultPaymentTerms() {
+        return [
+            { label: 'Net 15', rule: 'net:15' },
+            { label: 'Net 30', rule: 'net:30' },
+            { label: 'Net 45', rule: 'net:45' },
+            { label: 'Net 60', rule: 'net:60' },
+            { label: 'Due on Receipt', rule: 'days:0' },
+        ];
+    },
+
+    _parsePaymentTermsConfig(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return SettingsPage._defaultPaymentTerms();
+        const terms = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => {
+                if (line.includes('|')) {
+                    const [label, rule] = line.split('|', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                if (line.includes('=')) {
+                    const [label, rule] = line.split('=', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                return { label: line, rule: 'manual' };
+            })
+            .filter(term => term.label);
+        return terms.length ? terms : SettingsPage._defaultPaymentTerms();
+    },
+
     _monthOptions() {
         return [
             ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
@@ -36,6 +67,7 @@ const SettingsPage = {
 
     async render() {
         const s = await API.get('/settings');
+        const paymentTerms = SettingsPage._parsePaymentTermsConfig(s.payment_terms_config);
         setTimeout(() => SettingsPage.loadBackups(), 0);
         setTimeout(() => SettingsPage.loadInvoiceReminderRules(), 0);
         return `
@@ -84,13 +116,16 @@ const SettingsPage = {
                 </div>
 
                 <div class="settings-section">
-                    <h3>Invoice Defaults</h3>
+                    <h3>Payment Terms & Document Sequencing</h3>
                     <div class="form-grid">
                         <div class="form-group"><label>Default Terms</label>
                             <select name="default_terms">
-                                ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
+                                ${paymentTerms.map(({ label: t }) =>
                                     `<option ${s.default_terms===t?'selected':''}>${t}</option>`).join('')}
                             </select></div>
+                        <div class="form-group full-width"><label>Payment Terms</label>
+                            <textarea name="payment_terms_config" rows="6" placeholder="Net 30|net:30&#10;Due on Receipt|days:0&#10;Due 1st of next month|next_month_day:1">${escapeHtml(s.payment_terms_config || '')}</textarea>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">One term per line. Use <code>Label|rule</code>. Supported rules: <code>net:30</code>, <code>days:0</code>, <code>next_month_day:1</code>.</div></div>
                         <div class="form-group"><label>Default Tax Rate (%)</label>
                             <input name="default_tax_rate" type="number" step="0.01" value="${s.default_tax_rate || '0.0'}"></div>
                         <div class="form-group"><label>Invoice Prefix</label>
@@ -101,6 +136,14 @@ const SettingsPage = {
                             <input name="estimate_prefix" value="${escapeHtml(s.estimate_prefix || '')}" placeholder="e.g. E-"></div>
                         <div class="form-group"><label>Next Estimate #</label>
                             <input name="estimate_next_number" value="${escapeHtml(s.estimate_next_number || '1001')}"></div>
+                        <div class="form-group"><label>Credit Note Prefix</label>
+                            <input name="credit_memo_prefix" value="${escapeHtml(s.credit_memo_prefix || 'CM-')}" placeholder="e.g. CM-"></div>
+                        <div class="form-group"><label>Next Credit Note #</label>
+                            <input name="credit_memo_next_number" value="${escapeHtml(s.credit_memo_next_number || '0001')}"></div>
+                        <div class="form-group"><label>Purchase Order Prefix</label>
+                            <input name="purchase_order_prefix" value="${escapeHtml(s.purchase_order_prefix || 'PO-')}" placeholder="e.g. PO-"></div>
+                        <div class="form-group"><label>Next Purchase Order #</label>
+                            <input name="purchase_order_next_number" value="${escapeHtml(s.purchase_order_next_number || '0001')}"></div>
                         <div class="form-group full-width"><label>Default Invoice Notes</label>
                             <textarea name="invoice_notes">${escapeHtml(s.invoice_notes || '')}</textarea></div>
                         <div class="form-group full-width"><label>Invoice Footer</label>

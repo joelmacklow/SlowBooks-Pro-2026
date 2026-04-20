@@ -23,6 +23,8 @@ from app.services.closing_date import check_closing_date
 from app.services.auth import require_permissions
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
+from app.services.payment_terms import resolve_due_date_for_terms
+from app.routes.settings import _get_all as get_settings
 
 router = APIRouter(prefix="/api/bills", tags=["bills"])
 
@@ -140,11 +142,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db), auth=Depends(re
 
     due_date = data.due_date
     if not due_date and data.terms:
-        try:
-            days = int(data.terms.lower().replace("net ", ""))
-            due_date = data.date + timedelta(days=days)
-        except ValueError:
-            due_date = data.date + timedelta(days=30)
+        due_date = resolve_due_date_for_terms(data.date, data.terms, get_settings(db).get("payment_terms_config"))
 
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
     gst_totals = calculate_document_gst(
