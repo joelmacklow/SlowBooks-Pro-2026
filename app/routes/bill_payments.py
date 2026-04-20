@@ -34,6 +34,9 @@ def list_bill_payments(
         resp = BillPaymentResponse.model_validate(payment)
         if payment.vendor:
             resp.vendor_name = payment.vendor.name
+        allocated_amount = sum((Decimal(str(allocation.amount)) for allocation in payment.allocations), Decimal("0.00"))
+        resp.allocated_amount = float(allocated_amount)
+        resp.unallocated_amount = float(Decimal(str(payment.amount or 0)) - allocated_amount)
         results.append(resp)
     return results
 

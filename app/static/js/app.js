@@ -19,6 +19,7 @@ const App = {
         '/customers':     { page: 'customers',       label: 'Customer Center',    permission: 'contacts.view', render: () => CustomersPage.render() },
         '/customers/detail': { page: 'customers',    label: 'Customer',           permission: 'contacts.view', render: () => CustomersPage.renderDetailScreen() },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      permission: 'contacts.view', render: () => VendorsPage.render() },
+        '/vendors/detail': { page: 'vendors',        label: 'Vendor',             permission: 'contacts.view', render: () => VendorsPage.renderDetailScreen() },
         '/items':         { page: 'items',           label: 'Item List',          permission: 'items.view', render: () => ItemsPage.render() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    permission: 'sales.view', render: () => InvoicesPage.render() },
         '/invoices/detail': { page: 'invoices',      label: 'Invoice',            permission: 'sales.view', render: () => InvoicesPage.renderDetailScreen() },
