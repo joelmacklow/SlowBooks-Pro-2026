@@ -989,6 +989,10 @@ tr.clickable { cursor: pointer; }
     z-index: 200;
 }
 
+.search-dropdown.hidden {
+    display: none;
+}
+
 .search-header {
     display: flex;
     align-items: center;
