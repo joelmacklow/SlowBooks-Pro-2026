@@ -11,6 +11,7 @@ const App = {
     authState: { authenticated: false, bootstrap_required: false, user: null },
     _suppressNextHashChange: false,
     _searchRequestId: 0,
+    _detailOrigins: {},
 
     routes: {
         '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
@@ -80,6 +81,30 @@ const App = {
     routePathFromHash(hash) {
         const rawPath = (hash || '').replace('#', '') || '/';
         return rawPath.split('?')[0] || '/';
+    },
+
+    setDetailOrigin(detailHash, originHash = null) {
+        if (!detailHash) return;
+        App._detailOrigins[detailHash] = originHash || null;
+    },
+
+    getDetailOrigin(detailHash) {
+        return App._detailOrigins[detailHash] || null;
+    },
+
+    labelForHash(hash, fallback = 'Previous') {
+        const route = App.routes[App.routePathFromHash(hash || '')];
+        return route?.label || fallback;
+    },
+
+    detailBackLabel(detailHash, fallbackHash, fallback = 'Previous') {
+        const targetHash = App.getDetailOrigin(detailHash) || fallbackHash;
+        const label = targetHash === fallbackHash ? fallback : App.labelForHash(targetHash, fallback);
+        return `Back to ${label}`;
+    },
+
+    navigateBackToDetailOrigin(detailHash, fallbackHash) {
+        App.navigate(App.getDetailOrigin(detailHash) || fallbackHash);
     },
 
     hasPermission(permission) {
@@ -157,6 +182,7 @@ const App = {
         $$('.nav-link').forEach(link => {
             link.classList.toggle('active', link.dataset.page === route.page);
         });
+        App.syncNavAccordion(route.page);
 
         // Status bar
         App.setStatus(`Loading ${route.label}...`);
@@ -187,6 +213,25 @@ const App = {
         if (dd) dd.classList.add('hidden');
         const input = $('#global-search');
         if (input) input.value = '';
+    },
+
+    toggleNavSection(section, forceOpen = null) {
+        $$('.nav-group').forEach(group => {
+            const isTarget = group.dataset.section === section;
+            const shouldOpen = isTarget && (forceOpen === null ? !group.classList.contains('is-open') : !!forceOpen);
+            group.classList.toggle('is-open', shouldOpen);
+        });
+    },
+
+    syncNavAccordion(activePage = null) {
+        const activeLink = activePage ? $(`.nav-link[data-page="${activePage}"]`) : $('.nav-link.active');
+        const activeGroup = activeLink?.closest?.('.nav-group');
+        if (activeGroup?.dataset?.section) {
+            App.toggleNavSection(activeGroup.dataset.section, true);
+        } else if (!$$('.nav-group.is-open').length) {
+            const firstGroup = $('.nav-group');
+            if (firstGroup?.dataset?.section) App.toggleNavSection(firstGroup.dataset.section, true);
+        }
     },
 
     updateClock() {
@@ -926,6 +971,12 @@ const App = {
                     location.hash = targetHash;
                     App.navigate(targetHash);
                 }
+            });
+        });
+        $$('.nav-section-toggle').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                App.toggleNavSection(toggle.dataset.section);
             });
         });
 

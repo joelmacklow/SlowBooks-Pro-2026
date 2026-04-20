@@ -7,7 +7,8 @@ const code = [
     fs.readFileSync('app/static/js/invoices.js', 'utf8'),
     fs.readFileSync('app/static/js/estimates.js', 'utf8'),
     fs.readFileSync('app/static/js/credit_memos.js', 'utf8'),
-    'this.App = App; this.InvoicesPage = InvoicesPage; this.EstimatesPage = EstimatesPage; this.CreditMemosPage = CreditMemosPage;',
+    fs.readFileSync('app/static/js/customers.js', 'utf8'),
+    'this.App = App; this.InvoicesPage = InvoicesPage; this.EstimatesPage = EstimatesPage; this.CreditMemosPage = CreditMemosPage; this.CustomersPage = CustomersPage;',
 ].join('\n');
 
 const navigations = [];
@@ -27,7 +28,7 @@ const context = {
             if (path === '/items?active_only=true') return [{ id: 2, name: 'Pens', description: 'Pens', rate: 50, cost: 15 }];
             if (path === '/settings') return { default_terms: 'Net 30', default_tax_rate: '15', invoice_notes: 'Default invoice notes' };
             if (path === '/gst-codes') return [{ code: 'GST15', rate: 0.15, name: 'GST 15%' }];
-            if (path === '/customers/5') return { id: 5, name: 'Aroha Ltd', email: 'customer@example.com' };
+            if (path === '/customers/5') return { id: 5, name: 'Aroha Ltd', company: 'Aroha Ltd', email: 'customer@example.com', phone: '021', balance: 115, terms: 'Net 30' };
             throw new Error(`unexpected path ${path}`);
         },
         post: async () => ({}),
@@ -124,6 +125,7 @@ context.App.authState = { authenticated: true, bootstrap_required: false, user: 
     assert.ok(html.includes('Create & Print / PDF'));
     assert.ok(html.includes('Create & Email'));
     assert.ok(html.includes('Back to Invoices'));
+    assert.ok(!html.includes('Send Invoice'));
 
     navigations.length = 0;
     await context.InvoicesPage.open(1);
@@ -133,6 +135,10 @@ context.App.authState = { authenticated: true, bootstrap_required: false, user: 
     assert.ok(html.includes('Print / PDF'));
     assert.ok(html.includes('Email Invoice'));
     assert.ok(html.includes('Duplicate'));
+    assert.ok(html.includes('Send Invoice'));
+
+    html = await context.InvoicesPage.render();
+    assert.ok(html.includes("InvoicesPage.markSent(1, '#/invoices')"));
 
     navigations.length = 0;
     await context.EstimatesPage.startNew();
@@ -168,6 +174,32 @@ context.App.authState = { authenticated: true, bootstrap_required: false, user: 
     assert.ok(html.includes('Print / PDF'));
     assert.ok(html.includes('Email Credit Note'));
     assert.ok(html.includes('Apply Credit'));
+
+    context.CustomersPage._detailState = {
+        customer: await context.API.get('/customers/5'),
+        invoices: await context.API.get('/invoices'),
+        estimates: await context.API.get('/estimates'),
+        creditMemos: await context.API.get('/credit-memos'),
+    };
+    html = context.CustomersPage.renderDetailScreen();
+    assert.ok(html.includes("InvoicesPage.open(1, '#/customers/detail')"));
+    assert.ok(html.includes("EstimatesPage.open(2, '#/customers/detail')"));
+    assert.ok(html.includes("CreditMemosPage.open(3, '#/customers/detail')"));
+
+    navigations.length = 0;
+    await context.InvoicesPage.open(1, '#/customers/detail');
+    context.App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices');
+    assert.deepStrictEqual(navigations, ['#/invoices/detail', '#/customers/detail']);
+
+    navigations.length = 0;
+    await context.EstimatesPage.open(2, '#/customers/detail');
+    context.App.navigateBackToDetailOrigin('#/estimates/detail', '#/estimates');
+    assert.deepStrictEqual(navigations, ['#/estimates/detail', '#/customers/detail']);
+
+    navigations.length = 0;
+    await context.CreditMemosPage.open(3, '#/customers/detail');
+    context.App.navigateBackToDetailOrigin('#/credit-memos/detail', '#/credit-memos');
+    assert.deepStrictEqual(navigations, ['#/credit-memos/detail', '#/customers/detail']);
 })().catch(err => {
     console.error(err);
     process.exit(1);

@@ -42,12 +42,14 @@ const CreditMemosPage = {
         return html;
     },
 
-    async startNew() {
+    async startNew(originHash = '#/credit-memos') {
+        App.setDetailOrigin('#/credit-memos/detail', originHash);
         await CreditMemosPage._loadEditorContext(null);
         App.navigate('#/credit-memos/detail');
     },
 
-    async open(id) {
+    async open(id, originHash = '#/credit-memos') {
+        App.setDetailOrigin('#/credit-memos/detail', originHash);
         await CreditMemosPage._loadEditorContext(id);
         App.navigate('#/credit-memos/detail');
     },
@@ -114,7 +116,7 @@ const CreditMemosPage = {
                     <h2>${memo.id ? `Credit Memo ${escapeHtml(memo.memo_number || '')}` : 'New Credit Memo'}</h2>
                 </div>
                 <div class="actions">
-                    <button class="btn btn-secondary" onclick="App.navigate('#/credit-memos')">Back to Credit Memos</button>
+                    <button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/credit-memos/detail', '#/credit-memos')">${App.detailBackLabel('#/credit-memos/detail', '#/credit-memos', 'Credit Memos')}</button>
                 </div>
             </div>
             <form onsubmit="CreditMemosPage.save(event, ${memo.id || 'null'})">
@@ -171,7 +173,7 @@ const CreditMemosPage = {
                     </table></div>
                 </div>` : ''}
                 ${canManageSales ? `<div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="App.navigate('#/credit-memos')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/credit-memos/detail', '#/credit-memos')">Cancel</button>
                     ${memo.id ? '' : `<button type="button" class="btn btn-secondary" onclick="CreditMemosPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
                     <button type="button" class="btn btn-secondary" onclick="${memo.id ? `CreditMemosPage.openPdf(${memo.id}, '${escapeHtml(memo.memo_number || '')}')` : `CreditMemosPage.submitWithAction(event, null, 'pdf')`}">${memo.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
                     <button type="button" class="btn btn-secondary" onclick="${memo.id ? `CreditMemosPage.emailCreditMemo(${memo.id})` : `CreditMemosPage.submitWithAction(event, null, 'email')`}">${memo.id ? 'Email Credit Note' : 'Create & Email'}</button>

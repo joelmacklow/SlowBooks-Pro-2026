@@ -71,8 +71,6 @@ body {
 }
 
 #app {
-    display: flex;
-    flex-direction: column;
     height: 100vh;
 }
 
@@ -91,23 +89,6 @@ body {
     gap: 2px;
     flex-shrink: 0;
     z-index: 110;
-}
-
-.topbar-brand {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--qb-navy);
-    margin-right: 16px;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    user-select: none;
-}
-
-.topbar-brand span {
-    font-weight: 400;
-    color: var(--text-muted);
-    font-size: 10px;
-    margin-left: 4px;
 }
 
 .tb-sep {
@@ -159,7 +140,15 @@ body {
 
 #main-area {
     display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#workspace-shell {
+    display: flex;
+    flex-direction: column;
     flex: 1;
+    min-width: 0;
     overflow: hidden;
 }
 
@@ -172,6 +161,7 @@ body {
     border-right: 1px solid #001a33;
     display: flex;
     flex-direction: column;
+    min-height: 100vh;
 }
 
 .sidebar-header {
@@ -203,13 +193,43 @@ body {
     flex: 1;
 }
 
-.nav-section {
-    padding: 10px 14px 3px;
+.nav-group {
+    list-style: none;
+}
+
+.nav-section-toggle {
+    width: 100%;
+    padding: 10px 14px 6px;
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--qb-teal);
     font-weight: 700;
+    text-align: left;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    position: relative;
+}
+
+.nav-section-toggle::after {
+    content: '\25BE';
+    position: absolute;
+    right: 14px;
+    top: 10px;
+    font-size: 9px;
+}
+
+.nav-group:not(.is-open) .nav-section-toggle::after {
+    content: '\25B8';
+}
+
+.nav-group-links {
+    list-style: none;
+}
+
+.nav-group:not(.is-open) .nav-group-links {
+    display: none;
 }
 
 .nav-link {

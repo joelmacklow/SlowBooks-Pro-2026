@@ -44,12 +44,14 @@ const EstimatesPage = {
         return html;
     },
 
-    async startNew() {
+    async startNew(originHash = '#/estimates') {
+        App.setDetailOrigin('#/estimates/detail', originHash);
         await EstimatesPage._loadEditorContext(null);
         App.navigate('#/estimates/detail');
     },
 
-    async open(id) {
+    async open(id, originHash = '#/estimates') {
+        App.setDetailOrigin('#/estimates/detail', originHash);
         await EstimatesPage._loadEditorContext(id);
         App.navigate('#/estimates/detail');
     },
@@ -120,7 +122,7 @@ const EstimatesPage = {
                     <h2>${est.id ? `Estimate ${escapeHtml(est.estimate_number || '')}` : 'New Estimate'}</h2>
                 </div>
                 <div class="actions">
-                    <button class="btn btn-secondary" onclick="App.navigate('#/estimates')">Back to Estimates</button>
+                    <button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/estimates/detail', '#/estimates')">${App.detailBackLabel('#/estimates/detail', '#/estimates', 'Estimates')}</button>
                 </div>
             </div>
             <form id="est-form" onsubmit="EstimatesPage.save(event, ${est.id || 'null'})">
@@ -178,7 +180,7 @@ const EstimatesPage = {
                     </div>
                 </div>
                 ${canManageSales ? `<div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="App.navigate('#/estimates')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/estimates/detail', '#/estimates')">Cancel</button>
                     ${est.id ? '' : `<button type="button" class="btn btn-secondary" onclick="EstimatesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
                     <button type="button" class="btn btn-secondary" onclick="${est.id ? `EstimatesPage.openPdf(${est.id}, '${escapeHtml(est.estimate_number || '')}')` : `EstimatesPage.submitWithAction(event, null, 'pdf')`}">${est.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
                     <button type="button" class="btn btn-secondary" onclick="${est.id ? `EstimatesPage.emailEstimate(${est.id})` : `EstimatesPage.submitWithAction(event, null, 'email')`}">${est.id ? 'Email' : 'Create & Email'}</button>

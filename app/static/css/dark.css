@@ -67,8 +67,6 @@
     border-bottom-color: #3a3e48;
 }
 
-[data-theme="dark"] .topbar-brand { color: #e0e4ec; }
-[data-theme="dark"] .topbar-brand span { color: var(--qb-gold); }
 [data-theme="dark"] .tb-btn { color: var(--text-secondary); }
 [data-theme="dark"] .tb-btn:hover { background: rgba(255,255,255,0.08); border-color: #4a4e58; color: #e0e4ec; }
 [data-theme="dark"] .topbar-clock { color: var(--text-secondary); }
@@ -80,7 +78,7 @@
 
 [data-theme="dark"] .sidebar-header h1 { color: #e0e4ec; }
 [data-theme="dark"] .sidebar-edition { color: var(--qb-gold); }
-[data-theme="dark"] .nav-section { color: #7a8498; }
+[data-theme="dark"] .nav-section-toggle { color: #7a8498; }
 [data-theme="dark"] .nav-link { color: #b0bcc8; }
 [data-theme="dark"] .nav-link:hover { color: #e0e4ec; background: rgba(255,255,255,0.05); }
 [data-theme="dark"] .nav-link.active { color: #ffffff; background: rgba(90,155,213,0.2); }

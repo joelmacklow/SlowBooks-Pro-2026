@@ -53,6 +53,7 @@ const InvoicesPage = {
                     <td class="amount">${formatCurrency(inv.balance_due)}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="InvoicesPage.open(${inv.id})">Open</button>
+                        ${InvoicesPage.canSendDraft(inv) ? `<button class="btn btn-sm btn-primary" onclick="InvoicesPage.markSent(${inv.id}, '#/invoices')">Send</button>` : ''}
                     </td>
                 </tr>`;
             }
@@ -68,12 +69,21 @@ const InvoicesPage = {
         });
     },
 
-    async startNew() {
+    canSendDraft(inv) {
+        const lines = inv?.lines || [];
+        const hasLine = lines.length ? lines.some(line => (parseFloat(line.quantity) || 0) > 0) : true;
+        const hasCustomer = !!(inv?.customer_id || inv?.customer_name);
+        return !!(inv?.id && inv.status === 'draft' && hasCustomer && inv.date && inv.due_date && hasLine);
+    },
+
+    async startNew(originHash = '#/invoices') {
+        App.setDetailOrigin('#/invoices/detail', originHash);
         await InvoicesPage._loadEditorContext(null);
         App.navigate('#/invoices/detail');
     },
 
-    async open(id) {
+    async open(id, originHash = '#/invoices') {
+        App.setDetailOrigin('#/invoices/detail', originHash);
         await InvoicesPage._loadEditorContext(id);
         App.navigate('#/invoices/detail');
     },
@@ -155,7 +165,7 @@ const InvoicesPage = {
                     <h2>${inv.id ? `Invoice ${escapeHtml(inv.invoice_number || '')}` : 'New Invoice'}</h2>
                 </div>
                 <div class="actions">
-                    <button class="btn btn-secondary" onclick="App.navigate('#/invoices')">Back to Invoices</button>
+                    <button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices')">${App.detailBackLabel('#/invoices/detail', '#/invoices', 'Invoices')}</button>
                 </div>
             </div>
             <form id="invoice-form" onsubmit="InvoicesPage.save(event, ${inv.id || 'null'})">
@@ -246,12 +256,12 @@ const InvoicesPage = {
                     </table></div>
                 </div>` : ''}
                 ${canManageSales ? `<div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="App.navigate('#/invoices')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices')">Cancel</button>
                     ${inv.id ? '' : `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
                     <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.openPdf(${inv.id}, '${escapeHtml(inv.invoice_number || '')}')` : `InvoicesPage.submitWithAction(event, null, 'pdf')`}">${inv.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
                     <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.emailInvoice(${inv.id})` : `InvoicesPage.submitWithAction(event, null, 'email')`}">${inv.id ? 'Email Invoice' : 'Create & Email'}</button>
                     ${inv.id ? `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.duplicate(${inv.id})">Duplicate</button>
-                    ${inv.status === 'draft' ? `<button type="button" class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Mark Sent</button>` : ''}
+                    ${InvoicesPage.canSendDraft(inv) ? `<button type="button" class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Send Invoice</button>` : ''}
                     ${inv.status !== 'void' ? `<button type="button" class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}
                     <button type="submit" class="btn btn-primary">Update Invoice</button>` : `<button type="submit" class="btn btn-primary">Create</button>`}
                 </div>` : ''}
@@ -464,10 +474,14 @@ const InvoicesPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    async markSent(id) {
+    async markSent(id, returnHash = null) {
         try {
             await API.post(`/invoices/${id}/send`);
-            toast('Invoice marked as sent');
+            toast('Invoice sent');
+            if (returnHash) {
+                await App.navigate(returnHash);
+                return;
+            }
             await InvoicesPage.open(id);
         } catch (err) { toast(err.message, 'error'); }
     },

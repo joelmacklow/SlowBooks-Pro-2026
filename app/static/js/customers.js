@@ -65,20 +65,20 @@ const CustomersPage = {
         }
         const { customer, invoices, estimates, creditMemos } = state;
         const invoiceRows = invoices.map(inv => `<tr>
-            <td><button class="btn btn-link" onclick="InvoicesPage.view(${inv.id})">${escapeHtml(inv.invoice_number)}</button></td>
+            <td><button class="btn btn-link" onclick="InvoicesPage.open(${inv.id}, '#/customers/detail')">${escapeHtml(inv.invoice_number)}</button></td>
             <td>${formatDate(inv.date)}</td>
             <td>${statusBadge(inv.status)}</td>
             <td class="amount">${formatCurrency(inv.total)}</td>
             <td class="amount">${formatCurrency(inv.balance_due)}</td>
         </tr>`).join('') || '<tr><td colspan="5">No invoices yet</td></tr>';
         const estimateRows = estimates.map(est => `<tr>
-            <td><button class="btn btn-link" onclick="EstimatesPage.view(${est.id})">${escapeHtml(est.estimate_number)}</button></td>
+            <td><button class="btn btn-link" onclick="EstimatesPage.open(${est.id}, '#/customers/detail')">${escapeHtml(est.estimate_number)}</button></td>
             <td>${formatDate(est.date)}</td>
             <td>${statusBadge(est.status)}</td>
             <td class="amount">${formatCurrency(est.total)}</td>
         </tr>`).join('') || '<tr><td colspan="4">No estimates yet</td></tr>';
         const creditRows = creditMemos.map(memo => `<tr>
-            <td><button class="btn btn-link" onclick="CreditMemosPage.open(${memo.id})">${escapeHtml(memo.memo_number)}</button></td>
+            <td><button class="btn btn-link" onclick="CreditMemosPage.open(${memo.id}, '#/customers/detail')">${escapeHtml(memo.memo_number)}</button></td>
             <td>${formatDate(memo.date)}</td>
             <td>${statusBadge(memo.status)}</td>
             <td class="amount">${formatCurrency(memo.total)}</td>
