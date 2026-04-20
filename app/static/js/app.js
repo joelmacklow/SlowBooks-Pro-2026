@@ -341,154 +341,262 @@ const App = {
         }
     },
 
+    renderDashboardAction(label, hash, tone = 'secondary') {
+        if (!label || !hash) return '';
+        return `<button class="btn btn-${tone} snapshot-widget-action" onclick="App.navigate('${hash}')">${escapeHtml(label)}</button>`;
+    },
+
+    renderDashboardBankWidget(bankAccounts = []) {
+        const canOpenBanking = App.hasPermission('banking.view');
+        const body = bankAccounts.length
+            ? bankAccounts.map(account => `
+                <div class="snapshot-mini-card">
+                    <div class="snapshot-mini-card__top">
+                        <div>
+                            <div class="snapshot-mini-card__title">${escapeHtml(account.name)}</div>
+                            <div class="snapshot-mini-card__meta">${escapeHtml(account.bank_name || 'Bank account')}${account.last_four ? ` • ****${escapeHtml(account.last_four)}` : ''}</div>
+                        </div>
+                        <div class="snapshot-mini-card__value">${formatCurrency(account.balance || 0)}</div>
+                    </div>
+                    <div class="snapshot-mini-card__bottom">
+                        <span>${escapeHtml(account.status_label || 'Ready to reconcile')}</span>
+                        ${account.balance_difference !== null && account.balance_difference !== undefined ? `<span class="${account.balance_difference === 0 ? 'snapshot-trend snapshot-trend--up' : 'snapshot-trend snapshot-trend--down'}">Difference ${formatCurrency(account.balance_difference)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('')
+            : `<div class="snapshot-empty-state">
+                <strong>No bank accounts connected yet</strong>
+                <span>Go to Banking to set up an account for reconciliation and cash tracking.</span>
+            </div>`;
+
+        return `
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Bank accounts</h3>
+                        <p>Balances and reconciliation prompts</p>
+                    </div>
+                    ${canOpenBanking ? App.renderDashboardAction('Go to Banking', '#/banking') : ''}
+                </div>
+                <div class="snapshot-mini-card-grid">${body}</div>
+            </section>`;
+    },
+
+    renderDashboardInvoiceWidget(invoiceSummary = {}) {
+        const canOpenInvoices = App.hasPermission('sales.view');
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Invoices owed to you</h3>
+                        <p>Outstanding receivables and collections work</p>
+                    </div>
+                    ${canOpenInvoices ? App.renderDashboardAction('View invoices', invoiceSummary.cta_hash || '#/invoices') : ''}
+                </div>
+                <div class="snapshot-big-number">${formatCurrency(invoiceSummary.total_receivables || 0)}</div>
+                <div class="snapshot-metric-list">
+                    <div class="snapshot-metric-row"><span>Awaiting payment</span><strong>${invoiceSummary.awaiting_payment_count || 0}</strong></div>
+                    <div class="snapshot-metric-row"><span>Overdue invoices</span><strong>${invoiceSummary.overdue_count || 0}</strong></div>
+                    <div class="snapshot-metric-row"><span>Overdue value</span><strong>${formatCurrency(invoiceSummary.overdue_value || 0)}</strong></div>
+                </div>
+            </section>`;
+    },
+
+    renderDashboardProfitWidget(profitSummary = {}) {
+        const canOpenReports = App.hasPermission('accounts.manage');
+        const income = profitSummary.income || 0;
+        const expenses = profitSummary.expenses || 0;
+        const maxAmount = Math.max(income, expenses, 1);
+        const incomePct = Math.max((income / maxAmount) * 100, 4);
+        const expensePct = Math.max((expenses / maxAmount) * 100, 4);
+        const trendClass = (profitSummary.net_profit || 0) >= 0 ? 'snapshot-trend snapshot-trend--up' : 'snapshot-trend snapshot-trend--down';
+        const changeText = profitSummary.profit_change_pct === null || profitSummary.profit_change_pct === undefined
+            ? ''
+            : `${profitSummary.profit_change_pct >= 0 ? 'Up' : 'Down'} ${Math.abs(profitSummary.profit_change_pct).toFixed(0)}% from ${escapeHtml(profitSummary.comparison_label || 'last year')}`;
+
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Net profit or loss</h3>
+                        <p>${escapeHtml(profitSummary.period_label || 'Year to date')}</p>
+                    </div>
+                    ${canOpenReports ? App.renderDashboardAction('Profit & Loss', '#/reports/profit-loss') : ''}
+                </div>
+                <div class="snapshot-big-number">${formatCurrency(profitSummary.net_profit || 0)}</div>
+                <div class="${trendClass}">${escapeHtml(changeText || 'Tracking current year-to-date performance')}</div>
+                <div class="snapshot-compare-bars">
+                    <div class="snapshot-compare-bar">
+                        <span>Income ${formatCurrency(income)}</span>
+                        <div><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--primary" style="width:${incomePct}%"></div></div>
+                    </div>
+                    <div class="snapshot-compare-bar">
+                        <span>Expenses ${formatCurrency(expenses)}</span>
+                        <div><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--muted" style="width:${expensePct}%"></div></div>
+                    </div>
+                </div>
+            </section>`;
+    },
+
+    renderDashboardCashFlowWidget(cashFlow = {}) {
+        const canOpenReports = App.hasPermission('accounts.manage');
+        const months = cashFlow.months || [];
+        const hasCashData = months.some(entry => (entry.cash_in || 0) > 0 || (entry.cash_out || 0) > 0);
+        const maxAmount = Math.max(1, ...months.flatMap(entry => [entry.cash_in || 0, entry.cash_out || 0]));
+        const chart = hasCashData
+            ? months.map(entry => `
+                <div class="snapshot-bar-group">
+                    <div class="snapshot-bar-group__bars">
+                        <div class="snapshot-bar snapshot-bar--in" style="height:${Math.max(((entry.cash_in || 0) / maxAmount) * 100, 2)}%" title="Cash in: ${formatCurrency(entry.cash_in || 0)}"></div>
+                        <div class="snapshot-bar snapshot-bar--out" style="height:${Math.max(((entry.cash_out || 0) / maxAmount) * 100, 2)}%" title="Cash out: ${formatCurrency(entry.cash_out || 0)}"></div>
+                    </div>
+                    <div class="snapshot-bar-group__label">${escapeHtml(entry.month)}</div>
+                </div>
+            `).join('')
+            : `<div class="snapshot-empty-state">
+                <strong>No cash movement yet</strong>
+                <span>Cash in and out will appear once bank-linked activity starts posting.</span>
+            </div>`;
+
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Cash in and out</h3>
+                        <p>Last 6 months of bank-linked movement</p>
+                    </div>
+                    ${canOpenReports ? App.renderDashboardAction('Cash Flow', '#/reports/cash-flow') : ''}
+                </div>
+                <div class="snapshot-split-metrics">
+                    <div><span>Cash in</span><strong>${formatCurrency(cashFlow.cash_in_total || 0)}</strong></div>
+                    <div><span>Cash out</span><strong>${formatCurrency(cashFlow.cash_out_total || 0)}</strong></div>
+                    <div><span>Difference</span><strong>${formatCurrency(cashFlow.net_total || 0)}</strong></div>
+                </div>
+                <div class="snapshot-bar-chart">${chart}</div>
+            </section>`;
+    },
+
+    renderDashboardWatchlistWidget(watchlist = []) {
+        const canOpenAccounts = App.hasPermission('accounts.view');
+        const body = watchlist.length
+            ? `<div class="table-container snapshot-table-container"><table>
+                <thead><tr><th>Code</th><th>Account</th><th class="amount">This month</th><th class="amount">YTD</th></tr></thead>
+                <tbody>${watchlist.map(entry => `
+                    <tr>
+                        <td><strong>${escapeHtml(entry.account_number || '')}</strong></td>
+                        <td>${escapeHtml(entry.account_name || '')}</td>
+                        <td class="amount">${formatCurrency(entry.this_month || 0)}</td>
+                        <td class="amount">${formatCurrency(entry.ytd || 0)}</td>
+                    </tr>
+                `).join('')}</tbody>
+            </table></div>`
+            : `<div class="snapshot-empty-state">
+                <strong>No watchlist accounts yet</strong>
+                <span>Revenue and expense accounts appear here once you start posting transactions.</span>
+            </div>`;
+
+        return `
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Chart of accounts watchlist</h3>
+                        <p>Key income and expense accounts at a glance</p>
+                    </div>
+                    ${canOpenAccounts ? App.renderDashboardAction('Open accounts', '#/accounts') : ''}
+                </div>
+                ${body}
+            </section>`;
+    },
+
+    renderDashboardOperationalSnapshot(data = {}) {
+        const canOpenCustomers = App.hasPermission('contacts.view');
+        return `
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Operational snapshot</h3>
+                        <p>Safe overview for non-financial roles</p>
+                    </div>
+                    ${canOpenCustomers ? App.renderDashboardAction('Open customers', '#/customers') : ''}
+                </div>
+                <div class="snapshot-big-number">${data.customer_count || 0}</div>
+                <div class="snapshot-metric-caption">Active Customers</div>
+                <div class="snapshot-empty-state snapshot-empty-state--inline">
+                    <strong>Financial overview hidden</strong>
+                    <span>Your role can use operational modules, but financial dashboard widgets stay hidden.</span>
+                </div>
+            </section>`;
+    },
+
     async renderDashboard() {
         const data = await API.get('/dashboard');
         const canViewFinancials = !!data.financial_overview_available && App.hasPermission('dashboard.financials.view');
-        const recentInvoices = canViewFinancials ? (data.recent_invoices || []) : [];
-        const recentPayments = canViewFinancials ? (data.recent_payments || []) : [];
-        const bankBalances = canViewFinancials ? (data.bank_balances || []) : [];
-
-        let recentInv = recentInvoices.map(inv =>
-            `<tr>
-                <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
-                <td>${formatDate(inv.date)}</td>
-                <td>${statusBadge(inv.status)}</td>
-                <td class="amount">${formatCurrency(inv.total)}</td>
-            </tr>`
-        ).join('') || '<tr><td colspan="4" style="color:var(--text-muted); font-size:11px;">No invoices yet &mdash; use Create Invoice to get started</td></tr>';
-
-        let recentPay = recentPayments.map(p =>
-            `<tr>
-                <td>${formatDate(p.date)}</td>
-                <td>${escapeHtml(p.method || '')}</td>
-                <td class="amount">${formatCurrency(p.amount)}</td>
-            </tr>`
-        ).join('') || '<tr><td colspan="3" style="color:var(--text-muted); font-size:11px;">No payments recorded yet</td></tr>';
-
-        let bankCards = bankBalances.map(ba =>
-            `<div class="card" style="cursor:pointer" onclick="App.navigate('#/banking')">
-                <div class="card-header">${escapeHtml(ba.name)}</div>
-                <div class="card-value">${formatCurrency(ba.balance)}</div>
-            </div>`
-        ).join('');
-
-        if (!bankCards) {
-            bankCards = `<div class="card">
-                <div class="card-header">No Bank Accounts</div>
-                <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
-                    Go to Banking to set up an account</div>
-            </div>`;
-        }
-
-        // Feature 3: Dashboard Charts
-        let chartsHtml = '';
+        let charts = { profit_summary: {}, cash_flow: { months: [] } };
         if (canViewFinancials) {
             try {
-            const charts = await API.get('/dashboard/charts');
-            // AR Aging Bar Chart
-            const agingTotal = (charts.aging_current || 0) + (charts.aging_30 || 0) + (charts.aging_60 || 0) + (charts.aging_90 || 0);
-            if (agingTotal > 0) {
-                const pctCurrent = ((charts.aging_current / agingTotal) * 100).toFixed(1);
-                const pct30 = ((charts.aging_30 / agingTotal) * 100).toFixed(1);
-                const pct60 = ((charts.aging_60 / agingTotal) * 100).toFixed(1);
-                const pct90 = ((charts.aging_90 / agingTotal) * 100).toFixed(1);
-                chartsHtml += `
-                    <div class="dashboard-section">
-                        <h3>AR Aging</h3>
-                        <div class="chart-bar-container">
-                            <div class="chart-bar" style="display:flex; height:28px; border-radius:4px; overflow:hidden;">
-                                ${pctCurrent > 0 ? `<div style="width:${pctCurrent}%; background:var(--success);" title="Current: ${formatCurrency(charts.aging_current)}"></div>` : ''}
-                                ${pct30 > 0 ? `<div style="width:${pct30}%; background:var(--qb-gold);" title="1-30 days: ${formatCurrency(charts.aging_30)}"></div>` : ''}
-                                ${pct60 > 0 ? `<div style="width:${pct60}%; background:#f97316;" title="31-60 days: ${formatCurrency(charts.aging_60)}"></div>` : ''}
-                                ${pct90 > 0 ? `<div style="width:${pct90}%; background:var(--danger);" title="61+ days: ${formatCurrency(charts.aging_90)}"></div>` : ''}
-                            </div>
-                            <div class="chart-legend" style="display:flex; gap:12px; margin-top:6px; font-size:10px;">
-                                <span><span style="color:var(--success);">&#9632;</span> Current ${formatCurrency(charts.aging_current)}</span>
-                                <span><span style="color:var(--qb-gold);">&#9632;</span> 1-30 ${formatCurrency(charts.aging_30)}</span>
-                                <span><span style="color:#f97316;">&#9632;</span> 31-60 ${formatCurrency(charts.aging_60)}</span>
-                                <span><span style="color:var(--danger);">&#9632;</span> 61+ ${formatCurrency(charts.aging_90)}</span>
-                            </div>
-                        </div>
-                    </div>`;
-            }
-
-            // Monthly Revenue Trend
-            if (charts.monthly_revenue && charts.monthly_revenue.length > 0) {
-                const maxRev = Math.max(...charts.monthly_revenue.map(m => m.amount), 1);
-                const bars = charts.monthly_revenue.map(m => {
-                    const pct = Math.max((m.amount / maxRev) * 100, 2);
-                    return `<div class="chart-bar-col" style="flex:1; text-align:center;">
-                        <div style="height:100px; display:flex; align-items:flex-end; justify-content:center;">
-                            <div style="width:80%; background:var(--qb-blue); height:${pct}%; border-radius:2px 2px 0 0;"
-                                 title="${m.month}: ${formatCurrency(m.amount)}"></div>
-                        </div>
-                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">${m.month}</div>
-                    </div>`;
-                }).join('');
-                chartsHtml += `
-                    <div class="dashboard-section">
-                        <h3>Monthly Revenue (Last 12 Months)</h3>
-                        <div style="display:flex; gap:2px; align-items:flex-end;">${bars}</div>
-                    </div>`;
-            }
-            } catch (e) { /* charts endpoint not available yet — that's fine */ }
+                charts = await API.get('/dashboard/charts');
+            } catch (e) { /* Dashboard summary remains usable without charts. */ }
         }
 
+        const invoiceSummary = data.invoice_summary || {};
+        const bankAccounts = data.bank_accounts || [];
+        const watchlist = data.watchlist || [];
+        const kpis = canViewFinancials ? `
+            <div class="snapshot-kpi-grid">
+                <div class="snapshot-kpi-card">
+                    <span>Active Customers</span>
+                    <strong>${data.customer_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Total Receivables</span>
+                    <strong>${formatCurrency(data.total_receivables || 0)}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Overdue Invoices</span>
+                    <strong>${data.overdue_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Total Payables</span>
+                    <strong>${formatCurrency(data.total_payables || 0)}</strong>
+                </div>
+            </div>`
+            : `
+            <div class="snapshot-kpi-grid">
+                <div class="snapshot-kpi-card">
+                    <span>Active Customers</span>
+                    <strong>${data.customer_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Dashboard access</span>
+                    <strong>Operational</strong>
+                </div>
+            </div>`;
+
         return `
-            <div class="page-header">
-                <h2>Company Snapshot</h2>
-                <div style="font-size:10px; color:var(--text-muted);">
-                    Slowbooks Pro 2026 &mdash; Build 12.0.3190-R
-                </div>
-            </div>
-
-            <div class="card-grid">
-                <div class="card">
-                    <div class="card-header">Active Customers</div>
-                    <div class="card-value">${data.customer_count}</div>
-                </div>
-                ${canViewFinancials ? `<div class="card">
-                    <div class="card-header">Total Receivables</div>
-                    <div class="card-value">${formatCurrency(data.total_receivables || 0)}</div>
-                </div>
-                <div class="card">
-                    <div class="card-header">Overdue Invoices</div>
-                    <div class="card-value" ${(data.overdue_count || 0) > 0 ? 'style="color:var(--qb-red)"' : ''}>${data.overdue_count || 0}</div>
-                </div>
-                ${data.total_payables !== undefined ? `<div class="card">
-                    <div class="card-header">Total Payables</div>
-                    <div class="card-value">${formatCurrency(data.total_payables)}</div>
-                </div>` : ''}` : `<div class="card">
-                    <div class="card-header">Financial overview hidden</div>
-                    <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
-                        Your role can use operational modules, but dashboard financial data is hidden.
+            <div class="snapshot-dashboard">
+                <div class="snapshot-hero">
+                    <div>
+                        <div class="snapshot-hero__eyebrow">Business Overview</div>
+                        <h2>Company Snapshot</h2>
+                        <p>Prioritise cash, collections, and account activity from one place.</p>
                     </div>
-                </div>`}
-            </div>
-
-            ${canViewFinancials ? `<div class="dashboard-section">
-                <h3>Bank Balances</h3>
-                <div class="card-grid">${bankCards}</div>
-            </div>` : ''}
-
-            ${chartsHtml}
-
-            ${canViewFinancials ? `<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                <div class="dashboard-section">
-                    <h3>Recent Invoices</h3>
-                    <div class="table-container"><table>
-                        <thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th></tr></thead>
-                        <tbody>${recentInv}</tbody>
-                    </table></div>
+                    <div class="snapshot-hero__meta">Slowbooks Pro 2026 &mdash; Build 12.0.3190-R</div>
                 </div>
-                <div class="dashboard-section">
-                    <h3>Recent Payments</h3>
-                    <div class="table-container"><table>
-                        <thead><tr><th>Date</th><th>Method</th><th class="amount">Amount</th></tr></thead>
-                        <tbody>${recentPay}</tbody>
-                    </table></div>
-                </div>
-            </div>` : ''}`;
+                ${kpis}
+                ${canViewFinancials ? `
+                    <div class="snapshot-widget-grid">
+                        ${App.renderDashboardBankWidget(bankAccounts)}
+                        ${App.renderDashboardInvoiceWidget(invoiceSummary)}
+                        ${App.renderDashboardProfitWidget(charts.profit_summary || {})}
+                        ${App.renderDashboardCashFlowWidget(charts.cash_flow || {})}
+                        ${App.renderDashboardWatchlistWidget(watchlist)}
+                    </div>
+                ` : `
+                    <div class="snapshot-widget-grid">
+                        ${App.renderDashboardOperationalSnapshot(data)}
+                    </div>
+                `}
+            </div>`;
     },
 
     async renderAccounts() {

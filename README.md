@@ -77,11 +77,13 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 - **Customer Statements** — PDF statement with invoice/payment history and running balance
 
 ### Dashboard
-- Company Snapshot with Total Receivables, Overdue Invoices, Active Customers, Total Payables
-- **AR Aging Bar Chart** — Color-coded stacked bar (Current/30/60/90+ days)
-- **Monthly Revenue Trend** — Bar chart showing last 12 months of invoiced revenue
-- Recent invoices and payments tables
-- Bank balances at a glance
+- Xero-inspired **Business Overview / Company Snapshot** widget layout inside the existing QB-style shell
+- **Bank Accounts** — Current balances plus reconciliation prompts for unreconciled items
+- **Invoices Owed to You** — Outstanding receivables, awaiting-payment count, overdue count, and overdue value
+- **Net Profit or Loss** — Year-to-date income vs expenses summary with prior-period comparison
+- **Cash In and Out** — Grouped 6-month cash movement bars with net difference summary
+- **Chart of Accounts Watchlist** — This-month and YTD view of key income/expense accounts
+- Role-aware operational fallback when financial dashboard permissions are hidden
 
 ### Communication & Export
 - **Document Email** — Send invoices, statements, estimates, credit notes, payslips, and purchase orders as PDF attachments via SMTP

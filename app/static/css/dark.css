@@ -144,6 +144,62 @@
 }
 
 /* Dashboard sections */
+[data-theme="dark"] .snapshot-hero {
+    background: linear-gradient(180deg, #1b2534 0%, #131b28 100%);
+    border-color: #314054;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+}
+
+[data-theme="dark"] .snapshot-hero h2,
+[data-theme="dark"] .snapshot-kpi-card strong,
+[data-theme="dark"] .snapshot-widget__header h3,
+[data-theme="dark"] .snapshot-big-number,
+[data-theme="dark"] .snapshot-mini-card__title,
+[data-theme="dark"] .snapshot-mini-card__value,
+[data-theme="dark"] .snapshot-empty-state strong {
+    color: #e0e8f2;
+}
+
+[data-theme="dark"] .snapshot-hero p,
+[data-theme="dark"] .snapshot-hero__meta,
+[data-theme="dark"] .snapshot-kpi-card span,
+[data-theme="dark"] .snapshot-widget__header p,
+[data-theme="dark"] .snapshot-metric-row,
+[data-theme="dark"] .snapshot-metric-caption,
+[data-theme="dark"] .snapshot-compare-bar,
+[data-theme="dark"] .snapshot-split-metrics span,
+[data-theme="dark"] .snapshot-bar-group__label,
+[data-theme="dark"] .snapshot-mini-card__meta,
+[data-theme="dark"] .snapshot-mini-card__bottom,
+[data-theme="dark"] .snapshot-empty-state {
+    color: #9aa9bc;
+}
+
+[data-theme="dark"] .snapshot-kpi-card,
+[data-theme="dark"] .snapshot-widget,
+[data-theme="dark"] .snapshot-mini-card {
+    background: #161c28;
+    border-color: #314054;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+
+[data-theme="dark"] .snapshot-empty-state {
+    background: #121924;
+    border-color: #314054;
+}
+
+[data-theme="dark"] .snapshot-compare-bar > div:last-child {
+    background: #212c3b;
+}
+
+[data-theme="dark"] .snapshot-bar--out {
+    background: #5aa8df;
+}
+
+[data-theme="dark"] .snapshot-table-container table {
+    border-color: #314054;
+}
+
 [data-theme="dark"] .dashboard-section h3 {
     color: #b0c4dc;
 }

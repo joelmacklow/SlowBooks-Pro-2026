@@ -1,4 +1,3 @@
-from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
@@ -7,11 +6,18 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.banking import BankAccount
 from app.models.contacts import Customer
 from app.models.invoices import Invoice, InvoiceStatus
 from app.models.payments import Payment
 from app.services.auth import require_permissions
+from app.services.dashboard_metrics import (
+    build_dashboard_account_watchlist,
+    build_dashboard_bank_account_summaries,
+    build_dashboard_cash_flow,
+    build_dashboard_invoice_summary,
+    build_dashboard_monthly_revenue,
+    build_dashboard_profit_summary,
+)
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 FINANCIALS_PERMISSION = "dashboard.financials.view"
@@ -23,6 +29,7 @@ def _can_view_financial_dashboard(auth) -> bool:
 
 @router.get("")
 def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permissions())):
+    today = date.today()
     customer_count = db.query(func.count(Customer.id)).filter(Customer.is_active == True).scalar()
     if not _can_view_financial_dashboard(auth):
         return {
@@ -30,18 +37,11 @@ def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permission
             "financial_overview_available": False,
         }
 
-    total_receivables = db.query(func.coalesce(func.sum(Invoice.balance_due), 0)).filter(
-        Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL])
-    ).scalar()
-
-    overdue_count = db.query(func.count(Invoice.id)).filter(
-        Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]),
-        Invoice.due_date < func.current_date(),
-    ).scalar()
-
+    invoice_summary = build_dashboard_invoice_summary(db, today=today)
     recent_invoices = db.query(Invoice).order_by(Invoice.created_at.desc()).limit(5).all()
     recent_payments = db.query(Payment).order_by(Payment.created_at.desc()).limit(5).all()
-    bank_balances = db.query(BankAccount).filter(BankAccount.is_active == True).all()
+    bank_accounts = build_dashboard_bank_account_summaries(db)
+    watchlist = build_dashboard_account_watchlist(db, today=today)
 
     total_payables = 0.0
     overdue_bills = 0
@@ -55,14 +55,17 @@ def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permission
 
     return {
         "financial_overview_available": True,
-        "total_receivables": float(total_receivables),
-        "overdue_count": overdue_count,
+        "total_receivables": invoice_summary["total_receivables"],
+        "overdue_count": invoice_summary["overdue_count"],
         "customer_count": customer_count,
         "total_payables": total_payables,
         "overdue_bills": overdue_bills,
+        "invoice_summary": invoice_summary,
+        "bank_accounts": bank_accounts,
+        "watchlist": watchlist,
         "recent_invoices": [{"id": inv.id, "invoice_number": inv.invoice_number, "customer_id": inv.customer_id, "total": float(inv.total), "balance_due": float(inv.balance_due), "status": inv.status.value, "date": inv.date.isoformat()} for inv in recent_invoices],
         "recent_payments": [{"id": p.id, "customer_id": p.customer_id, "amount": float(p.amount), "date": p.date.isoformat(), "method": p.method} for p in recent_payments],
-        "bank_balances": [{"id": ba.id, "name": ba.name, "balance": float(ba.balance)} for ba in bank_balances],
+        "bank_balances": [{"id": ba["id"], "name": ba["name"], "balance": ba["balance"]} for ba in bank_accounts],
     }
 
 
@@ -87,23 +90,12 @@ def get_dashboard_charts(db: Session = Depends(get_db), auth=Depends(require_per
         else:
             aging_90 += inv.balance_due
 
-    monthly_revenue = []
-    for i in range(11, -1, -1):
-        year = today.year
-        month = today.month - i
-        while month <= 0:
-            month += 12
-            year -= 1
-        _, last_day = monthrange(year, month)
-        start = date(year, month, 1)
-        end = date(year, month, last_day)
-        total = db.query(func.coalesce(func.sum(Invoice.total), 0)).filter(Invoice.date >= start, Invoice.date <= end, Invoice.status != InvoiceStatus.VOID).scalar()
-        monthly_revenue.append({"month": start.strftime("%b"), "amount": float(total)})
-
     return {
         "aging_current": float(aging_current),
         "aging_30": float(aging_30),
         "aging_60": float(aging_60),
         "aging_90": float(aging_90),
-        "monthly_revenue": monthly_revenue,
+        "monthly_revenue": build_dashboard_monthly_revenue(db, today=today),
+        "profit_summary": build_dashboard_profit_summary(db, today=today),
+        "cash_flow": build_dashboard_cash_flow(db, today=today, months=6),
     }

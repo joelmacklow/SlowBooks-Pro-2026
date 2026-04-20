@@ -63,18 +63,16 @@ const makeContext = ({ permissions, dashboardData, chartsData }) => {
             financial_overview_available: false,
         },
         chartsData: {
-            monthly_revenue: [{ month: 'Apr', amount: 100 }],
+            profit_summary: { net_profit: 100 },
         },
     });
     const staffHtml = await staffContext.App.renderDashboard();
     assert.ok(staffHtml.includes('Active Customers'));
     assert.ok(staffHtml.includes('Financial overview hidden'));
-    assert.ok(!staffHtml.includes('Total Receivables'));
-    assert.ok(!staffHtml.includes('Total Payables'));
-    assert.ok(!staffHtml.includes('Bank Balances'));
-    assert.ok(!staffHtml.includes('Recent Invoices'));
-    assert.ok(!staffHtml.includes('Recent Payments'));
-    assert.ok(!staffHtml.includes('Monthly Revenue'));
+    assert.ok(!staffHtml.includes('Invoices owed to you'));
+    assert.ok(!staffHtml.includes('Net profit or loss'));
+    assert.ok(!staffHtml.includes('Cash in and out'));
+    assert.ok(!staffHtml.includes('Chart of accounts watchlist'));
     assert.deepStrictEqual(staffContext.__apiCalls, ['/dashboard']);
 
     const ownerContext = makeContext({
@@ -85,26 +83,77 @@ const makeContext = ({ permissions, dashboardData, chartsData }) => {
             total_receivables: 1200,
             overdue_count: 2,
             total_payables: 800,
-            recent_invoices: [{ invoice_number: 'INV-1', date: '2026-04-20', status: 'sent', total: 1200 }],
-            recent_payments: [{ date: '2026-04-20', method: 'Bank Transfer', amount: 400 }],
-            bank_balances: [{ id: 1, name: 'Main Bank', balance: 5000 }],
+            invoice_summary: {
+                total_receivables: 1200,
+                awaiting_payment_count: 4,
+                overdue_count: 2,
+                overdue_value: 325,
+            },
+            bank_accounts: [{ id: 1, name: 'Main Bank', bank_name: 'ANZ', last_four: '1208', balance: 5000, unreconciled_count: 3, status_label: '3 items to reconcile' }],
+            watchlist: [
+                { account_id: 10, account_number: '200', account_name: 'Sales', this_month: 540.98, ytd: 5440.98 },
+                { account_id: 11, account_number: '610', account_name: 'Office Expenses', this_month: 92.64, ytd: 190.64 },
+            ],
         },
         chartsData: {
-            aging_current: 100,
-            aging_30: 50,
-            aging_60: 0,
-            aging_90: 0,
-            monthly_revenue: [{ month: 'Apr', amount: 1000 }],
+            profit_summary: {
+                income: 22122,
+                expenses: 4129,
+                net_profit: 17993,
+                period_label: '1 Apr - 21 Apr 2026',
+            },
+            cash_flow: {
+                months: [{ month: 'Apr', cash_in: 1000, cash_out: 600 }],
+                cash_in_total: 1000,
+                cash_out_total: 600,
+                net_total: 400,
+            },
         },
     });
     const ownerHtml = await ownerContext.App.renderDashboard();
-    assert.ok(ownerHtml.includes('Total Receivables'));
-    assert.ok(ownerHtml.includes('Total Payables'));
-    assert.ok(ownerHtml.includes('Bank Balances'));
-    assert.ok(ownerHtml.includes('Recent Invoices'));
-    assert.ok(ownerHtml.includes('Recent Payments'));
-    assert.ok(ownerHtml.includes('Monthly Revenue'));
+    assert.ok(ownerHtml.includes('Invoices owed to you'));
+    assert.ok(ownerHtml.includes('Net profit or loss'));
+    assert.ok(ownerHtml.includes('Cash in and out'));
+    assert.ok(ownerHtml.includes('Chart of accounts watchlist'));
+    assert.ok(ownerHtml.includes('Main Bank'));
+    assert.ok(ownerHtml.includes('Sales'));
     assert.deepStrictEqual(ownerContext.__apiCalls, ['/dashboard', '/dashboard/charts']);
+
+    const emptyOwnerContext = makeContext({
+        permissions: ['dashboard.financials.view'],
+        dashboardData: {
+            customer_count: 0,
+            financial_overview_available: true,
+            total_receivables: 0,
+            overdue_count: 0,
+            total_payables: 0,
+            invoice_summary: {
+                total_receivables: 0,
+                awaiting_payment_count: 0,
+                overdue_count: 0,
+                overdue_value: 0,
+            },
+            bank_accounts: [],
+            watchlist: [],
+        },
+        chartsData: {
+            profit_summary: {
+                income: 0,
+                expenses: 0,
+                net_profit: 0,
+                period_label: '1 Apr - 21 Apr 2026',
+            },
+            cash_flow: {
+                months: [],
+                cash_in_total: 0,
+                cash_out_total: 0,
+                net_total: 0,
+            },
+        },
+    });
+    const emptyOwnerHtml = await emptyOwnerContext.App.renderDashboard();
+    assert.ok(emptyOwnerHtml.includes('No bank accounts connected yet'));
+    assert.ok(emptyOwnerHtml.includes('No watchlist accounts yet'));
 })().catch((err) => {
     console.error(err);
     process.exit(1);
