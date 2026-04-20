@@ -106,6 +106,35 @@ const EstimatesPage = {
         })));
     },
 
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return EstimatesPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
+    },
+
+    filteredItems(query, selectedItemId = null) {
+        return (EstimatesPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return EstimatesPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${EstimatesPage.itemOptionLabel(i)}</option>`).join('');
+    },
+
     renderDetailScreen() {
         const est = EstimatesPage._detailState;
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -222,9 +251,9 @@ const EstimatesPage = {
     },
 
     lineRowHtml(idx, line, items, canManage = true) {
-        const itemOpts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = EstimatesPage.itemOptionsHtml(items, line.item_id);
         return `<tr data-eline="${idx}">
-            <td><select class="line-item" onchange="EstimatesPage.itemSelected(${idx})" ${canManage ? '' : 'disabled'}>
+            <td><select class="line-item" onchange="EstimatesPage.itemSelected(${idx})" onkeydown="EstimatesPage.handleItemKeydown(${idx}, event)" onblur="EstimatesPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}>
                 <option value="">--</option>${itemOpts}</select></td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="EstimatesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
@@ -256,6 +285,52 @@ const EstimatesPage = {
             row.querySelector('.line-rate').value = item.rate;
             EstimatesPage.recalc();
         }
+    },
+
+    applyItemFilter(idx, query) {
+        const row = $(`[data-eline="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = EstimatesPage.filteredItems(query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${EstimatesPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
+        }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-eline="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            EstimatesPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            EstimatesPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            EstimatesPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-eline="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        itemSelect.innerHTML = `<option value="">--</option>${EstimatesPage.itemOptionsHtml(EstimatesPage._items || [], currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
     },
 
     recalc() {

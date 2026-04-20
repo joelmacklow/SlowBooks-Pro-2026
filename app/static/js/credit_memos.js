@@ -100,6 +100,35 @@ const CreditMemosPage = {
         })));
     },
 
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return CreditMemosPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
+    },
+
+    filteredItems(query, selectedItemId = null) {
+        return (CreditMemosPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return CreditMemosPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${CreditMemosPage.itemOptionLabel(i)}</option>`).join('');
+    },
+
     renderDetailScreen() {
         const memo = CreditMemosPage._detailState;
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -184,9 +213,9 @@ const CreditMemosPage = {
     },
 
     lineRowHtml(idx, line, items, canManage = true) {
-        const itemOpts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = CreditMemosPage.itemOptionsHtml(items, line.item_id);
         return `<tr data-cmline="${idx}">
-            <td><select class="line-item" onchange="CreditMemosPage.itemSelected(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${itemOpts}</select></td>
+            <td><select class="line-item" onchange="CreditMemosPage.itemSelected(${idx})" onkeydown="CreditMemosPage.handleItemKeydown(${idx}, event)" onblur="CreditMemosPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${itemOpts}</select></td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="CreditMemosPage.recalc()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="CreditMemosPage.recalc()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -215,6 +244,52 @@ const CreditMemosPage = {
             row.querySelector('.line-rate').value = item.rate;
             CreditMemosPage.recalc();
         }
+    },
+
+    applyItemFilter(idx, query) {
+        const row = $(`[data-cmline="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = CreditMemosPage.filteredItems(query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${CreditMemosPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
+        }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-cmline="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            CreditMemosPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            CreditMemosPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            CreditMemosPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-cmline="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        itemSelect.innerHTML = `<option value="">--</option>${CreditMemosPage.itemOptionsHtml(CreditMemosPage._items || [], currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
     },
 
     recalc() {
