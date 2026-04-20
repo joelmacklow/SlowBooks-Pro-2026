@@ -74,7 +74,7 @@ class LayeredClosingDateTests(unittest.TestCase):
     def test_company_lock_password_override_still_works_when_org_lock_not_blocking(self):
         from app.models.companies import Company
         from app.models.settings import Settings
-        from app.services.closing_date import check_closing_date, hash_closing_date_password, reset_request_closing_date_password, set_request_closing_date_password
+        from app.services.closing_date import check_closing_date, hash_closing_date_password
 
         with self.MasterSession() as master_db:
             master_db.add(Company(name="Default Company", database_name="bookkeeper", org_lock_date=date(2026, 1, 31)))
@@ -88,11 +88,8 @@ class LayeredClosingDateTests(unittest.TestCase):
             db.commit()
 
             check_closing_date(db, date(2026, 2, 15), password="secret")
-            token = set_request_closing_date_password("secret")
-            try:
-                check_closing_date(db, date(2026, 2, 15))
-            finally:
-                reset_request_closing_date_password(token)
+            db.info["closing_date_password"] = "secret"
+            check_closing_date(db, date(2026, 2, 15))
 
     def test_org_lock_cannot_be_bypassed_by_company_password_override(self):
         from app.models.companies import Company
