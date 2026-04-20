@@ -11,6 +11,7 @@ const searchResultsEl = {
         remove() {},
     },
 };
+const globalSearchInput = { value: 'Aroha' };
 
 const context = {
     console,
@@ -36,6 +37,7 @@ const context = {
     App: null,
     $: (selector) => {
         if (selector === '#search-results') return searchResultsEl;
+        if (selector === '#global-search') return globalSearchInput;
         if (selector === '#status-text') return { textContent: '' };
         return { innerHTML: '', textContent: '', classList: { add() {}, remove() {}, toggle() {} } };
     },
