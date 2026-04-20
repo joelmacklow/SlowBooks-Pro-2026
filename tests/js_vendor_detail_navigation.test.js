@@ -74,4 +74,8 @@ vm.runInContext(code, context);
     assert.ok(html.includes('B-002'));
     assert.ok(html.includes('$42.50'));
     assert.ok(html.includes('Unallocated bill payments'));
+    assert.ok(html.includes('ItemsPage.showForm(10)'));
+    assert.ok(html.includes('ItemsPage.showForm(11)'));
+    assert.ok(html.includes('BillsPage.view(21)'));
+    assert.ok(html.includes('BillsPage.view(22)'));
 })();

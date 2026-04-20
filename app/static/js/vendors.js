@@ -63,13 +63,13 @@ const VendorsPage = {
         const outstandingBills = (bills || []).filter(bill => ['unpaid', 'partial'].includes(String(bill.status || '')));
         const creditBalance = (payments || []).reduce((sum, payment) => sum + (Number(payment.unallocated_amount || 0)), 0);
         const itemRows = (items || []).map(item => `<tr>
-            <td><strong>${escapeHtml(item.name || '')}</strong></td>
+            <td><button class="btn btn-link" onclick="ItemsPage.showForm(${item.id})">${escapeHtml(item.name || '')}</button></td>
             <td>${escapeHtml(item.description || '')}</td>
             <td class="amount">${formatCurrency(item.rate || 0)}</td>
             <td class="amount">${formatCurrency(item.cost || 0)}</td>
         </tr>`).join('') || '<tr><td colspan="4">No preferred-supplier items yet</td></tr>';
         const billRows = (bills || []).map(bill => `<tr>
-            <td><strong>${escapeHtml(bill.bill_number || '')}</strong></td>
+            <td><button class="btn btn-link" onclick="BillsPage.view(${bill.id})">${escapeHtml(bill.bill_number || '')}</button></td>
             <td>${formatDate(bill.date)}</td>
             <td>${statusBadge(bill.status)}</td>
             <td class="amount">${formatCurrency(bill.total || 0)}</td>
