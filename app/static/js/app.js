@@ -10,6 +10,7 @@ const App = {
     settings: {},
     authState: { authenticated: false, bootstrap_required: false, user: null },
     _suppressNextHashChange: false,
+    _searchRequestId: 0,
 
     routes: {
         '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
@@ -177,6 +178,15 @@ const App = {
     setStatus(text) {
         const el = $('#status-text');
         if (el) el.textContent = text;
+    },
+
+    dismissSearchResults() {
+        App._searchRequestId += 1;
+        clearTimeout(App._searchTimeout);
+        const dd = $('#search-results');
+        if (dd) dd.classList.add('hidden');
+        const input = $('#global-search');
+        if (input) input.value = '';
     },
 
     updateClock() {
@@ -625,9 +635,13 @@ const App = {
         if (!dropdown) return;
         clearTimeout(App._searchTimeout);
         if (!query || query.length < 2) { dropdown.classList.add('hidden'); return; }
+        const requestId = ++App._searchRequestId;
         App._searchTimeout = setTimeout(async () => {
             try {
                 const results = await API.get(`/search?q=${encodeURIComponent(query)}`);
+                const input = $('#global-search');
+                if (requestId !== App._searchRequestId) return;
+                if (!input || input.value !== query) return;
                 let html = '';
                 const sections = [
                     { key: 'customers', label: 'Customers', onClick: (item) => `CustomersPage.view(${item.id});closeSearchDropdown();` },
@@ -649,6 +663,7 @@ const App = {
                     }
                 }
                 if (!html) html = `<div class="search-item" style="color:var(--text-muted);">No results</div>`;
+                if (requestId !== App._searchRequestId) return;
                 dropdown.innerHTML = html;
                 dropdown.classList.remove('hidden');
             } catch (e) {
