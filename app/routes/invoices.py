@@ -31,7 +31,7 @@ from app.routes.settings import _get_all as get_settings
 from app.services.closing_date import check_closing_date
 from app.services.email_service import render_invoice_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
-from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
+from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
 
@@ -238,37 +238,47 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     for key, val in update_values.items():
         setattr(invoice, key, val)
 
-    if data.lines is not None:
+    tax_rate_changed = "tax_rate" in update_values
+    financial_change = data.lines is not None or tax_rate_changed
+
+    if financial_change:
         # Replace lines
-        db.query(InvoiceLine).filter(InvoiceLine.invoice_id == invoice_id).delete()
-        gst_inputs = resolve_gst_line_inputs(db, data.lines)
+        if data.lines is not None:
+            db.query(InvoiceLine).filter(InvoiceLine.invoice_id == invoice_id).delete()
+            gst_inputs = resolve_gst_line_inputs(db, data.lines)
+        else:
+            gst_inputs = stored_gst_line_inputs(db, invoice.lines)
         gst_totals = calculate_document_gst(
             gst_inputs,
             prices_include_gst=prices_include_gst(db),
             gst_context="sales",
         )
-        for i, line_data in enumerate(data.lines):
-            gst_code, gst_rate = resolve_line_gst(db, line_data)
-            line_total = gst_totals.lines[i]
-            line = InvoiceLine(
-                invoice_id=invoice_id,
-                item_id=line_data.item_id,
-                description=line_data.description,
-                quantity=line_data.quantity,
-                rate=line_data.rate,
-                amount=line_total.net_amount,
-                gst_code=gst_code,
-                gst_rate=gst_rate,
-                class_name=line_data.class_name,
-                line_order=line_data.line_order or i,
-            )
-            db.add(line)
+        if data.lines is not None:
+            for i, line_data in enumerate(data.lines):
+                gst_code, gst_rate = resolve_line_gst(db, line_data)
+                line_total = gst_totals.lines[i]
+                line = InvoiceLine(
+                    invoice_id=invoice_id,
+                    item_id=line_data.item_id,
+                    description=line_data.description,
+                    quantity=line_data.quantity,
+                    rate=line_data.rate,
+                    amount=line_total.net_amount,
+                    gst_code=gst_code,
+                    gst_rate=gst_rate,
+                    class_name=line_data.class_name,
+                    line_order=line_data.line_order or i,
+                )
+                db.add(line)
+            posting_lines = data.lines
+        else:
+            posting_lines = list(invoice.lines)
 
         invoice.subtotal = gst_totals.subtotal
         invoice.tax_rate = gst_totals.effective_tax_rate
         invoice.tax_amount = gst_totals.tax_amount
         invoice.total = gst_totals.total
-        invoice.balance_due = gst_totals.total - invoice.amount_paid
+        invoice.balance_due = max(gst_totals.total - invoice.amount_paid, Decimal("0.00"))
 
         if old_transaction_id:
             reverse_journal_entry(
@@ -281,7 +291,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
                 reference=invoice.invoice_number,
             )
         posting_customer = db.query(Customer).filter(Customer.id == invoice.customer_id).first()
-        _post_invoice_journal(db, invoice, posting_customer, data.lines, gst_totals)
+        _post_invoice_journal(db, invoice, posting_customer, posting_lines, gst_totals)
 
     db.commit()
     db.refresh(invoice)

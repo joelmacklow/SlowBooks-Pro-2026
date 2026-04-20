@@ -77,6 +77,14 @@ def _decimal_text(value) -> str:
     return f"{Decimal(str(value or 0)).quantize(Decimal('0.00'))}"
 
 
+def _natural_balance_amount(account_type: AccountType, debit_total, credit_total) -> Decimal:
+    debit = Decimal(str(debit_total or 0))
+    credit = Decimal(str(credit_total or 0))
+    if account_type in (AccountType.ASSET, AccountType.EXPENSE, AccountType.COGS):
+        return debit - credit
+    return credit - debit
+
+
 def _period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.day} {start_date.strftime('%b %Y')} - {end_date.day} {end_date.strftime('%b %Y')}"
 
@@ -599,8 +607,12 @@ def profit_loss(
 
     def get_account_totals(acct_type):
         results = (
-            db.query(Account.name, Account.account_number,
-                     sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit - TransactionLine.debit), 0))
+            db.query(
+                Account.name,
+                Account.account_number,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
             .join(TransactionLine, TransactionLine.account_id == Account.id)
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(Account.account_type == acct_type)
@@ -609,7 +621,14 @@ def profit_loss(
             .group_by(Account.id, Account.name, Account.account_number)
             .all()
         )
-        return [{"account_name": r[0], "account_number": r[1], "amount": float(r[2])} for r in results]
+        return [
+            {
+                "account_name": name,
+                "account_number": account_number,
+                "amount": float(_natural_balance_amount(acct_type, debit_total, credit_total)),
+            }
+            for name, account_number, debit_total, credit_total in results
+        ]
 
     income = get_account_totals(AccountType.INCOME)
     cogs = get_account_totals(AccountType.COGS)
@@ -644,8 +663,12 @@ def balance_sheet(
 
     def get_balances(acct_type):
         results = (
-            db.query(Account.name, Account.account_number,
-                     sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit - TransactionLine.credit), 0))
+            db.query(
+                Account.name,
+                Account.account_number,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
             .join(TransactionLine, TransactionLine.account_id == Account.id)
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(Account.account_type == acct_type)
@@ -653,7 +676,14 @@ def balance_sheet(
             .group_by(Account.id, Account.name, Account.account_number)
             .all()
         )
-        return [{"account_name": r[0], "account_number": r[1], "amount": float(r[2])} for r in results]
+        return [
+            {
+                "account_name": name,
+                "account_number": account_number,
+                "amount": float(_natural_balance_amount(acct_type, debit_total, credit_total)),
+            }
+            for name, account_number, debit_total, credit_total in results
+        ]
 
     assets = get_balances(AccountType.ASSET)
     liabilities = get_balances(AccountType.LIABILITY)
