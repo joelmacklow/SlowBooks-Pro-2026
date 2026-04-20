@@ -19,6 +19,7 @@ SESSION_DAYS = 30
 PASSWORD_ITERATIONS = 600_000
 
 PERMISSION_DEFINITIONS = {
+    "dashboard.financials.view": "View dashboard financial totals, bank balances, recent financial activity, and charts.",
     "contacts.view": "View customers and vendors.",
     "contacts.manage": "Create, update, and deactivate customers and vendors.",
     "items.view": "View items and services.",
@@ -66,6 +67,7 @@ ROLE_TEMPLATE_DEFINITIONS = {
         "label": "Operations Admin",
         "description": "Administers business modules, settings, accounts, backups, companies, audit, and users.",
         "permissions": {
+            "dashboard.financials.view",
             "contacts.view",
             "contacts.manage",
             "items.view",

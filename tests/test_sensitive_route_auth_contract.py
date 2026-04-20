@@ -23,6 +23,10 @@ EXPECTED_ROUTE_AUTH = {
         "create_user": ("permissions", ("users.manage",)),
         "update_user": ("permissions", ("users.manage",)),
     },
+    "app.routes.dashboard": {
+        "get_dashboard": ("permissions", ()),
+        "get_dashboard_charts": ("permissions", ("dashboard.financials.view",)),
+    },
     "app.routes.backups": {
         "list_backups": ("permissions", ("backups.view",)),
         "make_backup": ("permissions", ("backups.manage",)),

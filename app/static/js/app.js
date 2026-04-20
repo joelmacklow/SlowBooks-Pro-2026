@@ -325,8 +325,12 @@ const App = {
 
     async renderDashboard() {
         const data = await API.get('/dashboard');
+        const canViewFinancials = !!data.financial_overview_available && App.hasPermission('dashboard.financials.view');
+        const recentInvoices = canViewFinancials ? (data.recent_invoices || []) : [];
+        const recentPayments = canViewFinancials ? (data.recent_payments || []) : [];
+        const bankBalances = canViewFinancials ? (data.bank_balances || []) : [];
 
-        let recentInv = data.recent_invoices.map(inv =>
+        let recentInv = recentInvoices.map(inv =>
             `<tr>
                 <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
                 <td>${formatDate(inv.date)}</td>
@@ -335,7 +339,7 @@ const App = {
             </tr>`
         ).join('') || '<tr><td colspan="4" style="color:var(--text-muted); font-size:11px;">No invoices yet &mdash; use Create Invoice to get started</td></tr>';
 
-        let recentPay = data.recent_payments.map(p =>
+        let recentPay = recentPayments.map(p =>
             `<tr>
                 <td>${formatDate(p.date)}</td>
                 <td>${escapeHtml(p.method || '')}</td>
@@ -343,7 +347,7 @@ const App = {
             </tr>`
         ).join('') || '<tr><td colspan="3" style="color:var(--text-muted); font-size:11px;">No payments recorded yet</td></tr>';
 
-        let bankCards = data.bank_balances.map(ba =>
+        let bankCards = bankBalances.map(ba =>
             `<div class="card" style="cursor:pointer" onclick="App.navigate('#/banking')">
                 <div class="card-header">${escapeHtml(ba.name)}</div>
                 <div class="card-value">${formatCurrency(ba.balance)}</div>
@@ -360,7 +364,8 @@ const App = {
 
         // Feature 3: Dashboard Charts
         let chartsHtml = '';
-        try {
+        if (canViewFinancials) {
+            try {
             const charts = await API.get('/dashboard/charts');
             // AR Aging Bar Chart
             const agingTotal = (charts.aging_current || 0) + (charts.aging_30 || 0) + (charts.aging_60 || 0) + (charts.aging_90 || 0);
@@ -408,7 +413,8 @@ const App = {
                         <div style="display:flex; gap:2px; align-items:flex-end;">${bars}</div>
                     </div>`;
             }
-        } catch (e) { /* charts endpoint not available yet — that's fine */ }
+            } catch (e) { /* charts endpoint not available yet — that's fine */ }
+        }
 
         return `
             <div class="page-header">
@@ -420,31 +426,36 @@ const App = {
 
             <div class="card-grid">
                 <div class="card">
+                    <div class="card-header">Active Customers</div>
+                    <div class="card-value">${data.customer_count}</div>
+                </div>
+                ${canViewFinancials ? `<div class="card">
                     <div class="card-header">Total Receivables</div>
-                    <div class="card-value">${formatCurrency(data.total_receivables)}</div>
+                    <div class="card-value">${formatCurrency(data.total_receivables || 0)}</div>
                 </div>
                 <div class="card">
                     <div class="card-header">Overdue Invoices</div>
-                    <div class="card-value" ${data.overdue_count > 0 ? 'style="color:var(--qb-red)"' : ''}>${data.overdue_count}</div>
-                </div>
-                <div class="card">
-                    <div class="card-header">Active Customers</div>
-                    <div class="card-value">${data.customer_count}</div>
+                    <div class="card-value" ${(data.overdue_count || 0) > 0 ? 'style="color:var(--qb-red)"' : ''}>${data.overdue_count || 0}</div>
                 </div>
                 ${data.total_payables !== undefined ? `<div class="card">
                     <div class="card-header">Total Payables</div>
                     <div class="card-value">${formatCurrency(data.total_payables)}</div>
-                </div>` : ''}
+                </div>` : ''}` : `<div class="card">
+                    <div class="card-header">Financial overview hidden</div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                        Your role can use operational modules, but dashboard financial data is hidden.
+                    </div>
+                </div>`}
             </div>
 
-            <div class="dashboard-section">
+            ${canViewFinancials ? `<div class="dashboard-section">
                 <h3>Bank Balances</h3>
                 <div class="card-grid">${bankCards}</div>
-            </div>
+            </div>` : ''}
 
             ${chartsHtml}
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            ${canViewFinancials ? `<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
                 <div class="dashboard-section">
                     <h3>Recent Invoices</h3>
                     <div class="table-container"><table>
@@ -459,7 +470,7 @@ const App = {
                         <tbody>${recentPay}</tbody>
                     </table></div>
                 </div>
-            </div>`;
+            </div>` : ''}`;
     },
 
     async renderAccounts() {

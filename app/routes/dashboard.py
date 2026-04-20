@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
@@ -14,10 +14,22 @@ from app.models.payments import Payment
 from app.services.auth import require_permissions
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+FINANCIALS_PERMISSION = "dashboard.financials.view"
+
+
+def _can_view_financial_dashboard(auth) -> bool:
+    return FINANCIALS_PERMISSION in getattr(auth, "permissions", frozenset())
 
 
 @router.get("")
 def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permissions())):
+    customer_count = db.query(func.count(Customer.id)).filter(Customer.is_active == True).scalar()
+    if not _can_view_financial_dashboard(auth):
+        return {
+            "customer_count": customer_count,
+            "financial_overview_available": False,
+        }
+
     total_receivables = db.query(func.coalesce(func.sum(Invoice.balance_due), 0)).filter(
         Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL])
     ).scalar()
@@ -27,7 +39,6 @@ def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permission
         Invoice.due_date < func.current_date(),
     ).scalar()
 
-    customer_count = db.query(func.count(Customer.id)).filter(Customer.is_active == True).scalar()
     recent_invoices = db.query(Invoice).order_by(Invoice.created_at.desc()).limit(5).all()
     recent_payments = db.query(Payment).order_by(Payment.created_at.desc()).limit(5).all()
     bank_balances = db.query(BankAccount).filter(BankAccount.is_active == True).all()
@@ -43,6 +54,7 @@ def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permission
         pass
 
     return {
+        "financial_overview_available": True,
         "total_receivables": float(total_receivables),
         "overdue_count": overdue_count,
         "customer_count": customer_count,
@@ -55,7 +67,7 @@ def get_dashboard(db: Session = Depends(get_db), auth=Depends(require_permission
 
 
 @router.get("/charts")
-def get_dashboard_charts(db: Session = Depends(get_db), auth=Depends(require_permissions())):
+def get_dashboard_charts(db: Session = Depends(get_db), auth=Depends(require_permissions(FINANCIALS_PERMISSION))):
     today = date.today()
     invoices = db.query(Invoice).filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]), Invoice.balance_due > 0).all()
 

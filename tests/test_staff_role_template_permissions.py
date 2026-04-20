@@ -25,6 +25,7 @@ class StaffRoleTemplatePermissionsTests(unittest.TestCase):
             'sales.view',
         }
         self.assertEqual(ROLE_TEMPLATE_DEFINITIONS['staff']['permissions'], expected)
+        self.assertNotIn('dashboard.financials.view', ROLE_TEMPLATE_DEFINITIONS['staff']['permissions'])
 
 
 if __name__ == '__main__':
