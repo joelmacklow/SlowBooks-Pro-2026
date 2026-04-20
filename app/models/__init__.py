@@ -5,7 +5,7 @@ from app.models.transactions import Transaction, TransactionLine
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.estimates import Estimate, EstimateLine
 from app.models.payments import Payment, PaymentAllocation
-from app.models.banking import BankAccount, BankTransaction, Reconciliation
+from app.models.banking import BankAccount, BankRule, BankTransaction, Reconciliation
 from app.models.settings import Settings
 from app.models.gst import GstCode
 from app.models.gst_return import GstReturn
@@ -42,7 +42,7 @@ __all__ = [
     "Invoice", "InvoiceLine",
     "Estimate", "EstimateLine",
     "Payment", "PaymentAllocation",
-    "BankAccount", "BankTransaction", "Reconciliation",
+    "BankAccount", "BankRule", "BankTransaction", "Reconciliation",
     "Settings", "GstCode", "GstReturn", "GstSettlement",
     # Phase 1
     "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession",
