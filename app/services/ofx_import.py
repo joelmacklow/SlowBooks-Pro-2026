@@ -12,6 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.models.banking import BankAccount, BankTransaction
+from app.services.bank_rules import apply_bank_rule_suggestion
 
 CSV_HEADER = [
     "Type",
@@ -221,6 +222,8 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
             match_status="unmatched",
         )
         db.add(bt)
+        db.flush()
+        apply_bank_rule_suggestion(db, bt, persist=True)
         imported += 1
         total_amount += amount
 

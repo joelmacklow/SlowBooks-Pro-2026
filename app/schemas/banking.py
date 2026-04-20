@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.models.banking import ReconciliationStatus
+from app.models.banking import BankRuleDirection, ReconciliationStatus
 
 
 class BankAccountCreate(BaseModel):
@@ -64,6 +64,9 @@ class BankTransactionResponse(BaseModel):
     transaction_id: Optional[int]
     match_status: Optional[str]
     import_batch_id: Optional[str]
+    suggested_rule_id: Optional[int]
+    suggested_account_id: Optional[int]
+    rule_match_reason: Optional[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -77,6 +80,59 @@ class BankTransactionMatchApproval(BaseModel):
 class BankTransactionCodeApproval(BaseModel):
     account_id: int
     description: Optional[str] = None
+
+
+class BankTransactionRuleApproval(BaseModel):
+    rule_id: Optional[int] = None
+
+
+class BankRuleCreate(BaseModel):
+    name: str
+    priority: int = 100
+    is_active: bool = True
+    bank_account_id: Optional[int] = None
+    direction: BankRuleDirection = BankRuleDirection.ANY
+    payee_contains: Optional[str] = None
+    description_contains: Optional[str] = None
+    reference_contains: Optional[str] = None
+    code_equals: Optional[str] = None
+    target_account_id: int
+    default_description: Optional[str] = None
+
+
+class BankRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    priority: Optional[int] = None
+    is_active: Optional[bool] = None
+    bank_account_id: Optional[int] = None
+    direction: Optional[BankRuleDirection] = None
+    payee_contains: Optional[str] = None
+    description_contains: Optional[str] = None
+    reference_contains: Optional[str] = None
+    code_equals: Optional[str] = None
+    target_account_id: Optional[int] = None
+    default_description: Optional[str] = None
+
+
+class BankRuleResponse(BaseModel):
+    id: int
+    name: str
+    priority: int
+    is_active: bool
+    bank_account_id: Optional[int]
+    direction: BankRuleDirection
+    payee_contains: Optional[str]
+    description_contains: Optional[str]
+    reference_contains: Optional[str]
+    code_equals: Optional[str]
+    target_account_id: int
+    default_description: Optional[str]
+    bank_account_name: Optional[str] = None
+    target_account_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class ReconciliationCreate(BaseModel):

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.accounts import Account, AccountType
-from app.models.banking import BankAccount, BankTransaction, Reconciliation, ReconciliationStatus
+from app.models.banking import BankAccount, BankRule, BankRuleDirection, BankTransaction, Reconciliation, ReconciliationStatus
 from app.models.bills import Bill, BillPayment, BillStatus
 from app.models.credit_memos import CreditMemo, CreditMemoLine, CreditMemoStatus
 from app.models.invoices import Invoice, InvoiceStatus
@@ -27,11 +27,18 @@ from app.schemas.banking import (
     BankTransactionCreate, BankTransactionResponse,
     ReconciliationCreate, ReconciliationResponse,
     BankTransactionMatchApproval, BankTransactionCodeApproval,
+    BankTransactionRuleApproval, BankRuleCreate, BankRuleResponse, BankRuleUpdate,
 )
 from app.schemas.bills import BillPaymentAllocationCreate, BillPaymentCreate
 from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
 from app.services.accounting import create_journal_entry, get_ap_account_id, get_ar_account_id
 from app.services.auth import require_permissions
+from app.services.bank_rules import (
+    bank_rule_payload,
+    bank_rule_reason_text,
+    find_matching_bank_rule,
+    validate_bank_rule_target_account,
+)
 from app.services.closing_date import check_closing_date
 from app.services.reconciliation_matching import search_candidates, suggestion_candidates, transaction_direction
 
@@ -52,8 +59,12 @@ def _bank_transaction_payload(db: Session, bank_txn: BankTransaction) -> dict:
             matched_label = "Matched transaction"
 
     suggestions = []
+    rule_suggestion = None
     if bank_txn.transaction_id is None and bank_txn.match_status != "coded":
         suggestions = suggestion_candidates(db, bank_txn)
+        matched_rule, reasons = find_matching_bank_rule(db, bank_txn)
+        if matched_rule:
+            rule_suggestion = bank_rule_payload(matched_rule, reasons)
 
     return {
         "id": bank_txn.id,
@@ -67,7 +78,41 @@ def _bank_transaction_payload(db: Session, bank_txn: BankTransaction) -> dict:
         "match_status": bank_txn.match_status or "unmatched",
         "matched_label": matched_label,
         "suggestions": suggestions,
+        "rule_suggestion": rule_suggestion,
     }
+
+
+def _bank_rule_response(rule: BankRule) -> BankRuleResponse:
+    response = BankRuleResponse.model_validate(rule)
+    response.bank_account_name = rule.bank_account.name if rule.bank_account else None
+    response.target_account_name = rule.target_account.name if rule.target_account else None
+    return response
+
+
+def _validate_bank_rule_fields(data: BankRuleCreate | BankRuleUpdate) -> None:
+    if not any(
+        getattr(data, field_name, None)
+        for field_name in ("payee_contains", "description_contains", "reference_contains", "code_equals")
+    ):
+        raise HTTPException(status_code=400, detail="Provide at least one match criterion for a bank rule")
+
+
+def _clean_bank_rule_data(values: dict) -> dict:
+    cleaned = dict(values)
+    for key in ("name", "payee_contains", "description_contains", "reference_contains", "code_equals", "default_description"):
+        if key in cleaned and isinstance(cleaned[key], str):
+            cleaned[key] = cleaned[key].strip() or None
+    if "name" in cleaned and cleaned["name"] is None:
+        raise HTTPException(status_code=400, detail="Rule name is required")
+    return cleaned
+
+
+def _validate_rule_bank_account(db: Session, bank_account_id: int | None) -> None:
+    if bank_account_id is None:
+        return
+    bank_account = db.query(BankAccount).filter(BankAccount.id == bank_account_id, BankAccount.is_active == True).first()
+    if not bank_account:
+        raise HTTPException(status_code=404, detail="Bank account not found")
 
 
 def _get_bank_transaction_or_404(db: Session, txn_id: int) -> BankTransaction:
@@ -91,6 +136,69 @@ def _assert_transaction_matchable(bank_txn: BankTransaction) -> None:
         raise HTTPException(status_code=400, detail="Bank transaction is already linked to an accounting transaction")
     if bank_txn.match_status == "coded":
         raise HTTPException(status_code=400, detail="Bank transaction is already coded")
+
+
+@router.get("/rules", response_model=list[BankRuleResponse])
+def list_bank_rules(db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
+    rules = db.query(BankRule).order_by(BankRule.priority.asc(), BankRule.id.asc()).all()
+    return [_bank_rule_response(rule) for rule in rules]
+
+
+@router.post("/rules", response_model=BankRuleResponse, status_code=201)
+def create_bank_rule(data: BankRuleCreate, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    _validate_bank_rule_fields(data)
+    _validate_rule_bank_account(db, data.bank_account_id)
+    try:
+        validate_bank_rule_target_account(db, data.target_account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    rule = BankRule(**_clean_bank_rule_data(data.model_dump()))
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return _bank_rule_response(rule)
+
+
+@router.put("/rules/{rule_id}", response_model=BankRuleResponse)
+def update_bank_rule(rule_id: int, data: BankRuleUpdate, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    rule = db.query(BankRule).filter(BankRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Bank rule not found")
+
+    updates = _clean_bank_rule_data(data.model_dump(exclude_unset=True))
+    merged = {
+        "payee_contains": updates.get("payee_contains", rule.payee_contains),
+        "description_contains": updates.get("description_contains", rule.description_contains),
+        "reference_contains": updates.get("reference_contains", rule.reference_contains),
+        "code_equals": updates.get("code_equals", rule.code_equals),
+    }
+    if not any(merged.values()):
+        raise HTTPException(status_code=400, detail="Provide at least one match criterion for a bank rule")
+
+    bank_account_id = updates.get("bank_account_id", rule.bank_account_id)
+    _validate_rule_bank_account(db, bank_account_id)
+    if "target_account_id" in updates:
+        try:
+            validate_bank_rule_target_account(db, updates["target_account_id"])
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    for key, val in updates.items():
+        setattr(rule, key, val)
+    db.commit()
+    db.refresh(rule)
+    return _bank_rule_response(rule)
+
+
+@router.delete("/rules/{rule_id}")
+def delete_bank_rule(rule_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    rule = db.query(BankRule).filter(BankRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Bank rule not found")
+    db.delete(rule)
+    db.commit()
+    return {"status": "deleted", "rule_id": rule_id}
 
 
 def _next_credit_memo_number(db: Session) -> str:
@@ -181,10 +289,12 @@ def list_bank_transactions(bank_account_id: int = None, db: Session = Depends(ge
 @router.get("/transactions/{txn_id}/suggestions")
 def get_bank_transaction_suggestions(txn_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
     bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    matched_rule, reasons = find_matching_bank_rule(db, bank_txn)
     return {
         "transaction": _bank_transaction_payload(db, bank_txn),
         "direction": transaction_direction(bank_txn),
         "suggestions": suggestion_candidates(db, bank_txn),
+        "rule_suggestion": bank_rule_payload(matched_rule, reasons) if matched_rule else None,
     }
 
 
@@ -334,8 +444,52 @@ def code_bank_transaction(txn_id: int, data: BankTransactionCodeApproval, db: Se
     bank_txn.category_account_id = target_account.id
     bank_txn.match_status = "coded"
     bank_txn.reconciled = True
+    bank_txn.suggested_rule_id = None
+    bank_txn.suggested_account_id = None
+    bank_txn.rule_match_reason = None
     db.commit()
     return {"status": "coded", "transaction_id": bank_txn.id, "matched_label": f"Coded to {target_account.name}"}
+
+
+@router.post("/transactions/{txn_id}/apply-rule")
+def apply_bank_transaction_rule(txn_id: int, data: BankTransactionRuleApproval, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    _assert_transaction_matchable(bank_txn)
+
+    rule = None
+    if data.rule_id is not None:
+        rule = db.query(BankRule).filter(BankRule.id == data.rule_id, BankRule.is_active == True).first()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Bank rule not found")
+    else:
+        rule, _reasons = find_matching_bank_rule(db, bank_txn)
+    if not rule:
+        raise HTTPException(status_code=400, detail="No applicable bank rule found for this transaction")
+
+    if rule.bank_account_id and rule.bank_account_id != bank_txn.bank_account_id:
+        raise HTTPException(status_code=400, detail="Bank rule does not apply to this bank account")
+    direction = transaction_direction(bank_txn)
+    if rule.direction == BankRuleDirection.INFLOW and direction != "inflow":
+        raise HTTPException(status_code=400, detail="Bank rule direction does not match this transaction")
+    if rule.direction == BankRuleDirection.OUTFLOW and direction != "outflow":
+        raise HTTPException(status_code=400, detail="Bank rule direction does not match this transaction")
+
+    description = rule.default_description or bank_txn.description or bank_txn.payee or f"Bank rule {rule.name}"
+    _matched_rule, reasons = find_matching_bank_rule(db, bank_txn)
+    rule_reason = bank_rule_reason_text(reasons) if _matched_rule and _matched_rule.id == rule.id else bank_txn.rule_match_reason
+
+    result = code_bank_transaction(
+        txn_id,
+        BankTransactionCodeApproval(account_id=rule.target_account_id, description=description),
+        db=db,
+        auth=True,
+    )
+    bank_txn = _get_bank_transaction_or_404(db, txn_id)
+    bank_txn.suggested_rule_id = rule.id
+    bank_txn.suggested_account_id = rule.target_account_id
+    bank_txn.rule_match_reason = rule_reason
+    db.commit()
+    return {**result, "rule_id": rule.id, "matched_label": f"Applied rule {rule.name}"}
 
 
 # Reconciliations — CReconcileEngine @ 0x001F0400

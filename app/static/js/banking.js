@@ -14,7 +14,10 @@ const BankingPage = {
         let html = `
             <div class="page-header">
                 <h2>Bank Accounts</h2>
-                ${canManageBanking ? `<button class="btn btn-primary" onclick="BankingPage.showAccountForm()">+ New Bank Account</button>` : ''}
+                <div class="btn-group">
+                    ${canManageBanking ? `<button class="btn btn-secondary" onclick="BankingPage.showRules()">Bank Rules</button>` : ''}
+                    ${canManageBanking ? `<button class="btn btn-primary" onclick="BankingPage.showAccountForm()">+ New Bank Account</button>` : ''}
+                </div>
             </div>`;
 
         if (accounts.length === 0) {
@@ -105,6 +108,124 @@ const BankingPage = {
                     <button type="submit" class="btn btn-primary">Create Account</button>
                 </div>
             </form>`);
+    },
+
+    async showRules() {
+        const [rules, bankAccounts, accounts] = await Promise.all([
+            API.get('/banking/rules'),
+            API.get('/banking/accounts'),
+            API.get('/accounts?active_only=true'),
+        ]);
+        BankingPage._bankRuleSupport = { bankAccounts, accounts, rules };
+        const rows = rules.map(rule => `
+            <tr>
+                <td>${escapeHtml(rule.name)}</td>
+                <td>${rule.priority}</td>
+                <td>${escapeHtml(rule.direction)}</td>
+                <td>${escapeHtml(rule.bank_account_name || 'All accounts')}</td>
+                <td>${escapeHtml(rule.target_account_name || '')}</td>
+                <td>${rule.is_active ? 'Active' : 'Disabled'}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.editRule(${rule.id})">Edit</button>
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.deleteRule(${rule.id})">Delete</button>
+                </td>
+            </tr>`).join('');
+        openModal('Bank Rules', `
+            <div class="page-header" style="margin-bottom:12px;">
+                <h3 style="margin:0;">Deterministic categorization rules</h3>
+                <button class="btn btn-primary" type="button" onclick="BankingPage.showRuleForm()">+ New Rule</button>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
+                Rules suggest accounts for imported bank lines in explicit priority order. They never post journals until you apply them.
+            </div>
+            <div class="table-container"><table>
+                <thead><tr><th>Name</th><th>Priority</th><th>Direction</th><th>Bank Account</th><th>Target Account</th><th>Status</th><th></th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" style="text-align:center;">No bank rules yet</td></tr>'}</tbody>
+            </table></div>
+            <div class="form-actions" style="margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+            </div>`);
+    },
+
+    showRuleForm(ruleId = null) {
+        const support = BankingPage._bankRuleSupport || { bankAccounts: [], accounts: [], rules: [] };
+        const rule = support.rules.find(item => item.id === ruleId) || null;
+        const bankAccountOptions = support.bankAccounts.map(account => (
+            `<option value="${account.id}" ${rule && rule.bank_account_id === account.id ? 'selected' : ''}>${escapeHtml(account.name)}</option>`
+        )).join('');
+        const accountOptions = support.accounts.map(account => (
+            `<option value="${account.id}" ${rule && rule.target_account_id === account.id ? 'selected' : ''}>${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`
+        )).join('');
+        openModal(rule ? 'Edit Bank Rule' : 'New Bank Rule', `
+            <form onsubmit="BankingPage.saveRule(event, ${rule ? rule.id : 'null'})">
+                <div class="form-grid">
+                    <div class="form-group"><label>Name *</label><input name="name" required value="${escapeHtml(rule ? rule.name : '')}"></div>
+                    <div class="form-group"><label>Priority *</label><input name="priority" type="number" required value="${rule ? rule.priority : 100}"></div>
+                    <div class="form-group"><label>Direction *</label>
+                        <select name="direction">
+                            <option value="any" ${!rule || rule.direction === 'any' ? 'selected' : ''}>Any</option>
+                            <option value="inflow" ${rule && rule.direction === 'inflow' ? 'selected' : ''}>Inflow</option>
+                            <option value="outflow" ${rule && rule.direction === 'outflow' ? 'selected' : ''}>Outflow</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Bank account scope</label>
+                        <select name="bank_account_id"><option value="">All bank accounts</option>${bankAccountOptions}</select>
+                    </div>
+                    <div class="form-group full-width"><label>Target account *</label>
+                        <select name="target_account_id" required><option value="">Select account...</option>${accountOptions}</select>
+                    </div>
+                    <div class="form-group"><label>Payee contains</label><input name="payee_contains" value="${escapeHtml(rule ? rule.payee_contains || '' : '')}"></div>
+                    <div class="form-group"><label>Description contains</label><input name="description_contains" value="${escapeHtml(rule ? rule.description_contains || '' : '')}"></div>
+                    <div class="form-group"><label>Reference contains</label><input name="reference_contains" value="${escapeHtml(rule ? rule.reference_contains || '' : '')}"></div>
+                    <div class="form-group"><label>Code equals</label><input name="code_equals" value="${escapeHtml(rule ? rule.code_equals || '' : '')}"></div>
+                    <div class="form-group full-width"><label>Default description</label><input name="default_description" value="${escapeHtml(rule ? rule.default_description || '' : '')}"></div>
+                    <div class="form-group"><label><input name="is_active" type="checkbox" ${!rule || rule.is_active ? 'checked' : ''}> Active</label></div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="BankingPage.showRules()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${rule ? 'Save Rule' : 'Create Rule'}</button>
+                </div>
+            </form>`);
+    },
+
+    async saveRule(e, ruleId = null) {
+        e.preventDefault();
+        const form = e.target;
+        const data = {
+            name: form.name.value,
+            priority: parseInt(form.priority.value || '100', 10),
+            direction: form.direction.value,
+            bank_account_id: form.bank_account_id.value ? parseInt(form.bank_account_id.value, 10) : null,
+            target_account_id: parseInt(form.target_account_id.value, 10),
+            payee_contains: form.payee_contains.value || null,
+            description_contains: form.description_contains.value || null,
+            reference_contains: form.reference_contains.value || null,
+            code_equals: form.code_equals.value || null,
+            default_description: form.default_description.value || null,
+            is_active: !!form.is_active.checked,
+        };
+        try {
+            if (ruleId) {
+                await API.put(`/banking/rules/${ruleId}`, data);
+            } else {
+                await API.post('/banking/rules', data);
+            }
+            toast(ruleId ? 'Bank rule updated' : 'Bank rule created');
+            await BankingPage.showRules();
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    editRule(ruleId) {
+        BankingPage.showRuleForm(ruleId);
+    },
+
+    async deleteRule(ruleId) {
+        if (!confirm('Delete this bank rule?')) return;
+        try {
+            await API.del(`/banking/rules/${ruleId}`);
+            toast('Bank rule deleted');
+            await BankingPage.showRules();
+        } catch (err) { toast(err.message, 'error'); }
     },
 
     async saveAccount(e) {
@@ -215,12 +336,20 @@ const BankingPage = {
         if (transaction.matched_label) {
             return `<div style="font-size:11px; color:var(--success); font-weight:700;">${escapeHtml(transaction.matched_label)}</div>`;
         }
+        const ruleSuggestion = transaction.rule_suggestion ? `
+            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">
+                <span style="font-size:11px; color:var(--primary); font-weight:700;">Rule: ${escapeHtml(transaction.rule_suggestion.name)}</span>
+                <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(transaction.rule_suggestion.target_account_name || '')}</span>
+                ${transaction.rule_suggestion.reason ? `<span style="font-size:11px; color:var(--text-muted);">${escapeHtml(transaction.rule_suggestion.reason)}</span>` : ''}
+                <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.applyRule(${transaction.id}, ${transaction.rule_suggestion.id}, ${reconId})">Apply Rule</button>
+            </div>` : '';
         const suggestionHtml = (transaction.suggestions || []).slice(0, 2).map(candidate => `
             <button class="btn btn-sm btn-secondary" type="button" onclick="BankingPage.approveMatch(${transaction.id}, '${candidate.kind}', ${candidate.target_id}, ${reconId})">
                 ${escapeHtml(candidate.document_number || candidate.label)}
             </button>`).join('');
         return `
             <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                ${ruleSuggestion}
                 ${suggestionHtml || '<span style="font-size:11px; color:var(--text-muted);">No likely matches yet</span>'}
                 <button class="btn btn-sm btn-primary" type="button" onclick="BankingPage.showMatchModal(${reconId}, ${transaction.id})">Find & Match</button>
             </div>`;
@@ -373,6 +502,14 @@ const BankingPage = {
             await API.post(`/banking/transactions/${txnId}/approve-match`, { match_kind: kind, target_id: targetId });
             toast('Statement line matched');
             closeModal();
+            await BankingPage.showReconcileView(reconId);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async applyRule(txnId, ruleId, reconId) {
+        try {
+            await API.post(`/banking/transactions/${txnId}/apply-rule`, { rule_id: ruleId });
+            toast('Bank rule applied');
             await BankingPage.showReconcileView(reconId);
         } catch (err) { toast(err.message, 'error'); }
     },
