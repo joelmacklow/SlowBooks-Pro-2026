@@ -152,6 +152,10 @@ function escapeHtml(str) {
 }
 
 function closeSearchDropdown() {
+    if (typeof App !== 'undefined' && typeof App.dismissSearchResults === 'function') {
+        App.dismissSearchResults();
+        return;
+    }
     const dd = $('#search-results');
     if (dd) dd.classList.add('hidden');
     const input = $('#global-search');
