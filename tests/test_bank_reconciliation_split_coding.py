@@ -113,6 +113,78 @@ class BankReconciliationSplitCodingTests(unittest.TestCase):
 
         self.assertEqual(Decimal(str(bank_account.balance)), Decimal("0.00"))
 
+    def test_cancelling_import_backed_reconciliation_removes_staged_transactions(self):
+        from app.models.banking import BankTransaction, Reconciliation
+        from app.routes.banking import cancel_reconciliation, create_reconciliation
+        from app.schemas.banking import ReconciliationCreate
+        from app.services.ofx_import import import_transactions
+
+        with self.Session() as db:
+            bank_account, _bank_gl, _expense_a, _expense_b = self._seed_banking(db)
+            result = import_transactions(db, bank_account.id, [{
+                "import_id": "split-balance-3",
+                "date": date(2026, 4, 20),
+                "amount": Decimal("-100.00"),
+                "payee": "Stationery World",
+                "description": "Supplies",
+                "reference": "INV-3",
+                "code": "SUPPLIES",
+            }], import_source="csv")
+            recon = create_reconciliation(
+                ReconciliationCreate(
+                    bank_account_id=bank_account.id,
+                    statement_date=date(2026, 4, 20),
+                    statement_balance=Decimal("-100.00"),
+                    import_batch_id=result["import_batch_id"],
+                ),
+                db=db,
+                auth=True,
+            )
+            self.assertEqual(db.query(BankTransaction).count(), 1)
+
+            cancelled = cancel_reconciliation(recon.id, db=db, auth=True)
+
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["removed_transactions"], 1)
+        with self.Session() as db:
+            self.assertEqual(db.query(BankTransaction).count(), 0)
+            self.assertEqual(db.query(Reconciliation).count(), 0)
+
+    def test_duplicate_reimport_reuses_untouched_import_batch(self):
+        from app.routes.banking import create_reconciliation
+        from app.schemas.banking import ReconciliationCreate
+        from app.services.ofx_import import import_transactions
+
+        transactions = [{
+            "import_id": "split-balance-4",
+            "date": date(2026, 4, 20),
+            "amount": Decimal("-100.00"),
+            "payee": "Stationery World",
+            "description": "Supplies",
+            "reference": "INV-4",
+            "code": "SUPPLIES",
+        }]
+
+        with self.Session() as db:
+            bank_account, _bank_gl, _expense_a, _expense_b = self._seed_banking(db)
+            first = import_transactions(db, bank_account.id, transactions, import_source="csv")
+            create_reconciliation(
+                ReconciliationCreate(
+                    bank_account_id=bank_account.id,
+                    statement_date=date(2026, 4, 20),
+                    statement_balance=Decimal("-100.00"),
+                    import_batch_id=first["import_batch_id"],
+                ),
+                db=db,
+                auth=True,
+            )
+
+            second = import_transactions(db, bank_account.id, transactions, import_source="csv")
+
+        self.assertEqual(second["imported"], 0)
+        self.assertEqual(second["skipped"], 1)
+        self.assertEqual(second["import_batch_id"], first["import_batch_id"])
+
     def test_split_coding_posts_balanced_journal_and_marks_transaction(self):
         from app.models.banking import BankTransaction
         from app.models.transactions import Transaction

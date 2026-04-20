@@ -185,6 +185,7 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
     bank_account = db.query(BankAccount).filter(BankAccount.id == bank_account_id).first()
     if not bank_account:
         raise ValueError("Bank account not found")
+    reused_import_batch_ids: set[str] = set()
 
     for txn in transactions:
         import_id = txn.get("import_id") or txn.get("fitid") or hashlib.sha1(
@@ -202,6 +203,13 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
             BankTransaction.import_id == import_id,
         ).first()
         if existing:
+            if (
+                existing.import_batch_id
+                and not existing.reconciled
+                and not existing.transaction_id
+                and existing.match_status == "unmatched"
+            ):
+                reused_import_batch_ids.add(existing.import_batch_id)
             skipped += 1
             continue
 
@@ -224,6 +232,9 @@ def import_transactions(db: Session, bank_account_id: int, transactions: list[di
         db.flush()
         apply_bank_rule_suggestion(db, bt, persist=True)
         imported += 1
+
+    if imported == 0 and len(reused_import_batch_ids) == 1:
+        import_batch_id = next(iter(reused_import_batch_ids))
 
     ending_balance = Decimal(str(bank_account.balance or 0))
     db.commit()

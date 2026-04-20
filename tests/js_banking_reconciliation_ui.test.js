@@ -98,6 +98,7 @@ const context = {
                 reconcileTransactions[0].matched_label = 'Split coded across 2 accounts';
                 return { status: 'coded' };
             }
+            if (path === '/banking/reconciliations/5/cancel') return { status: 'cancelled', removed_transactions: 1 };
             if (path === '/banking/reconciliations/5/toggle/10') return { id: 10, reconciled: true };
             if (path === '/banking/reconciliations') return { id: 6, import_batch_id: data ? data.import_batch_id : null };
             return { id: 1 };
@@ -194,6 +195,11 @@ vm.runInContext(code, context);
     await context.BankingPage.submitSplitCode(10, 5, 53.91);
     assert.ok(posts.some(call => call.path === '/banking/transactions/10/code-split'));
     assert.ok(elements['#page-content'].innerHTML.includes('Split coded across 2 accounts'));
+
+    reconcileTransactions[0].reconciled = false;
+    reconcileTransactions[0].matched_label = null;
+    await context.BankingPage.cancelReconcile(5);
+    assert.ok(posts.some(call => call.path === '/banking/reconciliations/5/cancel'));
 
     elements['#bank-match-query-10'] = { value: '8746' };
     elements['#bank-match-results-10'] = { innerHTML: '' };

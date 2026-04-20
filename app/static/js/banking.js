@@ -382,7 +382,7 @@ const BankingPage = {
             <div class="page-header">
                 <h2>Reconcile Account</h2>
                 <div class="btn-group">
-                    <button class="btn btn-secondary" onclick="App.navigate('#/banking')">Cancel</button>
+                    <button class="btn btn-secondary" onclick="BankingPage.cancelReconcile(${reconId})">Cancel</button>
                     <button class="btn btn-primary" id="recon-finish-btn" onclick="BankingPage.finishReconcile(${reconId})"
                         ${Math.abs(data.difference) < 0.01 ? '' : 'disabled'}>Finish Reconciliation</button>
                 </div>
@@ -402,6 +402,20 @@ const BankingPage = {
                 <thead><tr><th style="width:30px;"></th><th>Date</th><th>Payee / Description</th><th>Reference</th><th>Code</th><th class="amount">Amount</th><th>Find & Match</th></tr></thead>
                 <tbody>${rows || '<tr><td colspan="7" style="text-align:center;">No transactions</td></tr>'}</tbody>
             </table></div>`;
+    },
+
+    async cancelReconcile(reconId) {
+        const data = BankingPage._reconcileContext?.data;
+        if (data?.import_batch_id) {
+            if (!confirm('Cancel this imported reconciliation and remove the staged imported transactions?')) return;
+            try {
+                await API.post(`/banking/reconciliations/${reconId}/cancel`);
+                toast('Imported reconciliation cancelled');
+                App.navigate('#/banking');
+            } catch (err) { toast(err.message, 'error'); }
+            return;
+        }
+        App.navigate('#/banking');
     },
 
     async toggleCleared(reconId, txnId, checkbox) {

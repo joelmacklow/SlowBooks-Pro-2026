@@ -609,6 +609,37 @@ def create_reconciliation(data: ReconciliationCreate, db: Session = Depends(get_
     return recon
 
 
+@router.post("/reconciliations/{recon_id}/cancel")
+def cancel_reconciliation(recon_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.manage"))):
+    recon = db.query(Reconciliation).filter(Reconciliation.id == recon_id).first()
+    if not recon:
+        raise HTTPException(status_code=404, detail="Reconciliation not found")
+    if recon.status == ReconciliationStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Completed reconciliations cannot be cancelled")
+    if not recon.import_batch_id:
+        db.delete(recon)
+        db.commit()
+        return {"status": "cancelled", "reconciliation_id": recon_id, "removed_transactions": 0}
+
+    txns = db.query(BankTransaction).filter(
+        BankTransaction.bank_account_id == recon.bank_account_id,
+        BankTransaction.import_batch_id == recon.import_batch_id,
+    ).all()
+    touched = [
+        txn for txn in txns
+        if txn.reconciled or txn.transaction_id or txn.match_status in ("coded", "manual")
+    ]
+    if touched:
+        raise HTTPException(status_code=400, detail="Cannot cancel reconciliation after matching or coding has started")
+
+    removed_count = len(txns)
+    for txn in txns:
+        db.delete(txn)
+    db.delete(recon)
+    db.commit()
+    return {"status": "cancelled", "reconciliation_id": recon_id, "removed_transactions": removed_count}
+
+
 @router.get("/reconciliations/{recon_id}/transactions")
 def get_reconciliation_transactions(recon_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("banking.view"))):
     recon = db.query(Reconciliation).filter(Reconciliation.id == recon_id).first()
