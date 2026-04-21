@@ -58,6 +58,7 @@ APP_PORT = int(os.getenv("APP_PORT", "3001"))
 APP_DEBUG = os.getenv("APP_DEBUG", "false").lower() == "true"
 BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", str(BASE_DIR.parent / "uploads")))
 
 # CCompanyInfo fields — originally at .QBW header offset 0x40
 COMPANY_NAME = os.getenv("COMPANY_NAME", "My Company")

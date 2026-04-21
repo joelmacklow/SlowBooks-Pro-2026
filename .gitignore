@@ -17,6 +17,7 @@ build/
 *.swo
 *~
 backups/
+uploads/
 data/postgres/
 AGENTS.md
 .codex

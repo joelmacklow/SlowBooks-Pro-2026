@@ -40,7 +40,7 @@ from app.routes import bank_import, tax, backups, gst
 # Phase 6: Ambitious
 from app.routes import companies, employees, payroll
 
-from app.config import CORS_ALLOW_ORIGINS
+from app.config import CORS_ALLOW_ORIGINS, UPLOADS_DIR
 from app.database import SessionLocal
 from app.services.audit import register_audit_hooks
 
@@ -103,6 +103,7 @@ register_audit_hooks(SessionLocal)
 
 # Static files
 static_dir = Path(__file__).parent / "static"
+app.mount("/static/uploads", StaticFiles(directory=str(UPLOADS_DIR), check_dir=False), name="uploads-static")
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 

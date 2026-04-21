@@ -10,6 +10,13 @@ const code = [
 
 const navigations = [];
 const posts = [];
+const elements = {
+    '#recurring-frequency': { value: 'monthly' },
+    '#recurring-start-date': { value: '2026-04-16' },
+    '#recurring-terms': { value: 'Net 30' },
+    '#rec-next-invoice-date': { value: '', textContent: '' },
+    '#rec-invoice-due-preview': { value: '', textContent: '' },
+};
 
 const context = {
     API: {
@@ -32,7 +39,7 @@ const context = {
             };
             if (path === '/customers?active_only=true') return [{ id: 5, name: 'Aroha Ltd', terms: 'Net 30' }];
             if (path === '/items?active_only=true') return [{ id: 2, code: '100-20', name: 'Pens', description: 'Pens', rate: 50 }];
-            if (path === '/settings') return { default_terms: 'Net 30', default_tax_rate: '15' };
+            if (path === '/settings') return { default_terms: 'Net 30', default_tax_rate: '15', payment_terms_config: 'Net 30|net:30\nDue 1st of next month|next_month_day:1' };
             if (path === '/gst-codes') return [{ code: 'GST15', rate: 0.15, name: 'GST 15%' }];
             throw new Error(`unexpected get ${path}`);
         },
@@ -112,7 +119,7 @@ const context = {
     console,
     fetch: async () => ({ ok: true, headers: { get: () => null }, blob: async () => ({}) }),
     URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} },
-    $: () => null,
+    $: selector => elements[selector] || null,
     $$: selector => selector === '#rec-lines tr' ? [{
         querySelector(sel) {
             const values = {
@@ -148,6 +155,8 @@ context.App.authState = { authenticated: true, bootstrap_required: false, user: 
     assert.ok(html.includes('New Recurring Invoice'));
     assert.ok(html.includes('Create & Add New'));
     assert.ok(html.includes('Back to Recurring Invoices'));
+    assert.ok(html.includes('Next Invoice Date'));
+    assert.ok(html.includes('Invoice Due Date'));
 
     navigations.length = 0;
     await context.RecurringPage.open(7);
@@ -156,6 +165,35 @@ context.App.authState = { authenticated: true, bootstrap_required: false, user: 
     assert.ok(html.includes('Edit Recurring Invoice'));
     assert.ok(html.includes('Invoices Created'));
     assert.ok(html.includes('Recurring notes'));
+
+    const unchangedPreview = context.RecurringPage.schedulePreview({
+        id: 7,
+        frequency: 'monthly',
+        start_date: '2026-04-01',
+        next_due: '2026-05-01',
+        terms: 'Net 30',
+    });
+    assert.strictEqual(unchangedPreview.nextInvoiceDate, '2026-05-01');
+    assert.strictEqual(unchangedPreview.invoiceDueDate, '2026-05-31');
+
+    const weeklyPreview = context.RecurringPage.schedulePreview({
+        id: 7,
+        frequency: 'weekly',
+        start_date: '2026-04-01',
+        next_due: '2026-05-01',
+        terms: 'Net 30',
+    });
+    assert.strictEqual(weeklyPreview.nextInvoiceDate, '2026-04-22');
+
+    const firstOfMonthPreview = context.RecurringPage.schedulePreview({
+        id: null,
+        frequency: 'monthly',
+        start_date: '2026-04-16',
+        next_due: null,
+        terms: 'Due 1st of next month',
+    });
+    assert.strictEqual(firstOfMonthPreview.nextInvoiceDate, '2026-04-16');
+    assert.strictEqual(firstOfMonthPreview.invoiceDueDate, '2026-05-01');
 
     await context.RecurringPage.generateNow();
     assert.strictEqual(posts[0].path, '/recurring/generate');

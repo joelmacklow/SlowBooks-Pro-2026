@@ -5,6 +5,7 @@ import sys
 import types
 import unittest
 from io import BytesIO
+from pathlib import Path
 from unittest import mock
 
 from fastapi import HTTPException, UploadFile
@@ -47,6 +48,28 @@ class UploadSizeHardeningTests(unittest.TestCase):
 
         with self.Session() as db, \
              mock.patch.object(uploads_route, "ensure_upload_dir", side_effect=HTTPException(status_code=500, detail="Upload storage is not writable")):
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(
+                    uploads_route.upload_logo(
+                        file=UploadFile(
+                            filename="logo.png",
+                            file=BytesIO(b"png-data"),
+                            headers=Headers({"content-type": "image/png"}),
+                        ),
+                        db=db,
+                        auth={"user_id": 1},
+                    )
+                )
+
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertIn("not writable", ctx.exception.detail.lower())
+
+    def test_logo_upload_returns_server_error_when_file_write_is_not_writable(self):
+        uploads_route = self._load_route_module("app.routes.uploads")
+
+        with self.Session() as db, \
+             mock.patch.object(uploads_route, "ensure_upload_dir", return_value=Path("/tmp/logo-test")), \
+             mock.patch("builtins.open", side_effect=PermissionError("read only")):
             with self.assertRaises(HTTPException) as ctx:
                 asyncio.run(
                     uploads_route.upload_logo(

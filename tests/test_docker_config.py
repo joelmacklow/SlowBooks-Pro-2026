@@ -96,7 +96,7 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         self.assertIn('USER slowbooks', dockerfile_text)
         self.assertIn('set -eo pipefail', backup_script)
-        self.assertIn('mkdir -p /app/backups /app/app/static/uploads 2>/dev/null || true', entrypoint_script)
+        self.assertIn('mkdir -p /app/backups /app/uploads 2>/dev/null || true', entrypoint_script)
         self.assertIn("BOOTSTRAP_ADMIN_TOKEN=\"$(python - <<'PY'", entrypoint_script)
         self.assertIn('export BOOTSTRAP_ADMIN_TOKEN', entrypoint_script)
         self.assertIn('Bootstrap admin token:', entrypoint_script)

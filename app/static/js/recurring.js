@@ -19,6 +19,140 @@ const RecurringPage = {
         return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
     },
 
+    paymentTermEntries() {
+        const raw = String(RecurringPage._settings?.payment_terms_config || '').trim();
+        const defaults = [
+            { label: 'Net 15', rule: 'net:15' },
+            { label: 'Net 30', rule: 'net:30' },
+            { label: 'Net 45', rule: 'net:45' },
+            { label: 'Net 60', rule: 'net:60' },
+            { label: 'Due on Receipt', rule: 'days:0' },
+        ];
+        if (!raw) return defaults;
+        const entries = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => {
+                if (line.includes('|')) {
+                    const [label, rule] = line.split('|', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                if (line.includes('=')) {
+                    const [label, rule] = line.split('=', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                return { label: line, rule: 'manual' };
+            })
+            .filter(entry => entry.label);
+        return entries.length ? entries : defaults;
+    },
+
+    parseIsoDate(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const [year, month, day] = raw.split('-').map(part => parseInt(part, 10));
+        if (!year || !month || !day) return null;
+        return new Date(Date.UTC(year, month - 1, day));
+    },
+
+    formatIsoDate(value) {
+        if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
+        const year = value.getUTCFullYear();
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(value.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    },
+
+    addDays(dateValue, days) {
+        const copy = new Date(dateValue.getTime());
+        copy.setUTCDate(copy.getUTCDate() + days);
+        return copy;
+    },
+
+    addMonthsClamped(dateValue, months) {
+        const year = dateValue.getUTCFullYear();
+        const monthIndex = dateValue.getUTCMonth();
+        const day = dateValue.getUTCDate();
+        const targetMonthIndex = monthIndex + months;
+        const targetYear = year + Math.floor(targetMonthIndex / 12);
+        const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+        const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+        return new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay)));
+    },
+
+    advanceNextInvoiceDate(current, frequency) {
+        if (!(current instanceof Date) || Number.isNaN(current.getTime())) return null;
+        if (frequency === 'weekly') return RecurringPage.addDays(current, 7);
+        if (frequency === 'quarterly') return RecurringPage.addMonthsClamped(current, 3);
+        if (frequency === 'yearly') return RecurringPage.addMonthsClamped(current, 12);
+        return RecurringPage.addMonthsClamped(current, 1);
+    },
+
+    applyDueDateRule(baseDate, rule) {
+        if (!(baseDate instanceof Date) || Number.isNaN(baseDate.getTime())) return null;
+        const rawRule = String(rule || '').trim().toLowerCase();
+        if (!rawRule || rawRule === 'manual') return RecurringPage.addDays(baseDate, 30);
+        if (rawRule === 'receipt') return baseDate;
+        if (rawRule.startsWith('net:') || rawRule.startsWith('days:')) {
+            const value = parseInt(rawRule.split(':', 2)[1], 10);
+            return RecurringPage.addDays(baseDate, Number.isFinite(value) ? value : 30);
+        }
+        if (rawRule.startsWith('next_month_day:')) {
+            const requestedDay = parseInt(rawRule.split(':', 2)[1], 10);
+            const nextMonth = RecurringPage.addMonthsClamped(new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 1)), 1);
+            const year = nextMonth.getUTCFullYear();
+            const month = nextMonth.getUTCMonth();
+            const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            return new Date(Date.UTC(year, month, Math.min(Number.isFinite(requestedDay) ? requestedDay : 1, lastDay)));
+        }
+        return RecurringPage.addDays(baseDate, 30);
+    },
+
+    termRuleForLabel(label) {
+        const entry = RecurringPage.paymentTermEntries().find(term => term.label === label);
+        return entry?.rule || 'manual';
+    },
+
+    schedulePreview(source = null) {
+        const rec = source || RecurringPage._detailState || {};
+        const startDate = RecurringPage.parseIsoDate(rec.start_date);
+        const frequency = rec.frequency || 'monthly';
+        const terms = rec.terms || 'Net 30';
+        if (!startDate) return { nextInvoiceDate: '', invoiceDueDate: '' };
+
+        const today = RecurringPage.parseIsoDate(todayISO()) || new Date();
+        let nextInvoiceDate = new Date(startDate.getTime());
+        while (nextInvoiceDate < today) {
+            nextInvoiceDate = RecurringPage.advanceNextInvoiceDate(nextInvoiceDate, frequency);
+        }
+        const invoiceDueDate = RecurringPage.applyDueDateRule(nextInvoiceDate, RecurringPage.termRuleForLabel(terms));
+        return {
+            nextInvoiceDate: RecurringPage.formatIsoDate(nextInvoiceDate),
+            invoiceDueDate: RecurringPage.formatIsoDate(invoiceDueDate),
+        };
+    },
+
+    currentScheduleFormState() {
+        const base = RecurringPage._detailState || {};
+        const frequencyField = $('#recurring-frequency');
+        const startField = $('#recurring-start-date');
+        const termsField = $('#recurring-terms');
+        return {
+            ...base,
+            frequency: frequencyField?.value || base.frequency || 'monthly',
+            start_date: startField?.value || base.start_date || '',
+            terms: termsField?.value || base.terms || 'Net 30',
+        };
+    },
+
+    updateSchedulePreview() {
+        const preview = RecurringPage.schedulePreview(RecurringPage.currentScheduleFormState());
+        const nextInvoiceEl = $('#rec-next-invoice-date');
+        const duePreviewEl = $('#rec-invoice-due-preview');
+        if (nextInvoiceEl) nextInvoiceEl.value = preview.nextInvoiceDate || '';
+        if (duePreviewEl) duePreviewEl.value = preview.invoiceDueDate || '';
+    },
+
     async render() {
         const recs = await API.get('/recurring');
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -150,6 +284,7 @@ const RecurringPage = {
         }
         const totals = RecurringPage._totals(rec.lines || []);
         const customerOptions = RecurringPage.customerOptionsHtml(rec.customer_id);
+        const preview = RecurringPage.schedulePreview(rec);
         return `
             <div class="page-header">
                 <div>
@@ -166,21 +301,23 @@ const RecurringPage = {
                         <div class="form-group"><label>Customer *</label>
                             <select name="customer_id" required onchange="RecurringPage.customerSelected(this.value)" ${canManageSales ? '' : 'disabled'}><option value="">Select...</option>${customerOptions}</select></div>
                         <div class="form-group"><label>Frequency *</label>
-                            <select name="frequency" ${canManageSales ? '' : 'disabled'}>
+                            <select id="recurring-frequency" name="frequency" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}>
                                 ${['weekly','monthly','quarterly','yearly'].map(f =>
                                     `<option value="${f}" ${rec.frequency===f?'selected':''}>${f}</option>`).join('')}
                             </select></div>
                         <div class="form-group"><label>Start Date *</label>
-                            <input name="start_date" type="date" required value="${rec.start_date || ''}" ${canManageSales ? '' : 'disabled'}></div>
+                            <input id="recurring-start-date" name="start_date" type="date" required value="${rec.start_date || ''}" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}></div>
                         <div class="form-group"><label>End Date</label>
                             <input name="end_date" type="date" value="${rec.end_date || ''}" ${canManageSales ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Terms</label>
-                            <select name="terms" id="recurring-terms" ${canManageSales ? '' : 'disabled'}>
+                            <select name="terms" id="recurring-terms" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}>
                                 ${RecurringPage.paymentTermLabels().map(t =>
                                     `<option value="${t}" ${rec.terms===t?'selected':''}>${t}</option>`).join('')}
                             </select></div>
-                        <div class="form-group"><label>Next Due</label>
-                            <input value="${escapeHtml(rec.next_due || rec.start_date || 'Calculated on save')}" disabled></div>
+                        <div class="form-group"><label>Next Invoice Date</label>
+                            <input id="rec-next-invoice-date" value="${escapeHtml(preview.nextInvoiceDate || rec.next_due || rec.start_date || 'Calculated on save')}" disabled></div>
+                        <div class="form-group"><label>Invoice Due Date</label>
+                            <input id="rec-invoice-due-preview" value="${escapeHtml(preview.invoiceDueDate || 'Calculated from terms')}" disabled></div>
                         <div class="form-group"><label>Status</label>
                             <input value="${rec.is_active === false ? 'inactive' : 'active'}" disabled></div>
                         <div class="form-group"><label>Invoices Created</label>

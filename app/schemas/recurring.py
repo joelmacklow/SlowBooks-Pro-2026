@@ -38,7 +38,9 @@ class RecurringCreate(BaseModel):
 
 
 class RecurringUpdate(BaseModel):
+    customer_id: Optional[int] = None
     frequency: Optional[str] = None
+    start_date: Optional[date] = None
     end_date: Optional[date] = None
     is_active: Optional[bool] = None
     terms: Optional[str] = None

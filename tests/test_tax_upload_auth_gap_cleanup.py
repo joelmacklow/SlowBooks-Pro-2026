@@ -111,7 +111,7 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
                 self.assertEqual(setting.value, '/static/uploads/company_logo.png')
                 self.assertTrue(saved.exists())
 
-    def test_logo_upload_rejects_svg(self):
+    def test_logo_upload_rejects_svg_with_aligned_message(self):
         uploads_route = self._load_uploads_route()
 
         with self.Session() as db:
@@ -128,6 +128,7 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn('png', ctx.exception.detail.lower())
+        self.assertIn('gif', ctx.exception.detail.lower())
         self.assertNotIn('svg', ctx.exception.detail.lower())
 
 

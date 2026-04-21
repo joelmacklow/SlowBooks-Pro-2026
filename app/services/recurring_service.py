@@ -47,6 +47,14 @@ def _advance_next_due(current: date, frequency: str) -> date:
     return current + relativedelta(months=1)
 
 
+def calculate_next_due(start_date: date, frequency: str, *, as_of: date = None) -> date:
+    target = as_of or date.today()
+    next_due = start_date
+    while next_due < target:
+        next_due = _advance_next_due(next_due, frequency)
+    return next_due
+
+
 def generate_due_invoices(db: Session, as_of: date = None) -> list[int]:
     """Generate all invoices that are due on or before as_of date.
     Returns list of created invoice IDs."""

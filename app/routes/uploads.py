@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from app.database import get_db
+from app.config import UPLOADS_DIR
 from app.models.settings import Settings
 from app.services.auth import require_permissions
 from app.services.rate_limit import enforce_rate_limit
@@ -18,7 +19,7 @@ from app.services.upload_limits import LOGO_UPLOAD_MAX_BYTES, enforce_upload_siz
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
-UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads"
+UPLOAD_DIR = Path(UPLOADS_DIR)
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
@@ -46,7 +47,7 @@ async def upload_logo(
         detail="Too many logo upload requests. Please wait and try again.",
     )
     if file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Only PNG, JPEG, or GIF images are allowed")
+        raise HTTPException(status_code=400, detail="Only PNG, JPG/JPEG, or GIF images are allowed")
 
     content = enforce_upload_size(
         await file.read(),
@@ -58,8 +59,13 @@ async def upload_logo(
     filename = f"company_logo.{ext}"
     filepath = ensure_upload_dir() / filename
 
-    with open(filepath, "wb") as f:
-        f.write(content)
+    try:
+        with open(filepath, "wb") as f:
+            f.write(content)
+    except PermissionError as exc:
+        raise HTTPException(status_code=500, detail="Upload storage is not writable") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Upload storage is not writable") from exc
 
     logo_path = f"/static/uploads/{filename}"
     row = db.query(Settings).filter(Settings.key == "company_logo_path").first()
