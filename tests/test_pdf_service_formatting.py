@@ -91,7 +91,7 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("13 Apr 2026", rendered)
         self.assertIn("13 May 2026", rendered)
         self.assertIn("$1,234.50", rendered)
-        self.assertIn("QUOTE", rendered)
+        self.assertIn("ESTIMATE", rendered)
         self.assertIn("Quote Summary", rendered)
 
     def test_statement_pdf_uses_rendered_company_settings(self):
