@@ -60,6 +60,19 @@ class DockerConfigTests(unittest.TestCase):
             "postgresql://slowbooks:replace-with-a-long-random-password@localhost:5432/slowbooks?sslmode=disable",
         )
 
+    def test_uploads_dir_defaults_to_tmp_managed_path(self):
+        import app.config as config
+
+        original = os.environ.copy()
+        try:
+            os.environ.pop("UPLOADS_DIR", None)
+            config = importlib.reload(config)
+            self.assertEqual(str(config.UPLOADS_DIR), "/tmp/slowbooks/uploads")
+        finally:
+            os.environ.clear()
+            os.environ.update(original)
+            importlib.reload(config)
+
     def test_resolve_cors_origins_uses_explicit_loopback_safe_defaults(self):
         import app.config as config
 
@@ -96,7 +109,7 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         self.assertIn('USER slowbooks', dockerfile_text)
         self.assertIn('set -eo pipefail', backup_script)
-        self.assertIn('mkdir -p /app/backups /app/uploads 2>/dev/null || true', entrypoint_script)
+        self.assertIn('mkdir -p /app/backups /tmp/slowbooks/uploads 2>/dev/null || true', entrypoint_script)
         self.assertIn("BOOTSTRAP_ADMIN_TOKEN=\"$(python - <<'PY'", entrypoint_script)
         self.assertIn('export BOOTSTRAP_ADMIN_TOKEN', entrypoint_script)
         self.assertIn('Bootstrap admin token:', entrypoint_script)

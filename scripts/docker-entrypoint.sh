@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-mkdir -p /app/backups /app/uploads 2>/dev/null || true
+mkdir -p /app/backups /tmp/slowbooks/uploads 2>/dev/null || true
 
 if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
 BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
