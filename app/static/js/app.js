@@ -25,9 +25,9 @@ const App = {
         '/invoices/detail': { page: 'invoices',      label: 'Invoice',            permission: 'sales.view', render: () => InvoicesPage.renderDetailScreen() },
         '/estimates':     { page: 'estimates',       label: 'Create Estimates',   permission: 'sales.view', render: () => EstimatesPage.render() },
         '/estimates/detail': { page: 'estimates',    label: 'Estimate',           permission: 'sales.view', render: () => EstimatesPage.renderDetailScreen() },
-        '/payments':      { page: 'payments',        label: 'Receive Payments',   permission: 'sales.view', render: () => PaymentsPage.render() },
+        '/payments':      { page: 'payments',        label: 'Customer Receipts',  permission: 'sales.view', render: () => PaymentsPage.render() },
         '/banking':       { page: 'banking',         label: 'Bank Accounts',      permission: 'banking.view', render: () => BankingPage.render() },
-        '/deposits':      { page: 'deposits',        label: 'Make Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
+        '/deposits':      { page: 'deposits',        label: 'Cash Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
         '/check-register': { page: 'check-register', label: 'Bank Register',      permission: 'banking.view', render: () => CheckRegisterPage.render() },
         '/cc-charges':    { page: 'cc-charges',      label: 'Credit Card Charges', permission: 'banking.view', render: () => CCChargesPage.render() },
         '/journal':       { page: 'journal',         label: 'Journal Entries',    permission: 'accounts.manage', render: () => JournalPage.render() },
@@ -876,7 +876,7 @@ const App = {
                     { key: 'invoices', label: 'Invoices', onClick: (item) => `closeSearchDropdown();InvoicesPage.view(${item.id});` },
                     { key: 'estimates', label: 'Estimates', onClick: (item) => `closeSearchDropdown();EstimatesPage.view(${item.id});` },
                     { key: 'credit_memos', label: 'Credit Notes', onClick: (item) => `closeSearchDropdown();CreditMemosPage.open(${item.id});` },
-                    { key: 'payments', label: 'Payments', onClick: (item) => `closeSearchDropdown();App.navigate('#/payments');` },
+                    { key: 'payments', label: 'Receipts', onClick: (item) => `closeSearchDropdown();App.navigate('#/payments');` },
                 ];
                 if (Object.values(results).some(items => Array.isArray(items) && items.length > 0)) {
                     html += `<div class="search-header"><span>Search results</span><button type="button" class="search-close" onclick="closeSearchDropdown()" aria-label="Close search results">&times;</button></div>`;

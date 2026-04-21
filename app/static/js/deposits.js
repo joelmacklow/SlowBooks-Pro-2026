@@ -17,7 +17,7 @@ const DepositsPage = {
         ).join('');
         let html = `
             <div class="page-header">
-                <h2>Make Deposits</h2>
+                <h2>Cash Deposits</h2>
             </div>`;
 
         if (!pending.length) {

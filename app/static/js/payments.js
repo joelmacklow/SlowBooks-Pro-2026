@@ -70,12 +70,12 @@ const PaymentsPage = {
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
         let html = `
             <div class="page-header">
-                <h2>Payments</h2>
-                ${canManageSales ? `<button class="btn btn-primary" onclick="PaymentsPage.showForm()">+ Record Payment</button>` : ''}
+                <h2>Customer Receipts</h2>
+                ${canManageSales ? `<button class="btn btn-primary" onclick="PaymentsPage.showForm()">+ Record Receipt</button>` : ''}
             </div>`;
 
         if (payments.length === 0) {
-            html += `<div class="empty-state"><p>No payments recorded yet</p></div>`;
+            html += `<div class="empty-state"><p>No customer receipts recorded yet</p></div>`;
         } else {
             html += `<div class="table-container"><table>
                 <thead><tr>
@@ -115,7 +115,7 @@ const PaymentsPage = {
             allocHtml += `</tbody></table></div>`;
         }
 
-        openModal('Payment Details', `
+        openModal('Receipt Details', `
             <div style="margin-bottom:12px;">
                 <strong>Customer:</strong> ${escapeHtml(p.customer_name || '')}<br>
                 <strong>Date:</strong> ${formatDate(p.date)}<br>
@@ -156,7 +156,7 @@ const PaymentsPage = {
         const bankOpts = bankAccts.map(a => `<option value="${a.id}">${escapeHtml(a.account_number || '')} - ${escapeHtml(a.name)}</option>`).join('');
         const initialState = PaymentsPage.depositFieldState('', bankAccts);
 
-        openModal('Record Payment', `
+        openModal('Record Receipt', `
             <form id="payment-form" onsubmit="PaymentsPage.save(event)">
                 <div class="card" style="margin-bottom:16px;">
                     <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
@@ -253,7 +253,7 @@ const PaymentsPage = {
 
         try {
             await API.post('/payments', data);
-            toast('Payment recorded');
+            toast('Receipt recorded');
             closeModal();
             App.navigate(location.hash);
         } catch (err) { toast(err.message, 'error'); }
