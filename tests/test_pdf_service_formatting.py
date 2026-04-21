@@ -189,7 +189,7 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         rendered = CapturingHTML.rendered[-1]
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
-        self.assertIn("Credit Note", rendered)
+        self.assertIn("CREDIT NOTE", rendered)
         self.assertIn("13 Apr 2026", rendered)
         self.assertIn("$1,419.68", rendered)
         self.assertIn("Credit Summary", rendered)
