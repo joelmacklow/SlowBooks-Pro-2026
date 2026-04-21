@@ -7,17 +7,30 @@
  * up the tree. We skipped the hierarchy. Life is too short.
  */
 const ItemsPage = {
+    _searchQuery: '',
+    _searchEndpoint() {
+        const query = String(ItemsPage._searchQuery || '').trim();
+        return query ? `/items?search=${encodeURIComponent(query)}` : '/items';
+    },
+
     async render() {
-        const items = await API.get('/items');
+        const items = await API.get(ItemsPage._searchEndpoint());
         const canManageItems = App.hasPermission ? App.hasPermission('items.manage') : true;
         let html = `
             <div class="page-header">
                 <h2>Items & Services</h2>
                 ${canManageItems ? `<button class="btn btn-primary" onclick="ItemsPage.showForm()">+ New Item</button>` : ''}
+            </div>
+            <div class="toolbar">
+                <input
+                    type="search"
+                    placeholder="Search by code or name"
+                    value="${escapeHtml(ItemsPage._searchQuery || '')}"
+                    oninput="ItemsPage.applySearch(this.value)">
             </div>`;
 
         if (items.length === 0) {
-            html += `<div class="empty-state"><p>No items yet</p></div>`;
+            html += `<div class="empty-state"><p>${String(ItemsPage._searchQuery || '').trim() ? 'No items match this search' : 'No items yet'}</p></div>`;
         } else {
             html += `<div class="table-container"><table>
                 <thead><tr>
@@ -40,6 +53,13 @@ const ItemsPage = {
             html += `</tbody></table></div>`;
         }
         return html;
+    },
+
+    async applySearch(value = '') {
+        ItemsPage._searchQuery = String(value || '');
+        const page = typeof $ === 'function' ? $('#page-content') : null;
+        if (!page) return;
+        page.innerHTML = await ItemsPage.render();
     },
 
     async showForm(id = null) {
