@@ -13,6 +13,32 @@ const ItemsPage = {
         return query ? `/items?search=${encodeURIComponent(query)}` : '/items';
     },
 
+    renderItemsTable(items = [], canManageItems = true) {
+        if (items.length === 0) {
+            return `<div class="empty-state"><p>${String(ItemsPage._searchQuery || '').trim() ? 'No items match this search' : 'No items yet'}</p></div>`;
+        }
+        let html = `<div class="table-container"><table>
+            <thead><tr>
+                <th>Code</th><th>Name</th><th>Type</th><th>Description</th>
+                <th class="amount">Rate</th><th class="amount">Cost</th><th>Actions</th>
+            </tr></thead><tbody>`;
+        for (const item of items) {
+            html += `<tr>
+                <td>${escapeHtml(item.code || '')}</td>
+                <td><strong>${escapeHtml(item.name)}</strong></td>
+                <td>${statusBadge(item.item_type)}</td>
+                <td>${escapeHtml(item.description) || ''}</td>
+                <td class="amount">${formatCurrency(item.rate)}</td>
+                <td class="amount">${formatCurrency(item.cost)}</td>
+                <td class="actions">
+                    ${canManageItems ? `<button class="btn btn-sm btn-secondary" onclick="ItemsPage.showForm(${item.id})">Edit</button>` : ''}
+                </td>
+            </tr>`;
+        }
+        html += `</tbody></table></div>`;
+        return html;
+    },
+
     async render() {
         const items = await API.get(ItemsPage._searchEndpoint());
         const canManageItems = App.hasPermission ? App.hasPermission('items.manage') : true;
@@ -27,31 +53,8 @@ const ItemsPage = {
                     placeholder="Search by code or name"
                     value="${escapeHtml(ItemsPage._searchQuery || '')}"
                     oninput="ItemsPage.applySearch(this.value)">
-            </div>`;
-
-        if (items.length === 0) {
-            html += `<div class="empty-state"><p>${String(ItemsPage._searchQuery || '').trim() ? 'No items match this search' : 'No items yet'}</p></div>`;
-        } else {
-            html += `<div class="table-container"><table>
-                <thead><tr>
-                    <th>Code</th><th>Name</th><th>Type</th><th>Description</th>
-                    <th class="amount">Rate</th><th class="amount">Cost</th><th>Actions</th>
-                </tr></thead><tbody>`;
-            for (const item of items) {
-                html += `<tr>
-                    <td>${escapeHtml(item.code || '')}</td>
-                    <td><strong>${escapeHtml(item.name)}</strong></td>
-                    <td>${statusBadge(item.item_type)}</td>
-                    <td>${escapeHtml(item.description) || ''}</td>
-                    <td class="amount">${formatCurrency(item.rate)}</td>
-                    <td class="amount">${formatCurrency(item.cost)}</td>
-                    <td class="actions">
-                        ${canManageItems ? `<button class="btn btn-sm btn-secondary" onclick="ItemsPage.showForm(${item.id})">Edit</button>` : ''}
-                    </td>
-                </tr>`;
-            }
-            html += `</tbody></table></div>`;
-        }
+            </div>
+            <div id="items-table-wrap">${ItemsPage.renderItemsTable(items, canManageItems)}</div>`;
         return html;
     },
 
@@ -59,6 +62,13 @@ const ItemsPage = {
         ItemsPage._searchQuery = String(value || '');
         const page = typeof $ === 'function' ? $('#page-content') : null;
         if (!page) return;
+        const items = await API.get(ItemsPage._searchEndpoint());
+        const canManageItems = App.hasPermission ? App.hasPermission('items.manage') : true;
+        const wrap = page.querySelector ? page.querySelector('#items-table-wrap') : null;
+        if (wrap) {
+            wrap.innerHTML = ItemsPage.renderItemsTable(items, canManageItems);
+            return;
+        }
         page.innerHTML = await ItemsPage.render();
     },
 
