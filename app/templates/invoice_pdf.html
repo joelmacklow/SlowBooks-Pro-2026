@@ -6,13 +6,23 @@
 </style>
 </head>
 <body>
+    {% set customer_name = inv.customer_name or (inv.customer.name if inv.customer else '') %}
+    {% set customer_company = inv.customer.company if inv.customer and inv.customer.company else '' %}
+    {% set customer_email = inv.customer.email if inv.customer and inv.customer.email else '' %}
+    {% set customer_phone = inv.customer.phone if inv.customer and inv.customer.phone else '' %}
+    {% set company_gst_number = company.gst_number or company.company_tax_id or '' %}
     <div class="header">
         <div class="company-panel">
+            {% if company.company_logo_path %}
+            <img class="company-logo" src="{{ company.company_logo_path }}" alt="{{ company.company_name }}">
+            {% else %}
             <div class="company-name">{{ company.company_name }}</div>
+            {% endif %}
             <div class="company-meta">
                 {% if company.company_address1 %}{{ company.company_address1 }}<br>{% endif %}
                 {% if company.company_address2 %}{{ company.company_address2 }}<br>{% endif %}
                 {% if company.company_city or company.company_state or company.company_zip %}{{ [company.company_city, company.company_state, company.company_zip] | select | join(' ') }}<br>{% endif %}
+                {% if company_gst_number %}GST Number: {{ company_gst_number }}<br>{% endif %}
                 {% if company.company_phone %}{{ company.company_phone }}<br>{% endif %}
                 {% if company.company_email %}{{ company.company_email }}{% endif %}
             </div>
@@ -20,8 +30,7 @@
         <div class="doc-panel">
             <div class="doc-kicker">Customer document</div>
             <h1 class="doc-title">INVOICE</h1>
-            <div class="doc-number">#{{ inv.invoice_number }}</div>
-            {% if inv.due_date %}<div class="doc-subtitle">Due {{ inv.due_date | fdate }}</div>{% endif %}
+            <div class="doc-number no-wrap">#{{ inv.invoice_number }}</div>
         </div>
     </div>
 
@@ -38,7 +47,10 @@
         <div class="detail-card">
             <div class="section-heading">Bill To</div>
             <p>
-                <strong>{{ inv.customer_name or '' }}</strong><br>
+                <strong>{{ customer_name }}</strong><br>
+                {% if customer_company %}{{ customer_company }}<br>{% endif %}
+                {% if customer_email %}{{ customer_email }}<br>{% endif %}
+                {% if customer_phone %}{{ customer_phone }}<br>{% endif %}
                 {% if inv.bill_address1 %}{{ inv.bill_address1 }}<br>{% endif %}
                 {% if inv.bill_address2 %}{{ inv.bill_address2 }}<br>{% endif %}
                 {% if inv.bill_city or inv.bill_state or inv.bill_zip %}{{ [inv.bill_city, inv.bill_state, inv.bill_zip] | select | join(' ') }}{% endif %}
@@ -101,9 +113,12 @@
     <div class="remittance-panel page-break-avoid">
         <div class="section-heading">Payment Advice</div>
         <table class="meta-table compact">
-            <tr><td class="meta-label">Customer</td><td>{{ inv.customer_name or '' }}</td></tr>
-            <tr><td class="meta-label">Invoice Number</td><td>{{ inv.invoice_number }}</td></tr>
-            <tr><td class="meta-label">Amount Due</td><td>{{ inv.balance_due | currency }}</td></tr>
+            <tr><td class="meta-label no-wrap">Customer</td><td>{{ customer_name }}</td></tr>
+            {% if customer_company %}<tr><td class="meta-label no-wrap">Company</td><td>{{ customer_company }}</td></tr>{% endif %}
+            {% if customer_email %}<tr><td class="meta-label no-wrap">Email</td><td>{{ customer_email }}</td></tr>{% endif %}
+            {% if customer_phone %}<tr><td class="meta-label no-wrap">Phone</td><td>{{ customer_phone }}</td></tr>{% endif %}
+            <tr><td class="meta-label no-wrap">Invoice Number</td><td class="no-wrap">{{ inv.invoice_number }}</td></tr>
+            <tr><td class="meta-label no-wrap">Amount Due</td><td class="no-wrap">{{ inv.balance_due | currency }}</td></tr>
             {% if inv.due_date %}<tr><td class="meta-label">Due Date</td><td>{{ inv.due_date | fdate }}</td></tr>{% endif %}
         </table>
         <p class="muted">Please quote invoice {{ inv.invoice_number }} when arranging payment.</p>

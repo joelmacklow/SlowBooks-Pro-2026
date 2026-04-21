@@ -28,7 +28,13 @@ class PdfServiceFormattingTests(unittest.TestCase):
     def setUp(self):
         CapturingHTML.rendered = []
         pdf_service.HTML = CapturingHTML
-        self.company = {"locale": "en-NZ", "currency": "NZD", "company_name": "SlowBooks NZ"}
+        self.company = {
+            "locale": "en-NZ",
+            "currency": "NZD",
+            "company_name": "SlowBooks NZ",
+            "company_logo_path": "/static/uploads/company_logo.png",
+            "gst_number": "123-456-789",
+        }
 
     def test_invoice_pdf_uses_rendered_company_settings(self):
         invoice = SimpleNamespace(
@@ -37,12 +43,18 @@ class PdfServiceFormattingTests(unittest.TestCase):
             due_date=date(2026, 4, 20),
             terms="Net 7",
             po_number=None,
-            customer_name="Aroha Ltd",
-            bill_address1="",
+            customer_name="",
+            customer=SimpleNamespace(
+                name="Aroha Ltd",
+                company="Aroha Holdings",
+                email="aroha@example.com",
+                phone="021 123 4567",
+            ),
+            bill_address1="10 Lambton Quay",
             bill_address2="",
-            bill_city="",
-            bill_state="",
-            bill_zip="",
+            bill_city="Wellington",
+            bill_state="Wellington",
+            bill_zip="6011",
             ship_address1="",
             lines=[SimpleNamespace(description="Consulting", quantity=1, rate=Decimal("1234.5"), amount=Decimal("1234.5"))],
             subtotal=Decimal("1234.5"),
@@ -58,11 +70,22 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         rendered = CapturingHTML.rendered[-1]
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn('class="company-logo"', rendered)
+        self.assertIn('/static/uploads/company_logo.png', rendered)
+        self.assertNotIn('<div class="company-name">SlowBooks NZ</div>', rendered)
+        self.assertIn('GST Number', rendered)
+        self.assertIn('123-456-789', rendered)
         self.assertIn("13 Apr 2026", rendered)
         self.assertIn("20 Apr 2026", rendered)
+        self.assertNotIn("Due 20 Apr 2026", rendered)
         self.assertIn("$1,234.50", rendered)
         self.assertIn("Payment Advice", rendered)
-        self.assertIn("Invoice Summary", rendered)
+        self.assertIn("Aroha Ltd", rendered)
+        self.assertIn("Aroha Holdings", rendered)
+        self.assertIn("aroha@example.com", rendered)
+        self.assertIn("021 123 4567", rendered)
+        self.assertIn("Wellington Wellington 6011", rendered)
+        self.assertIn('class="no-wrap"', rendered)
 
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(
