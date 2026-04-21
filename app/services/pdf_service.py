@@ -19,6 +19,7 @@ from app.services.formatting import format_currency, format_date
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 STATIC_DIR = Path(__file__).parent.parent / "static"
+LEGACY_UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 _jinja_env = Environment(autoescape=True, loader=FileSystemLoader(str(TEMPLATE_DIR)))
 
 
@@ -44,9 +45,14 @@ def _resolve_static_asset_uri(path_value: str | None) -> str | None:
     if parsed.scheme in ("http", "https", "file", "data"):
         return raw
     if raw.startswith("/static/uploads/"):
-        candidate = Path(UPLOADS_DIR) / raw.split("/static/uploads/", 1)[1]
-        if candidate.exists():
-            return candidate.as_uri()
+        relative_upload = raw.split("/static/uploads/", 1)[1]
+        upload_candidates = [
+            Path(UPLOADS_DIR) / relative_upload,
+            LEGACY_UPLOADS_DIR / relative_upload,
+        ]
+        for candidate in upload_candidates:
+            if candidate.exists():
+                return candidate.as_uri()
     if raw.startswith("/static/"):
         candidate = STATIC_DIR / raw.split("/static/", 1)[1]
         if candidate.exists():

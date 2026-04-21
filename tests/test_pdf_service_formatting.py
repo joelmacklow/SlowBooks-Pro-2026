@@ -303,6 +303,16 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("position: fixed; bottom: 0;", rendered)
         self.assertIn("Trial Balance", rendered)
 
+    def test_pdf_service_resolves_legacy_upload_logo_paths(self):
+        legacy_logo = Path("/app/uploads/company_logo.png")
+        with mock.patch("app.services.pdf_service.Path.exists", autospec=True) as mock_exists, \
+             mock.patch("app.services.pdf_service.UPLOADS_DIR", Path("/tmp/slowbooks/uploads")), \
+             mock.patch("app.services.pdf_service.LEGACY_UPLOADS_DIR", Path("/app/uploads")):
+            mock_exists.side_effect = lambda path_obj: str(path_obj) == str(legacy_logo)
+            resolved = pdf_service._resolve_static_asset_uri("/static/uploads/company_logo.png")
+
+        self.assertEqual(resolved, legacy_logo.as_uri())
+
 
 if __name__ == "__main__":
     unittest.main()
