@@ -3,6 +3,62 @@
  * Feature 7: UI shows open invoices with editable amounts
  */
 const BatchPaymentsPage = {
+    receiptBankAccounts(accounts = []) {
+        return (accounts || []).filter(account => {
+            const label = `${account.account_number || ''} ${account.name || ''}`.toLowerCase();
+            return !label.includes('undeposited') && !label.includes('receipt clearing');
+        });
+    },
+
+    depositFieldState(method, accounts = []) {
+        const normalizedMethod = String(method || '').trim().toLowerCase();
+        const isCash = normalizedMethod === 'cash';
+        const bankAccounts = BatchPaymentsPage.receiptBankAccounts(accounts);
+        return {
+            blankLabel: isCash
+                ? 'Undeposited Funds / Receipt Clearing (recommended for cash)'
+                : 'Select bank account for remittance',
+            defaultAccountId: isCash ? '' : String(bankAccounts[0]?.id || ''),
+            helpText: isCash
+                ? 'Use cash only for physical takings that still need to be banked through Make Deposits.'
+                : 'Use this screen for exceptional remittance-style allocation. Most EFT and EFTPOS receipts should be matched during bank reconciliation instead.',
+        };
+    },
+
+    markDepositSelectionManual() {
+        const depositSelect = $('#batch-payment-deposit-to');
+        if (depositSelect) depositSelect.dataset.autoSelected = 'false';
+    },
+
+    syncMethodDefaults(accounts = null) {
+        const methodSelect = $('#batch-payment-method');
+        const depositSelect = $('#batch-payment-deposit-to');
+        const hint = $('#batch-payment-hint');
+        if (!methodSelect || !depositSelect) return;
+
+        const availableAccounts = accounts || Array.from(depositSelect.options || [])
+            .filter(option => option.value)
+            .map(option => ({ id: option.value }));
+        const state = BatchPaymentsPage.depositFieldState(methodSelect.value, availableAccounts);
+        if (depositSelect.options?.length) {
+            depositSelect.options[0].textContent = state.blankLabel;
+        }
+        if (hint) hint.textContent = state.helpText;
+
+        if (state.defaultAccountId) {
+            if (!depositSelect.value || depositSelect.dataset.autoSelected === 'true') {
+                depositSelect.value = state.defaultAccountId;
+                depositSelect.dataset.autoSelected = 'true';
+            }
+            return;
+        }
+
+        if (depositSelect.dataset.autoSelected === 'true') {
+            depositSelect.value = '';
+        }
+        depositSelect.dataset.autoSelected = 'false';
+    },
+
     async render() {
         const [invoices, accounts] = await Promise.all([
             API.get('/invoices'),
@@ -18,22 +74,30 @@ const BatchPaymentsPage = {
             byCustomer[cname].push(inv);
         }
 
-        const acctOpts = accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+        const bankAccounts = BatchPaymentsPage.receiptBankAccounts(accounts);
+        const acctOpts = bankAccounts.map(a => `<option value="${a.id}">${escapeHtml(a.account_number || '')} - ${escapeHtml(a.name)}</option>`).join('');
+        const initialState = BatchPaymentsPage.depositFieldState('EFT', bankAccounts);
 
         let html = `
             <div class="page-header">
-                <h2>Batch Payment Application</h2>
+                <h2>Bulk Receipt Allocation</h2>
             </div>
             <form onsubmit="BatchPaymentsPage.save(event)">
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+                        Use bulk receipt allocation when a remittance covers many invoices. For day-to-day EFT and EFTPOS receipts, prefer matching imported bank transactions during reconciliation.
+                    </div>
+                </div>
                 <div class="form-grid">
                     <div class="form-group"><label>Payment Date *</label>
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Deposit To</label>
-                        <select name="deposit_to_account_id"><option value="">Undeposited Funds</option>${acctOpts}</select></div>
+                        <select id="batch-payment-deposit-to" name="deposit_to_account_id" data-auto-selected="false" onchange="BatchPaymentsPage.markDepositSelectionManual()"><option value="">${escapeHtml(initialState.blankLabel)}</option>${acctOpts}</select>
+                        <div id="batch-payment-hint" style="margin-top:6px; font-size:11px; color:var(--text-muted);">${escapeHtml(initialState.helpText)}</div></div>
                     <div class="form-group"><label>Method</label>
-                        <select name="method">
-                            <option value="EFT">EFT</option><option value="Cash">Cash</option>
-                            <option value="Credit">Credit</option>
+                        <select id="batch-payment-method" name="method" onchange="BatchPaymentsPage.syncMethodDefaults()">
+                            <option value="EFT">EFT</option><option value="EFTPOS/Card">EFTPOS/Card</option><option value="Cash">Cash</option>
+                            <option value="Other">Other</option>
                         </select></div>
                     <div class="form-group"><label>Reference</label>
                         <input name="reference"></div>
@@ -62,9 +126,14 @@ const BatchPaymentsPage = {
 
         html += `<div id="batch-total" style="margin-top:12px;font-size:16px;font-weight:700;color:var(--qb-navy);">Total: $0.00</div>
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Apply Batch Payment</button>
+                <button type="submit" class="btn btn-primary">Create Receipt Allocations</button>
             </div></form>`;
 
+        if (typeof setTimeout === 'function') {
+            setTimeout(() => BatchPaymentsPage.syncMethodDefaults(bankAccounts), 0);
+        } else {
+            BatchPaymentsPage.syncMethodDefaults(bankAccounts);
+        }
         return html;
     },
 

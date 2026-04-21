@@ -7,6 +7,64 @@
  * version had a known bug with credit memos that Intuit never fixed.
  */
 const PaymentsPage = {
+    receiptBankAccounts(accounts = []) {
+        return (accounts || []).filter(account => {
+            if (!account) return false;
+            if (account.account_type && account.account_type !== 'asset') return false;
+            const label = `${account.account_number || ''} ${account.name || ''}`.toLowerCase();
+            return !label.includes('undeposited') && !label.includes('receipt clearing');
+        });
+    },
+
+    depositFieldState(method, accounts = []) {
+        const normalizedMethod = String(method || '').trim().toLowerCase();
+        const isCash = normalizedMethod === 'cash';
+        const bankAccounts = PaymentsPage.receiptBankAccounts(accounts);
+        return {
+            blankLabel: isCash
+                ? 'Undeposited Funds / Receipt Clearing (recommended for cash)'
+                : 'Match from bank feed later / choose bank now',
+            defaultAccountId: isCash ? '' : String(bankAccounts[0]?.id || ''),
+            helpText: isCash
+                ? 'Use cash for notes/coins you will bank later. Leave Deposit To blank to hold the receipt in Undeposited Funds / Receipt Clearing until you make a deposit.'
+                : 'For EFT or EFTPOS/card, most NZ businesses match the invoice from imported bank transactions. If you already know the remittance, record it straight to the bank account that received it.',
+        };
+    },
+
+    markDepositSelectionManual() {
+        const depositSelect = $('#payment-deposit-to');
+        if (depositSelect) depositSelect.dataset.autoSelected = 'false';
+    },
+
+    syncMethodDefaults(accounts = null) {
+        const methodSelect = $('#payment-method');
+        const depositSelect = $('#payment-deposit-to');
+        const hint = $('#payment-method-hint');
+        if (!methodSelect || !depositSelect) return;
+
+        const availableAccounts = accounts || Array.from(depositSelect.options || [])
+            .filter(option => option.value)
+            .map(option => ({ id: option.value }));
+        const state = PaymentsPage.depositFieldState(methodSelect.value, availableAccounts);
+        if (depositSelect.options?.length) {
+            depositSelect.options[0].textContent = state.blankLabel;
+        }
+        if (hint) hint.textContent = state.helpText;
+
+        if (state.defaultAccountId) {
+            if (!depositSelect.value || depositSelect.dataset.autoSelected === 'true') {
+                depositSelect.value = state.defaultAccountId;
+                depositSelect.dataset.autoSelected = 'true';
+            }
+            return;
+        }
+
+        if (depositSelect.dataset.autoSelected === 'true') {
+            depositSelect.value = '';
+        }
+        depositSelect.dataset.autoSelected = 'false';
+    },
+
     async render() {
         const payments = await API.get('/payments');
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -92,13 +150,20 @@ const PaymentsPage = {
             API.get('/customers?active_only=true'),
             API.get('/accounts'),
         ]);
-        const bankAccts = accounts.filter(a => a.account_type === 'asset');
+        const bankAccts = PaymentsPage.receiptBankAccounts(accounts);
 
         const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-        const bankOpts = bankAccts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+        const bankOpts = bankAccts.map(a => `<option value="${a.id}">${escapeHtml(a.account_number || '')} - ${escapeHtml(a.name)}</option>`).join('');
+        const initialState = PaymentsPage.depositFieldState('', bankAccts);
 
         openModal('Record Payment', `
             <form id="payment-form" onsubmit="PaymentsPage.save(event)">
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+                        Most NZ EFT and EFTPOS receipts are best matched from the bank feed when the statement line arrives.
+                        Record a payment here when you already know the remittance, or when you are handling cash that needs to sit in receipt clearing until deposit.
+                    </div>
+                </div>
                 <div class="form-grid">
                     <div class="form-group"><label>Customer *</label>
                         <select name="customer_id" required onchange="PaymentsPage.loadInvoices(this.value)">
@@ -108,15 +173,16 @@ const PaymentsPage = {
                     <div class="form-group"><label>Amount *</label>
                         <input name="amount" type="number" step="0.01" required></div>
                     <div class="form-group"><label>Method</label>
-                        <select name="method">
+                        <select id="payment-method" name="method" onchange="PaymentsPage.syncMethodDefaults()">
                             <option value="">--</option>
-                            <option>EFT</option><option>Cash</option><option>Credit</option>
+                            <option>EFT</option><option>EFTPOS/Card</option><option>Cash</option><option>Other</option>
                         </select></div>
                     <div class="form-group"><label>Reference</label>
                         <input name="reference"></div>
                     <div class="form-group"><label>Deposit To</label>
-                        <select name="deposit_to_account_id">
-                            <option value="">--</option>${bankOpts}</select></div>
+                        <select id="payment-deposit-to" name="deposit_to_account_id" data-auto-selected="false" onchange="PaymentsPage.markDepositSelectionManual()">
+                            <option value="">${escapeHtml(initialState.blankLabel)}</option>${bankOpts}</select>
+                        <div id="payment-method-hint" style="margin-top:6px; font-size:11px; color:var(--text-muted);">${escapeHtml(initialState.helpText)}</div></div>
                     <div class="form-group full-width"><label>Notes</label>
                         <textarea name="notes"></textarea></div>
                 </div>
@@ -126,6 +192,11 @@ const PaymentsPage = {
                     <button type="submit" class="btn btn-primary">Record Payment</button>
                 </div>
             </form>`);
+        if (typeof setTimeout === 'function') {
+            setTimeout(() => PaymentsPage.syncMethodDefaults(bankAccts), 0);
+        } else {
+            PaymentsPage.syncMethodDefaults(bankAccts);
+        }
     },
 
     async loadInvoices(customerId) {

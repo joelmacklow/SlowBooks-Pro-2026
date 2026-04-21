@@ -51,6 +51,9 @@ const context = {
         gstCodes: [],
         hasPermission: () => true,
         navigate() {},
+        setDetailOrigin() {},
+        navigateBackToDetailOrigin() {},
+        detailBackLabel: (_detailHash, _fallbackHash, fallback) => fallback,
     },
     openModal: (_title, html) => { modalHtml = html; },
     closeModal() {},
@@ -94,10 +97,11 @@ vm.runInContext(code, context);
 
     const depositsHtml = await context.DepositsPage.render();
     assert.ok(depositsHtml.includes('Aroha Ltd'));
+    assert.ok(depositsHtml.includes('Receipt clearing'));
     assert.ok(depositsHtml.includes('Record Deposit'));
 
     const registerHtml = await context.CheckRegisterPage.render();
-    assert.ok(registerHtml.includes('Check Register'));
+    assert.ok(registerHtml.includes('Bank Register'));
     await context.CheckRegisterPage.load(21);
     assert.ok(elements['#check-register-body'].innerHTML.includes('Opening'));
 

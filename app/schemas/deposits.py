@@ -9,6 +9,7 @@ class PendingDepositResponse(BaseModel):
     transaction_id: Optional[int] = None
     date: date
     customer_name: str
+    method: Optional[str] = None
     reference: Optional[str] = None
     amount: float
 

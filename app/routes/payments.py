@@ -23,6 +23,23 @@ from app.services.closing_date import check_closing_date
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
+def _cash_clearing_method(method: str | None) -> bool:
+    return str(method or "").strip().lower() == "cash"
+
+
+def _validate_manual_receipt_deposit_target(
+    *,
+    method: str | None,
+    deposit_to_account_id: int | None,
+) -> None:
+    if deposit_to_account_id is not None or _cash_clearing_method(method) or not str(method or "").strip():
+        return
+    raise HTTPException(
+        status_code=400,
+        detail="Select a bank account for EFT/EFTPOS receipts, or wait to match the payment from imported bank transactions.",
+    )
+
+
 def _payment_response(payment: Payment) -> PaymentResponse:
     resp = PaymentResponse.model_validate(payment)
     if payment.customer:
@@ -75,6 +92,10 @@ def create_payment(
     auth=Depends(require_permissions("sales.manage")),
 ):
     check_closing_date(db, data.date)
+    _validate_manual_receipt_deposit_target(
+        method=data.method,
+        deposit_to_account_id=data.deposit_to_account_id,
+    )
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")

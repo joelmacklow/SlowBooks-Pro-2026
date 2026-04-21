@@ -1,11 +1,18 @@
 const DepositsPage = {
+    depositAccounts(accounts = []) {
+        return (accounts || []).filter(account => {
+            const label = `${account.account_number || ''} ${account.name || ''}`.toLowerCase();
+            return !label.includes('undeposited') && !label.includes('receipt clearing');
+        });
+    },
+
     async render() {
         const [pending, accounts] = await Promise.all([
             API.get('/deposits/pending'),
             API.get('/accounts?active_only=true&account_type=asset'),
         ]);
         const canManage = App.hasPermission ? App.hasPermission('banking.manage') : true;
-        const bankOptions = accounts.map(account =>
+        const bankOptions = DepositsPage.depositAccounts(accounts).map(account =>
             `<option value="${account.id}">${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`
         ).join('');
         let html = `
@@ -14,12 +21,18 @@ const DepositsPage = {
             </div>`;
 
         if (!pending.length) {
-            html += `<div class="empty-state"><p>No pending customer receipts in Undeposited Funds / Receipt Clearing.</p></div>`;
+            html += `<div class="empty-state"><p>No pending cash or receipt-clearing payments waiting to be banked.</p></div>`;
             return html;
         }
 
         html += `
             <form onsubmit="DepositsPage.save(event)">
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+                        Use deposits for cash or receipt-clearing funds that have now been banked.
+                        EFT and EFTPOS receipts should usually reconcile straight from imported bank transactions instead of passing through this screen.
+                    </div>
+                </div>
                 <div class="form-grid" style="margin-bottom:16px;">
                     <div class="form-group"><label>Date *</label><input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Deposit To *</label><select name="deposit_to_account_id" required><option value="">Select...</option>${bankOptions}</select></div>
@@ -27,12 +40,13 @@ const DepositsPage = {
                     <div class="form-group full-width"><label>Memo</label><input name="memo" placeholder="Optional deposit memo"></div>
                 </div>
                 <div class="table-container"><table>
-                    <thead><tr><th style="width:30px;"></th><th>Date</th><th>Customer</th><th>Reference</th><th class="amount">Amount</th></tr></thead>
+                    <thead><tr><th style="width:30px;"></th><th>Date</th><th>Customer</th><th>Method</th><th>Reference</th><th class="amount">Amount</th></tr></thead>
                     <tbody>
                         ${pending.map(payment => `<tr>
                             <td><input type="checkbox" class="deposit-payment" value="${payment.payment_id}" data-amount="${payment.amount}" onchange="DepositsPage.updateTotal()"></td>
                             <td>${formatDate(payment.date)}</td>
                             <td>${escapeHtml(payment.customer_name)}</td>
+                            <td>${escapeHtml(payment.method || 'Receipt clearing')}</td>
                             <td>${escapeHtml(payment.reference || '')}</td>
                             <td class="amount">${formatCurrency(payment.amount)}</td>
                         </tr>`).join('')}

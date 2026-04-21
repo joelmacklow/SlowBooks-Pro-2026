@@ -32,11 +32,26 @@ vm.runInContext(code, context);
 (async () => {
     const html = await context.BatchPaymentsPage.render();
     assert.ok(html.includes('<option value="EFT">EFT</option>'));
+    assert.ok(html.includes('<option value="EFTPOS/Card">EFTPOS/Card</option>'));
     assert.ok(html.includes('<option value="Cash">Cash</option>'));
-    assert.ok(html.includes('<option value="Credit">Credit</option>'));
+    assert.ok(html.includes('<option value="Other">Other</option>'));
     assert.ok(!html.includes('<option value="check">Check</option>'));
     assert.ok(!html.includes('<option value="ach">ACH</option>'));
     assert.ok(!html.includes('Credit Card'));
+    assert.ok(html.includes('Bulk Receipt Allocation'));
+    assert.ok(html.includes('prefer matching imported bank transactions during reconciliation'));
+
+    const eftState = context.BatchPaymentsPage.depositFieldState('EFT', [
+        { id: 21, name: 'Operating Account', account_number: '090', account_type: 'asset' },
+        { id: 22, name: 'Receipt Clearing', account_number: '615', account_type: 'asset' },
+    ]);
+    assert.strictEqual(eftState.defaultAccountId, '21');
+
+    const cashState = context.BatchPaymentsPage.depositFieldState('Cash', [
+        { id: 21, name: 'Operating Account', account_number: '090', account_type: 'asset' },
+    ]);
+    assert.strictEqual(cashState.defaultAccountId, '');
+    assert.ok(cashState.blankLabel.includes('Undeposited Funds / Receipt Clearing'));
 })().catch(err => {
     console.error(err);
     process.exit(1);

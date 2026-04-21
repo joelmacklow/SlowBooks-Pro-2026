@@ -39,6 +39,7 @@ def list_pending_deposits(
             transaction_id=payment.transaction_id,
             date=payment.date,
             customer_name=payment.customer.name if payment.customer else "Unknown",
+            method=payment.method,
             reference=payment.reference or payment.check_number,
             amount=float(payment.amount),
         )

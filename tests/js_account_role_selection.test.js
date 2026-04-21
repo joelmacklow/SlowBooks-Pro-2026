@@ -40,15 +40,31 @@ vm.runInContext(code, context);
 (async () => {
     await context.PaymentsPage.showForm();
     assert.ok(modalHtml.includes('Business Bank Account'));
-    assert.ok(modalHtml.includes('Receipt Clearing'));
+    assert.ok(!modalHtml.includes('Receipt Clearing'));
     assert.ok(!modalHtml.includes('Trade Creditors'));
     assert.ok(modalHtml.includes('<option>EFT</option>'));
+    assert.ok(modalHtml.includes('<option>EFTPOS/Card</option>'));
     assert.ok(modalHtml.includes('<option>Cash</option>'));
-    assert.ok(modalHtml.includes('<option>Credit</option>'));
+    assert.ok(modalHtml.includes('<option>Other</option>'));
     assert.ok(!modalHtml.includes('ACH/EFT'));
     assert.ok(!modalHtml.includes('<option>Check</option>'));
     assert.ok(!modalHtml.includes('Check #'));
     assert.ok(modalHtml.includes('<label>Reference</label>'));
+    assert.ok(modalHtml.includes('Most NZ EFT and EFTPOS receipts are best matched from the bank feed'));
+    assert.ok(modalHtml.includes('Match from bank feed later / choose bank now'));
+
+    const eftState = context.PaymentsPage.depositFieldState('EFT', [
+        { id: 11, account_type: 'asset', account_number: '090', name: 'Business Bank Account' },
+        { id: 12, account_type: 'asset', account_number: '615', name: 'Receipt Clearing' },
+    ]);
+    assert.strictEqual(eftState.defaultAccountId, '11');
+    assert.ok(eftState.helpText.includes('imported bank transactions'));
+
+    const cashState = context.PaymentsPage.depositFieldState('Cash', [
+        { id: 11, account_type: 'asset', account_number: '090', name: 'Business Bank Account' },
+    ]);
+    assert.strictEqual(cashState.defaultAccountId, '');
+    assert.ok(cashState.blankLabel.includes('Undeposited Funds / Receipt Clearing'));
 })().catch(err => {
     console.error(err);
     process.exit(1);

@@ -15,6 +15,10 @@ from app.services.closing_date import check_closing_date
 router = APIRouter(prefix="/api/batch-payments", tags=["batch_payments"])
 
 
+def _cash_clearing_method(method: str | None) -> bool:
+    return str(method or "").strip().lower() == "cash"
+
+
 @router.post("")
 def create_batch_payment(
     data: BatchPaymentCreate,
@@ -23,6 +27,11 @@ def create_batch_payment(
 ):
     if not data.allocations:
         raise HTTPException(status_code=400, detail="No allocations provided")
+    if not data.deposit_to_account_id and not _cash_clearing_method(data.method):
+        raise HTTPException(
+            status_code=400,
+            detail="Select a bank account for EFT/EFTPOS bulk receipts, or leave this workflow for cash/remittance exceptions only.",
+        )
 
     ar_id = get_ar_account_id(db)
     created_payments = []

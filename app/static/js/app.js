@@ -28,7 +28,7 @@ const App = {
         '/payments':      { page: 'payments',        label: 'Receive Payments',   permission: 'sales.view', render: () => PaymentsPage.render() },
         '/banking':       { page: 'banking',         label: 'Bank Accounts',      permission: 'banking.view', render: () => BankingPage.render() },
         '/deposits':      { page: 'deposits',        label: 'Make Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
-        '/check-register': { page: 'check-register', label: 'Check Register',     permission: 'banking.view', render: () => CheckRegisterPage.render() },
+        '/check-register': { page: 'check-register', label: 'Bank Register',      permission: 'banking.view', render: () => CheckRegisterPage.render() },
         '/cc-charges':    { page: 'cc-charges',      label: 'Credit Card Charges', permission: 'banking.view', render: () => CCChargesPage.render() },
         '/journal':       { page: 'journal',         label: 'Journal Entries',    permission: 'accounts.manage', render: () => JournalPage.render() },
         '/opening-balances': { page: 'opening-balances', label: 'Opening Balances', permission: 'accounts.manage', render: () => OpeningBalancesPage.render() },
@@ -62,7 +62,7 @@ const App = {
         // Phase 3: Productivity
         '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', permission: 'sales.view', render: () => RecurringPage.render() },
         '/recurring/detail': { page: 'recurring',    label: 'Recurring Invoice',  permission: 'sales.view', render: () => RecurringPage.renderDetailScreen() },
-        '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     permission: 'sales.batch_payments.view', render: () => BatchPaymentsPage.render() },
+        '/batch-payments': { page: 'batch-payments', label: 'Bulk Receipt Allocation', permission: 'sales.batch_payments.view', render: () => BatchPaymentsPage.render() },
         // Phase 4: CSV Import/Export
         '/csv':           { page: 'csv',             label: 'CSV Import/Export',  permission: 'import_export.view', render: () => App.renderCSV() },
         // Phase 5: Advanced Integration

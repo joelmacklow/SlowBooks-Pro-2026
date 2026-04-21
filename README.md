@@ -35,9 +35,9 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 ### Invoicing & Payments (Accounts Receivable)
 - **Invoices** — Create, edit, duplicate, void, mark as sent, email as PDF. Auto-numbering, auto due-date from terms, dynamic line items with running totals. Print/PDF generation via WeasyPrint
 - **Estimates** — Full estimate workflow with convert-to-invoice (deep-copies all fields and line items)
-- **Payments** — Record payments with allocation across multiple invoices. Auto-updates invoice balances and status (draft/sent/partial/paid)
+- **Payments** — Record cash receipts or known remittances with allocation across multiple invoices. Auto-updates invoice balances and status (draft/sent/partial/paid) while steering EFT/EFTPOS receipts toward bank-feed matching
 - **Recurring Invoices** — Schedule automatic invoice generation (weekly/monthly/quarterly/yearly) with manual "Generate Now" or cron script
-- **Batch Payments** — Apply payments to multiple invoices across multiple customers in a single transaction
+- **Bulk Receipt Allocation** — Apply one remittance across multiple invoices/customers when bank-feed matching is not the best fit
 - **Credit Memos** — Issue credits against customers, apply to invoices to reduce balance due. Proper reversing journal entries
 - **Quick Entry Mode** — Batch invoice entry for paper invoice backlog. Save & Next (Ctrl+Enter) with running log
 
@@ -407,7 +407,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 132 routes across 28 route
 |----------|---------|-------------|
 | `/api/recurring` | GET, POST, PUT, DELETE | Recurring invoice templates |
 | `/api/recurring/generate` | POST | Generate due recurring invoices |
-| `/api/batch-payments` | POST | Batch payment application |
+| `/api/batch-payments` | POST | Bulk receipt allocation |
 
 ### Payroll
 | Endpoint | Methods | Description |

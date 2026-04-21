@@ -4,7 +4,7 @@ const CheckRegisterPage = {
         const selectedId = accounts[0]?.id;
         let html = `
             <div class="page-header">
-                <h2>Check Register</h2>
+                <h2>Bank Register</h2>
             </div>
             <div class="toolbar">
                 <select id="check-register-account" onchange="CheckRegisterPage.load(this.value)">

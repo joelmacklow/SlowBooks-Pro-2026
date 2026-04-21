@@ -748,7 +748,7 @@ def check_register(account_id: int = None, db: Session = Depends(get_db), auth=D
     if not account:
         return {"account_id": None, "account_name": "", "account_number": "", "starting_balance": 0, "entries": []}
     if account.account_type != AccountType.ASSET:
-        raise HTTPException(status_code=400, detail="Check register requires an asset account")
+        raise HTTPException(status_code=400, detail="Bank register requires an asset account")
 
     rows = (
         db.query(TransactionLine, Transaction)
