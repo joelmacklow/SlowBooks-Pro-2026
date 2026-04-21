@@ -26,7 +26,7 @@ from app.services import csv_export, csv_import, email_service, pdf_service
 class CapturingHTML:
     rendered = []
 
-    def __init__(self, string):
+    def __init__(self, string, **_kwargs):
         self.string = string
         self.__class__.rendered.append(string)
 

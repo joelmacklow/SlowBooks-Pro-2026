@@ -3,7 +3,9 @@ import types
 import unittest
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 weasyprint_stub = types.ModuleType("weasyprint")
@@ -16,7 +18,7 @@ from app.services import pdf_service
 class CapturingHTML:
     rendered = []
 
-    def __init__(self, string):
+    def __init__(self, string, **_kwargs):
         self.string = string
         self.__class__.rendered.append(string)
 
@@ -66,12 +68,18 @@ class PdfServiceFormattingTests(unittest.TestCase):
             notes=None,
         )
 
-        pdf_service.generate_invoice_pdf(invoice, self.company)
+        fake_logo = Path("/tmp/slowbooks-test-logo.png")
+        with mock.patch("app.services.pdf_service.Path.exists", autospec=True) as mock_exists, \
+             mock.patch("app.services.pdf_service.UPLOADS_DIR", Path("/tmp")):
+            mock_exists.side_effect = lambda path_obj: str(path_obj) == str(fake_logo)
+            company = dict(self.company)
+            company["company_logo_path"] = "/static/uploads/slowbooks-test-logo.png"
+            pdf_service.generate_invoice_pdf(invoice, company)
 
         rendered = CapturingHTML.rendered[-1]
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn('class="company-logo"', rendered)
-        self.assertIn('/static/uploads/company_logo.png', rendered)
+        self.assertIn(fake_logo.as_uri(), rendered)
         self.assertNotIn('<div class="company-name">SlowBooks NZ</div>', rendered)
         self.assertIn('GST Number', rendered)
         self.assertIn('123-456-789', rendered)
@@ -86,6 +94,7 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("021 123 4567", rendered)
         self.assertIn("Wellington Wellington 6011", rendered)
         self.assertIn('class="no-wrap"', rendered)
+        self.assertIn('payment-advice-table', rendered)
 
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(

@@ -13,8 +13,8 @@
     {% set company_gst_number = company.gst_number or company.company_tax_id or '' %}
     <div class="header">
         <div class="company-panel">
-            {% if company.company_logo_path %}
-            <img class="company-logo" src="{{ company.company_logo_path }}" alt="{{ company.company_name }}">
+            {% if company.company_logo_src %}
+            <img class="company-logo" src="{{ company.company_logo_src }}" alt="{{ company.company_name }}">
             {% else %}
             <div class="company-name">{{ company.company_name }}</div>
             {% endif %}
@@ -112,7 +112,7 @@
     {% if inv.balance_due and inv.balance_due != 0 %}
     <div class="remittance-panel page-break-avoid">
         <div class="section-heading">Payment Advice</div>
-        <table class="meta-table compact">
+        <table class="meta-table compact payment-advice-table">
             <tr><td class="meta-label no-wrap">Customer</td><td>{{ customer_name }}</td></tr>
             {% if customer_company %}<tr><td class="meta-label no-wrap">Company</td><td>{{ customer_company }}</td></tr>{% endif %}
             {% if customer_email %}<tr><td class="meta-label no-wrap">Email</td><td>{{ customer_email }}</td></tr>{% endif %}
