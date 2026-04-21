@@ -2,42 +2,44 @@
 <html>
 <head>
 <style>
-    @page { size: letter; margin: 0.6in 0.75in; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a2e; line-height: 1.4; }
-    .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-    .company-info { font-size: 9pt; color: #4a4a6a; }
-    .company-name { font-size: 16pt; font-weight: 700; color: #003366; margin-bottom: 4px; }
-    .doc-title { text-align: right; }
-    .doc-title h1 { font-size: 22pt; font-weight: 700; color: #003366; margin: 0; letter-spacing: 0.05em; }
-    .as-of { font-size: 10pt; color: #666; margin-top: 4px; }
-    .customer-block { margin-bottom: 20px; padding: 12px; background: #f7f9fb; border: 1px solid #e0e0e0; }
-    .customer-name { font-size: 14pt; font-weight: 700; color: #003366; margin-bottom: 4px; }
-    .customer-info { font-size: 9pt; color: #333; }
-    table.activity { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    table.activity th { background: #003366; color: white; padding: 5px 8px; font-size: 8pt; text-transform: uppercase; text-align: left; letter-spacing: 0.03em; }
-    table.activity th.r { text-align: right; }
-    table.activity td { padding: 5px 8px; font-size: 9pt; border-bottom: 1px solid #e0e0e0; }
-    table.activity td.r { text-align: right; font-variant-numeric: tabular-nums; }
-    table.activity tr:nth-child(even) { background: #f7f9fb; }
-    .aging-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    .aging-table th { background: #4a4a6a; color: white; padding: 5px 8px; font-size: 8pt; text-transform: uppercase; text-align: right; }
-    .aging-table th:first-child { text-align: left; }
-    .aging-table td { padding: 5px 8px; font-size: 10pt; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-    .aging-table td:first-child { text-align: left; }
-    .summary { float: right; width: 260px; margin-top: 16px; }
-    .summary table { width: 100%; }
-    .summary td { padding: 3px 8px; font-size: 10pt; }
-    .summary td.r { text-align: right; font-variant-numeric: tabular-nums; }
-    .summary .label { font-weight: 700; color: #4a4a6a; }
-    .summary .grand { font-size: 14pt; font-weight: 700; color: #003366; border-top: 2px solid #003366; padding-top: 4px; }
-    .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 7pt; color: #999; padding: 8px 0; }
+{% include "_document_theme.html" %}
+.aging-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.45cm;
+    margin-bottom: 16px;
+}
+.aging-card {
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+}
+.aging-card .amount {
+    margin-top: 6px;
+    font-size: 15pt;
+    font-weight: 700;
+    color: var(--brand);
+    font-variant-numeric: tabular-nums;
+}
 </style>
 </head>
 <body>
+    {% set ns = namespace(overdue=0.0, current=0.0, balance_due=0.0, running=0.0) %}
+    {% for inv in invoices %}
+        {% if inv.balance_due and inv.balance_due > 0 %}
+            {% set ns.balance_due = ns.balance_due + (inv.balance_due | float) %}
+            {% if inv.due_date and inv.due_date < as_of_date %}
+                {% set ns.overdue = ns.overdue + (inv.balance_due | float) %}
+            {% else %}
+                {% set ns.current = ns.current + (inv.balance_due | float) %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+
     <div class="header">
-        <div>
+        <div class="company-panel">
             <div class="company-name">{{ company.company_name }}</div>
-            <div class="company-info">
+            <div class="company-meta">
                 {% if company.company_address1 %}{{ company.company_address1 }}<br>{% endif %}
                 {% if company.company_address2 %}{{ company.company_address2 }}<br>{% endif %}
                 {% if company.company_city or company.company_state or company.company_zip %}{{ [company.company_city, company.company_state, company.company_zip] | select | join(' ') }}<br>{% endif %}
@@ -45,35 +47,70 @@
                 {% if company.company_email %}{{ company.company_email }}{% endif %}
             </div>
         </div>
-        <div class="doc-title">
-            <h1>STATEMENT</h1>
-            <div class="as-of">As of {{ as_of_date | fdate }}</div>
+        <div class="doc-panel">
+            <div class="doc-kicker">Customer document</div>
+            <h1 class="doc-title">STATEMENT</h1>
+            <div class="doc-subtitle">As of {{ as_of_date | fdate }}</div>
         </div>
     </div>
 
-    <div class="customer-block">
-        <div class="customer-name">{{ customer.name }}</div>
-        <div class="customer-info">
-            {% if customer.bill_address1 %}{{ customer.bill_address1 }}<br>{% endif %}
-            {% if customer.bill_address2 %}{{ customer.bill_address2 }}<br>{% endif %}
-            {% if customer.bill_city or customer.bill_state or customer.bill_zip %}{{ [customer.bill_city, customer.bill_state, customer.bill_zip] | select | join(' ') }}{% endif %}
+    <div class="detail-grid">
+        <div class="detail-card">
+            <div class="section-heading">Statement To</div>
+            <p>
+                <strong>{{ customer.name }}</strong><br>
+                {% if customer.bill_address1 %}{{ customer.bill_address1 }}<br>{% endif %}
+                {% if customer.bill_address2 %}{{ customer.bill_address2 }}<br>{% endif %}
+                {% if customer.bill_city or customer.bill_state or customer.bill_zip %}{{ [customer.bill_city, customer.bill_state, customer.bill_zip] | select | join(' ') }}{% endif %}
+            </p>
+        </div>
+        <div class="detail-card">
+            <div class="section-heading">Balance Summary</div>
+            <p>
+                Overdue: {{ ns.overdue | currency }}<br>
+                Current: {{ ns.current | currency }}<br>
+                Total due: {{ ns.balance_due | currency }}
+            </p>
         </div>
     </div>
 
-    <table class="activity">
-        <thead><tr>
-            <th>Date</th><th>Type</th><th>Number</th><th>Description</th>
-            <th class="r">Amount</th><th class="r">Balance</th>
-        </tr></thead>
+    <div class="aging-grid page-break-avoid">
+        <div class="aging-card">
+            <div class="section-heading">Overdue</div>
+            <div class="amount">{{ ns.overdue | currency }}</div>
+        </div>
+        <div class="aging-card">
+            <div class="section-heading">Current</div>
+            <div class="amount">{{ ns.current | currency }}</div>
+        </div>
+        <div class="aging-card">
+            <div class="section-heading">Total Due</div>
+            <div class="amount">{{ ns.balance_due | currency }}</div>
+        </div>
+    </div>
+
+    <table class="doc-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Reference</th>
+                <th>Description</th>
+                <th class="r">Amount</th>
+                <th class="r">Balance</th>
+            </tr>
+        </thead>
         <tbody>
-        {% set ns = namespace(running=0) %}
         {% for inv in invoices %}
             {% set ns.running = ns.running + (inv.total | float) %}
             <tr>
                 <td>{{ inv.date | fdate }}</td>
                 <td>Invoice</td>
                 <td>{{ inv.invoice_number }}</td>
-                <td>{{ inv.notes or '' }}</td>
+                <td>
+                    {% if inv.due_date %}Due {{ inv.due_date | fdate }}{% endif %}
+                    {% if inv.notes %}{% if inv.due_date %}<br>{% endif %}{{ inv.notes }}{% endif %}
+                </td>
                 <td class="r">{{ inv.total | currency }}</td>
                 <td class="r">{{ ns.running | currency }}</td>
             </tr>
@@ -85,21 +122,28 @@
                 <td>Payment</td>
                 <td>{{ pmt.reference or pmt.check_number or '' }}</td>
                 <td>{{ pmt.method or '' }}</td>
-                <td class="r" style="color: #006600;">-{{ pmt.amount | currency }}</td>
+                <td class="r">-{{ pmt.amount | currency }}</td>
                 <td class="r">{{ ns.running | currency }}</td>
             </tr>
         {% endfor %}
         </tbody>
     </table>
 
-    <div class="summary">
-        <table>
-            <tr><td class="label">Total Invoiced</td><td class="r">{{ invoices | sum(attribute='total') | currency }}</td></tr>
-            <tr><td class="label">Total Payments</td><td class="r">{{ payments | sum(attribute='amount') | currency }}</td></tr>
-            <tr><td class="label grand">Balance Due</td><td class="r grand">{{ ((invoices | sum(attribute='total')) - (payments | sum(attribute='amount'))) | currency }}</td></tr>
+    <div class="remittance-panel page-break-avoid">
+        <div class="section-heading">Payment Advice</div>
+        <table class="meta-table compact">
+            <tr><td class="meta-label">Customer</td><td>{{ customer.name }}</td></tr>
+            <tr><td class="meta-label">Statement Date</td><td>{{ as_of_date | fdate }}</td></tr>
+            <tr><td class="meta-label">Overdue</td><td>{{ ns.overdue | currency }}</td></tr>
+            <tr><td class="meta-label">Current</td><td>{{ ns.current | currency }}</td></tr>
+            <tr><td class="meta-label">Total Due</td><td>{{ ns.balance_due | currency }}</td></tr>
         </table>
+        <p class="muted">Please include your customer name or invoice reference when paying this statement.</p>
     </div>
 
-    <div class="footer">Generated by Slowbooks Pro 2026 &mdash; Build 12.0.3190-R</div>
+    <div class="footer">
+        <span class="footer-left">{{ company.company_name or 'SlowBooks Pro 2026' }} | Statement for {{ customer.name }}</span>
+        <span class="footer-right"></span>
+    </div>
 </body>
 </html>

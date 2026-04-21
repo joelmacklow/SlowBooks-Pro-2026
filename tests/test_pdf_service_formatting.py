@@ -56,9 +56,13 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_invoice_pdf(invoice, self.company)
 
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn("Payment Advice", rendered)
+        self.assertIn("Invoice Summary", rendered)
 
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(
@@ -82,9 +86,13 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_estimate_pdf(estimate, self.company)
 
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("13 May 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("13 May 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn("QUOTE", rendered)
+        self.assertIn("Quote Summary", rendered)
 
     def test_statement_pdf_uses_rendered_company_settings(self):
         customer = SimpleNamespace(
@@ -117,12 +125,16 @@ class PdfServiceFormattingTests(unittest.TestCase):
             customer, invoices, payments, self.company, as_of_date=date(2026, 4, 30)
         )
 
-        self.assertIn("30 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
-        self.assertIn("$234.50", CapturingHTML.rendered[-1])
-        self.assertIn("$1,000.00", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("30 Apr 2026", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn("$234.50", rendered)
+        self.assertIn("$1,000.00", rendered)
+        self.assertIn("Balance Summary", rendered)
+        self.assertIn("Payment Advice", rendered)
 
     def test_payroll_payslip_pdf_uses_nz_payroll_labels_and_company_settings(self):
         pay_run = SimpleNamespace(
@@ -152,12 +164,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_payroll_payslip_pdf(pay_run, stub, employee, self.company)
 
-        self.assertIn("Payslip", CapturingHTML.rendered[-1])
-        self.assertIn("Aroha Ngata", CapturingHTML.rendered[-1])
-        self.assertIn("15 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("PAYE", CapturingHTML.rendered[-1])
-        self.assertIn("ACC Earners' Levy", CapturingHTML.rendered[-1])
-        self.assertIn("$2,241.72", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Payslip", rendered)
+        self.assertIn("Aroha Ngata", rendered)
+        self.assertIn("15 Apr 2026", rendered)
+        self.assertIn("PAYE", rendered)
+        self.assertIn("ACC Earners' Levy", rendered)
+        self.assertIn("$2,241.72", rendered)
 
     def test_credit_memo_pdf_uses_rendered_company_settings(self):
         credit_memo = SimpleNamespace(
@@ -173,9 +187,12 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_credit_memo_pdf(credit_memo, self.company)
 
-        self.assertIn("Credit Note", CapturingHTML.rendered[-1])
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,419.68", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Credit Note", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("$1,419.68", rendered)
+        self.assertIn("Credit Summary", rendered)
 
     def test_purchase_order_pdf_uses_rendered_company_settings(self):
         purchase_order = SimpleNamespace(
@@ -193,9 +210,12 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_purchase_order_pdf(purchase_order, self.company)
 
-        self.assertIn("Purchase Order", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,419.68", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Purchase Order", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertIn("$1,419.68", rendered)
+        self.assertIn("Delivery Details", rendered)
 
     def test_invoice_pdf_escapes_untrusted_html_fields(self):
         invoice = SimpleNamespace(
