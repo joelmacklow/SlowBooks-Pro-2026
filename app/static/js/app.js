@@ -428,11 +428,11 @@ const App = {
                 <div class="snapshot-compare-bars">
                     <div class="snapshot-compare-bar">
                         <span>Income ${formatCurrency(income)}</span>
-                        <div><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--primary" style="width:${incomePct}%"></div></div>
+                        <div class="snapshot-compare-bar__track"><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--primary" style="width:${incomePct}%"></div></div>
                     </div>
                     <div class="snapshot-compare-bar">
                         <span>Expenses ${formatCurrency(expenses)}</span>
-                        <div><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--muted" style="width:${expensePct}%"></div></div>
+                        <div class="snapshot-compare-bar__track"><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--muted" style="width:${expensePct}%"></div></div>
                     </div>
                 </div>
             </section>`;
@@ -479,7 +479,7 @@ const App = {
     renderDashboardWatchlistWidget(watchlist = []) {
         const canOpenAccounts = App.hasPermission('accounts.view');
         const body = watchlist.length
-            ? `<div class="table-container snapshot-table-container"><table>
+            ? `<div class="table-container snapshot-table-container"><table class="snapshot-watchlist-table">
                 <thead><tr><th>Code</th><th>Account</th><th class="amount">This month</th><th class="amount">YTD</th></tr></thead>
                 <tbody>${watchlist.map(entry => `
                     <tr>

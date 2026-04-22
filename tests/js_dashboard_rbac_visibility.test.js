@@ -117,6 +117,8 @@ const makeContext = ({ permissions, dashboardData, chartsData }) => {
     assert.ok(ownerHtml.includes('Chart of accounts watchlist'));
     assert.ok(ownerHtml.includes('Main Bank'));
     assert.ok(ownerHtml.includes('Sales'));
+    assert.ok(ownerHtml.includes('snapshot-compare-bar__track'));
+    assert.ok(ownerHtml.includes('snapshot-watchlist-table'));
     assert.deepStrictEqual(ownerContext.__apiCalls, ['/dashboard', '/dashboard/charts']);
 
     const emptyOwnerContext = makeContext({

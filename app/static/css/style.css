@@ -738,7 +738,7 @@ td.amount, th.amount {
 .snapshot-dashboard {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
 }
 
 .snapshot-hero {
@@ -746,36 +746,38 @@ td.amount, th.amount {
     justify-content: space-between;
     align-items: flex-start;
     gap: 16px;
-    padding: 18px 20px;
-    background: linear-gradient(180deg, #f7fafc 0%, #edf2f8 100%);
-    border: 1px solid #d7e0eb;
-    border-radius: 16px;
-    box-shadow: 0 10px 24px rgba(12, 32, 68, 0.08);
+    padding: 10px 14px;
+    background: linear-gradient(180deg, #f6f8fb 0%, #dee6f0 100%);
+    border: 1px solid #b9c7d6;
+    border-radius: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), 0 1px 2px rgba(16, 34, 58, 0.08);
 }
 
 .snapshot-hero__eyebrow {
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--qb-blue);
-    margin-bottom: 4px;
+    color: var(--qb-gold);
+    margin-bottom: 2px;
 }
 
 .snapshot-hero h2 {
     margin: 0;
     color: var(--qb-navy);
+    font-size: 16px;
 }
 
 .snapshot-hero p,
 .snapshot-hero__meta {
-    margin: 6px 0 0;
-    font-size: 12px;
+    margin: 4px 0 0;
+    font-size: 11px;
     color: var(--text-secondary);
 }
 
 .snapshot-hero__meta {
     white-space: nowrap;
+    align-self: center;
 }
 
 .snapshot-kpi-grid,
@@ -788,39 +790,43 @@ td.amount, th.amount {
 .snapshot-kpi-card,
 .snapshot-widget,
 .snapshot-mini-card {
-    background: #ffffff;
-    border: 1px solid #d7e0eb;
-    border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(15, 32, 58, 0.08);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #bcc9d6;
+    border-radius: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.92), 0 1px 2px rgba(16, 34, 58, 0.07);
 }
 
 .snapshot-kpi-card {
     grid-column: span 3;
-    padding: 16px 18px;
+    padding: 12px 14px 14px;
+    min-height: 80px;
 }
 
 .snapshot-kpi-card span {
     display: block;
-    margin-bottom: 8px;
-    font-size: 11px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d7dee8;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    color: var(--qb-navy);
 }
 
 .snapshot-kpi-card strong {
-    font-size: 26px;
-    color: var(--qb-navy);
+    font-size: 24px;
+    color: #004388;
     font-family: var(--font-mono);
+    font-weight: 700;
 }
 
 .snapshot-widget {
     grid-column: span 4;
-    padding: 18px;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
 }
 
 .snapshot-widget--wide {
@@ -832,42 +838,53 @@ td.amount, th.amount {
     justify-content: space-between;
     align-items: flex-start;
     gap: 12px;
+    padding: 12px 14px 0;
 }
 
 .snapshot-widget__header h3 {
     margin: 0;
     color: var(--qb-navy);
-    font-size: 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--qb-gold);
 }
 
 .snapshot-widget__header p {
-    margin: 4px 0 0;
-    font-size: 12px;
+    margin: 8px 0 0;
+    font-size: 11px;
     color: var(--text-secondary);
 }
 
 .snapshot-widget-action {
     white-space: nowrap;
+    margin-top: 10px;
+    margin-right: 14px;
 }
 
 .snapshot-big-number {
-    font-size: 36px;
+    font-size: 32px;
     line-height: 1.1;
-    color: var(--qb-navy);
+    color: #004388;
     font-family: var(--font-mono);
     font-weight: 700;
+    padding: 0 14px;
 }
 
 .snapshot-metric-caption {
-    margin-top: -6px;
-    font-size: 12px;
+    margin-top: -4px;
+    font-size: 11px;
     color: var(--text-secondary);
+    padding: 0 14px;
 }
 
 .snapshot-metric-list {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    padding: 0 14px 14px;
 }
 
 .snapshot-metric-row {
@@ -900,6 +917,7 @@ td.amount, th.amount {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    padding: 0 14px 14px;
 }
 
 .snapshot-compare-bar {
@@ -911,25 +929,35 @@ td.amount, th.amount {
     color: var(--text-secondary);
 }
 
-.snapshot-compare-bar > div:last-child {
-    height: 10px;
-    background: #edf2f7;
-    border-radius: 999px;
+.snapshot-compare-bar__track {
+    height: 16px;
+    background: linear-gradient(180deg, #f7f9fc 0%, #e6edf5 100%);
+    border: 1px solid #c7d2de;
+    border-radius: 0;
     overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
 }
 
 .snapshot-compare-bar__fill {
     height: 100%;
-    border-radius: 999px;
+    border-radius: 0;
+    border-right: 1px solid rgba(0,0,0,0.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.24);
 }
 
-.snapshot-compare-bar__fill--primary { background: var(--qb-blue); }
-.snapshot-compare-bar__fill--muted { background: #8fb9dc; }
+.snapshot-compare-bar__fill--primary {
+    background: linear-gradient(180deg, #5b87b7 0%, #335f8c 100%);
+}
+
+.snapshot-compare-bar__fill--muted {
+    background: linear-gradient(180deg, #97bddc 0%, #6e98bc 100%);
+}
 
 .snapshot-split-metrics {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
+    padding: 0 14px;
 }
 
 .snapshot-split-metrics span {
@@ -951,7 +979,8 @@ td.amount, th.amount {
     gap: 10px;
     align-items: flex-end;
     min-height: 190px;
-    padding-top: 10px;
+    padding: 14px 14px 16px;
+    border-top: 1px solid #d8dfe8;
 }
 
 .snapshot-bar-group {
@@ -968,17 +997,29 @@ td.amount, th.amount {
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
+    padding: 0 8px 2px;
+    border-bottom: 2px solid #3f6f9d;
 }
 
 .snapshot-bar {
-    width: calc(50% - 3px);
+    width: calc(50% - 4px);
     min-height: 4px;
-    border-radius: 10px 10px 0 0;
+    border-radius: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
-.snapshot-bar--in { background: var(--qb-blue); }
-.snapshot-bar--out { background: #9dd0f6; }
+.snapshot-bar--in {
+    background: linear-gradient(180deg, #4d7aac 0%, #335f8c 100%);
+    border: 1px solid #2f5981;
+    border-bottom: none;
+}
+
+.snapshot-bar--out {
+    background: linear-gradient(180deg, #8fbce3 0%, #6796bf 100%);
+    border: 1px solid #5a86ab;
+    border-bottom: none;
+}
 
 .snapshot-bar-group__label {
     font-size: 11px;
@@ -989,10 +1030,11 @@ td.amount, th.amount {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
+    padding: 0 14px 14px;
 }
 
 .snapshot-mini-card {
-    padding: 14px 16px;
+    padding: 12px 14px;
 }
 
 .snapshot-mini-card__top,
@@ -1033,11 +1075,12 @@ td.amount, th.amount {
     min-height: 120px;
     justify-content: center;
     align-items: flex-start;
-    padding: 18px;
-    border: 1px dashed #c7d4e3;
-    border-radius: 14px;
+    padding: 14px;
+    border: 1px solid #c4cfdb;
+    border-radius: 0;
     color: var(--text-secondary);
-    background: #f8fbff;
+    background: linear-gradient(180deg, #fdfefe 0%, #f4f8fc 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.92);
 }
 
 .snapshot-empty-state--inline {
@@ -1048,13 +1091,39 @@ td.amount, th.amount {
     color: var(--qb-navy);
 }
 
-.snapshot-table-container {
-    margin: 0;
+.snapshot-widget > .snapshot-empty-state {
+    margin: 0 14px 14px;
 }
 
-.snapshot-table-container table {
-    border-radius: 12px;
-    overflow: hidden;
+.snapshot-table-container {
+    margin: 0 14px 14px;
+    border-color: #aebdcd;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.94);
+}
+
+.snapshot-watchlist-table {
+    border: 1px solid #b5c4d3;
+}
+
+.snapshot-watchlist-table thead th {
+    padding: 4px 10px;
+    background: linear-gradient(180deg, #edf1f6 0%, #d7e0e8 100%);
+    border-bottom: 1px solid #adbccb;
+    border-right-color: #c8d2dc;
+}
+
+.snapshot-watchlist-table tbody td {
+    padding: 4px 10px;
+    border-right-color: #dde5ec;
+    border-bottom-color: #dbe4ec;
+}
+
+.snapshot-watchlist-table tbody tr:nth-child(even) {
+    background: #f9fbfd;
+}
+
+.snapshot-watchlist-table tbody tr:hover {
+    background: #edf3f8;
 }
 
 @media (max-width: 1200px) {
