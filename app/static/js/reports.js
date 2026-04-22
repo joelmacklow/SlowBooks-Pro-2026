@@ -548,6 +548,7 @@ const ReportsPage = {
         const section = (items) => items.map(i =>
             `<tr><td style="padding-left:24px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(Math.abs(i.amount))}</td></tr>`
         ).join("") || `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
+        const diffStyle = data.is_balanced ? 'color:var(--success);' : 'color:var(--danger);';
         return `
             <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
             <div class="table-container"><table>
@@ -561,7 +562,10 @@ const ReportsPage = {
                     <tr style="font-weight:600; background:var(--gray-50);"><td>Total Liabilities</td><td class="amount">${formatCurrency(data.total_liabilities)}</td></tr>
                     <tr><td><strong>Equity</strong></td><td></td></tr>
                     ${section(data.equity)}
+                    <tr><td style="padding-left:24px;">Current Earnings</td><td class="amount">${formatCurrency(data.current_earnings)}</td></tr>
                     <tr style="font-weight:600; background:var(--gray-50);"><td>Total Equity</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
+                    <tr style="font-weight:600; background:var(--gray-50);"><td>Total Liabilities + Equity</td><td class="amount">${formatCurrency(data.total_liabilities_and_equity)}</td></tr>
+                    <tr style="font-weight:700; ${diffStyle}"><td>Difference</td><td class="amount">${formatCurrency(data.balance_difference)}</td></tr>
                 </tbody>
             </table></div>`;
     },

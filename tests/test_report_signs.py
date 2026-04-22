@@ -104,6 +104,40 @@ class ReportSignTests(unittest.TestCase):
         self.assertEqual(report["total_assets"], 65.0)
         self.assertEqual(report["total_liabilities"], 15.0)
         self.assertEqual(report["total_equity"], 50.0)
+        self.assertEqual(report["current_earnings"], 0.0)
+        self.assertEqual(report["total_liabilities_and_equity"], 65.0)
+        self.assertEqual(report["balance_difference"], 0.0)
+        self.assertTrue(report["is_balanced"])
+
+    def test_balance_sheet_includes_unclosed_earnings_in_equity_total(self):
+        from app.routes.reports import balance_sheet
+        from app.services.accounting import create_journal_entry
+
+        with self.Session() as db:
+            bank = Account(name="Business Bank", account_number="090", account_type=AccountType.ASSET, is_active=True)
+            sales = Account(name="Sales", account_number="4000", account_type=AccountType.INCOME, is_active=True)
+            db.add_all([bank, sales])
+            db.commit()
+
+            create_journal_entry(db, date(2026, 4, 1), "sale", [
+                {"account_id": bank.id, "debit": Decimal("100.00"), "credit": Decimal("0.00")},
+                {"account_id": sales.id, "debit": Decimal("0.00"), "credit": Decimal("100.00")},
+            ])
+            db.commit()
+
+            report = balance_sheet(
+                as_of_date=date(2026, 4, 30),
+                db=db,
+                auth={"user_id": 1},
+            )
+
+        self.assertEqual(report["total_assets"], 100.0)
+        self.assertEqual(report["total_liabilities"], 0.0)
+        self.assertEqual(report["current_earnings"], 100.0)
+        self.assertEqual(report["total_equity"], 100.0)
+        self.assertEqual(report["total_liabilities_and_equity"], 100.0)
+        self.assertEqual(report["balance_difference"], 0.0)
+        self.assertTrue(report["is_balanced"])
 
 
 if __name__ == "__main__":

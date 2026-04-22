@@ -262,7 +262,10 @@ def _report_tables_balance_sheet(report: dict, company: dict) -> list[dict]:
         _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
         for entry in report["equity"]
     )
+    rows.append(_pdf_row(_pdf_cell("Current Earnings"), _pdf_cell(format_currency(report["current_earnings"], company), align="right")))
     rows.append(_pdf_row(_pdf_cell("Total Equity"), _pdf_cell(format_currency(report["total_equity"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Total Liabilities + Equity"), _pdf_cell(format_currency(report["total_liabilities_and_equity"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Difference"), _pdf_cell(format_currency(report["balance_difference"], company), align="right"), class_name="total-row"))
     return [{
         "columns": [{"label": "Account"}, {"label": "Amount", "align": "right", "width": "24%"}],
         "rows": rows,
@@ -655,19 +658,31 @@ def balance_sheet(
     assets = get_balances(AccountType.ASSET)
     liabilities = get_balances(AccountType.LIABILITY)
     equity = get_balances(AccountType.EQUITY)
+    current_earnings = profit_loss(
+        start_date=date(1900, 1, 1),
+        end_date=as_of_date,
+        db=db,
+        auth=auth,
+    )["net_income"]
 
     total_assets = sum(a["amount"] for a in assets)
     total_liabilities = sum(abs(l["amount"]) for l in liabilities)
-    total_equity = sum(abs(e["amount"]) for e in equity)
+    total_equity = sum(abs(e["amount"]) for e in equity) + current_earnings
+    total_liabilities_and_equity = total_liabilities + total_equity
+    balance_difference = total_assets - total_liabilities_and_equity
 
     return {
         "as_of_date": as_of_date.isoformat(),
         "assets": assets,
         "liabilities": liabilities,
         "equity": equity,
+        "current_earnings": current_earnings,
         "total_assets": total_assets,
         "total_liabilities": total_liabilities,
         "total_equity": total_equity,
+        "total_liabilities_and_equity": total_liabilities_and_equity,
+        "balance_difference": balance_difference,
+        "is_balanced": abs(balance_difference) < 0.005,
     }
 
 

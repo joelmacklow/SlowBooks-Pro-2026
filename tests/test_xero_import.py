@@ -73,6 +73,10 @@ class XeroImportTests(unittest.TestCase):
         self.assertEqual(pnl['net_income'], 100.0)
         self.assertEqual(bs['total_assets'], 115.0)
         self.assertEqual(bs['total_liabilities'], 15.0)
+        self.assertEqual(bs['current_earnings'], 100.0)
+        self.assertEqual(bs['total_equity'], 100.0)
+        self.assertEqual(bs['total_liabilities_and_equity'], 115.0)
+        self.assertEqual(bs['balance_difference'], 0.0)
         self.assertTrue(readiness['is_ready'])
         self.assertEqual(readiness['source'], CHART_SETUP_SOURCE_XERO_IMPORT)
 
