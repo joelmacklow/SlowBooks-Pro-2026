@@ -424,7 +424,7 @@ const App = {
                     ${canOpenReports ? App.renderDashboardAction('Profit & Loss', '#/reports/profit-loss') : ''}
                 </div>
                 <div class="snapshot-big-number">${formatCurrency(profitSummary.net_profit || 0)}</div>
-                <div class="${trendClass}">${escapeHtml(changeText || 'Tracking current year-to-date performance')}</div>
+                <div class="${trendClass} snapshot-widget__trend">${escapeHtml(changeText || 'Tracking current year-to-date performance')}</div>
                 <div class="snapshot-compare-bars">
                     <div class="snapshot-compare-bar">
                         <span>Income ${formatCurrency(income)}</span>

@@ -910,6 +910,10 @@ td.amount, th.amount {
     font-weight: 700;
 }
 
+.snapshot-widget__trend {
+    padding: 0 14px;
+}
+
 .snapshot-trend--up { color: var(--success); }
 .snapshot-trend--down { color: var(--danger); }
 
