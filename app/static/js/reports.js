@@ -68,10 +68,12 @@ const ReportsPage = {
             ["this_quarter", "This Quarter"],
             ["this_year", "This Year"],
             ["this_year_to_date", "This Year to Date"],
+            ["this_fy", "This FY"],
             ["last_month", "Last Month"],
             ["last_quarter", "Last Quarter"],
             ["last_year", "Last Year"],
             ["last_year_to_date", "Last Year to Date"],
+            ["last_fy", "Last FY"],
             ["custom", "Custom Date"],
         ];
         return options.map(([value, label]) =>
@@ -89,6 +91,34 @@ const ReportsPage = {
 
     _quarterStart(monthIndex) {
         return Math.floor(monthIndex / 3) * 3;
+    },
+
+    _financialYearBoundary() {
+        const value = typeof App !== "undefined" && App.settings ? App.settings.financial_year_start : "";
+        const match = /^(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+        if (!match) return { month: 1, day: 1 };
+        const month = Number(match[1]);
+        const day = Number(match[2]);
+        if (!month || month < 1 || month > 12 || !day || day < 1 || day > 31) {
+            return { month: 1, day: 1 };
+        }
+        return { month, day };
+    },
+
+    _financialYearStartForDate(dateObj) {
+        const boundary = ReportsPage._financialYearBoundary();
+        const candidate = new Date(dateObj.getFullYear(), boundary.month - 1, boundary.day);
+        if (dateObj < candidate) {
+            return new Date(dateObj.getFullYear() - 1, boundary.month - 1, boundary.day);
+        }
+        return candidate;
+    },
+
+    _financialYearRange(offset = 0) {
+        const currentStart = ReportsPage._financialYearStartForDate(new Date());
+        const start = new Date(currentStart.getFullYear() + offset, currentStart.getMonth(), currentStart.getDate());
+        const end = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate() - 1);
+        return { start, end };
     },
 
     getDateRange(period, customStart = null, customEnd = null) {
@@ -118,6 +148,12 @@ const ReportsPage = {
                 start = new Date(year, 0, 1);
                 end = today;
                 break;
+            case "this_fy": {
+                const range = ReportsPage._financialYearRange(0);
+                start = range.start;
+                end = range.end;
+                break;
+            }
             case "last_month":
                 start = new Date(year, month - 1, 1);
                 end = new Date(year, month, 0);
@@ -136,6 +172,12 @@ const ReportsPage = {
                 start = new Date(year - 1, 0, 1);
                 end = new Date(year - 1, month, Math.min(day, new Date(year - 1, month + 1, 0).getDate()));
                 break;
+            case "last_fy": {
+                const range = ReportsPage._financialYearRange(-1);
+                start = range.start;
+                end = range.end;
+                break;
+            }
             case "custom":
                 return {
                     start: customStart || ReportsPage._isoDate(new Date(year, 0, 1)),

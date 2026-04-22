@@ -137,6 +137,7 @@ def get_public_settings(db: Session = Depends(get_db)):
         "company_name",
         "default_terms",
         "payment_terms_config",
+        "financial_year_start",
         "default_tax_rate",
         "country",
         "currency",
