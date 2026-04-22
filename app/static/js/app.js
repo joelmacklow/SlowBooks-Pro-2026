@@ -625,18 +625,19 @@ const App = {
             </div>
             ${App.renderSystemAccountRoles(systemRoles, { canManageSystemRoles })}
             <div class="table-container"><table>
-                <thead><tr><th style="width:80px;">Number</th><th>Name</th><th style="width:100px;">Type</th><th class="amount" style="width:100px;">Balance</th><th style="width:60px;">Actions</th></tr></thead>
+                <thead><tr><th style="width:80px;">Number</th><th>Name</th><th style="width:100px;">Type</th><th style="width:60px;">Favorite</th><th class="amount" style="width:100px;">Balance</th><th style="width:60px;">Actions</th></tr></thead>
                 <tbody>`;
 
         for (const type of typeOrder) {
             const accts = grouped[type] || [];
             if (accts.length === 0) continue;
-            html += `<tr style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="5" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
+            html += `<tr style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="6" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
             for (const a of accts) {
                 html += `<tr>
                     <td style="font-family:var(--font-mono);">${escapeHtml(a.account_number || '')}</td>
                     <td>${a.is_system ? '' : ''}<strong>${escapeHtml(a.name)}</strong></td>
                     <td>${a.account_type}</td>
+                    <td style="text-align:center;">${a.is_dashboard_favorite ? '&#9733;' : ''}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
                         ${canManageAccounts ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
@@ -721,7 +722,7 @@ const App = {
     },
 
     async showAccountForm(id = null) {
-        let acct = { name: '', account_number: '', account_type: 'expense', description: '' };
+        let acct = { name: '', account_number: '', account_type: 'expense', description: '', is_dashboard_favorite: false };
         if (id) acct = await API.get(`/accounts/${id}`);
 
         const types = ['asset','liability','equity','income','cogs','expense'];
@@ -736,6 +737,12 @@ const App = {
                         <select name="account_type">
                             ${types.map(t => `<option value="${t}" ${acct.account_type===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
                         </select></div>
+                    <div class="form-group full-width form-group--checkbox">
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="is_dashboard_favorite" ${acct.is_dashboard_favorite ? 'checked' : ''}>
+                            <span>Show this account in the dashboard watchlist</span>
+                        </label>
+                    </div>
                     <div class="form-group full-width"><label>Description</label>
                         <textarea name="description">${escapeHtml(acct.description || '')}</textarea></div>
                 </div>
@@ -749,6 +756,8 @@ const App = {
     async saveAccount(e, id) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
+        const favoriteField = e.target.elements?.is_dashboard_favorite || (e.target.querySelector ? e.target.querySelector('input[name="is_dashboard_favorite"]') : null);
+        data.is_dashboard_favorite = !!(favoriteField && favoriteField.checked);
         try {
             if (id) { await API.put(`/accounts/${id}`, data); toast('Account updated'); }
             else { await API.post('/accounts', data); toast('Account created'); }

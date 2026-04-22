@@ -281,6 +281,15 @@
     background: linear-gradient(180deg, #1a1c24 0%, #14161c 100%);
 }
 
+[data-theme="dark"] .form-group input[type="checkbox"] {
+    background: transparent;
+    box-shadow: none;
+}
+
+[data-theme="dark"] .checkbox-option {
+    color: var(--text-primary);
+}
+
 /* Modal */
 [data-theme="dark"] .modal {
     background: var(--form-bg);

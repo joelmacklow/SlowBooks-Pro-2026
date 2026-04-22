@@ -190,10 +190,14 @@ def build_dashboard_bank_account_summaries(db: Session) -> list[dict]:
 
 def _account_totals_by_period(
     db: Session,
-    account_types: tuple[AccountType, ...],
+    account_types: tuple[AccountType, ...] | None,
     start_date: date,
     end_date: date,
+    account_ids: list[int] | None = None,
 ) -> list[tuple[int, str | None, str, AccountType, Decimal]]:
+    if account_ids == []:
+        return []
+
     rows = (
         db.query(
             Account.id,
@@ -206,12 +210,15 @@ def _account_totals_by_period(
         .join(TransactionLine, TransactionLine.account_id == Account.id)
         .join(Transaction, TransactionLine.transaction_id == Transaction.id)
         .filter(Account.is_active == True)
-        .filter(Account.account_type.in_(account_types))
         .filter(Transaction.date >= start_date)
         .filter(Transaction.date <= end_date)
-        .group_by(Account.id, Account.account_number, Account.name, Account.account_type)
-        .all()
     )
+    if account_types:
+        rows = rows.filter(Account.account_type.in_(account_types))
+    if account_ids:
+        rows = rows.filter(Account.id.in_(account_ids))
+
+    rows = rows.group_by(Account.id, Account.account_number, Account.name, Account.account_type).all()
     return [
         (account_id, account_number, account_name, account_type, natural_balance_amount(account_type, debit_total, credit_total))
         for account_id, account_number, account_name, account_type, debit_total, credit_total in rows
@@ -222,6 +229,35 @@ def build_dashboard_account_watchlist(db: Session, today: date | None = None, li
     today = today or date.today()
     start_of_year = date(today.year, 1, 1)
     start_of_month = date(today.year, today.month, 1)
+
+    favorite_accounts = (
+        db.query(Account)
+        .filter(Account.is_active == True, Account.is_dashboard_favorite == True)
+        .order_by(Account.account_number, Account.name)
+        .limit(limit)
+        .all()
+    )
+    if favorite_accounts:
+        favorite_ids = [account.id for account in favorite_accounts]
+        month_totals = {
+            account_id: amount
+            for account_id, _account_number, _account_name, _account_type, amount
+            in _account_totals_by_period(db, None, start_of_month, today, account_ids=favorite_ids)
+        }
+        ytd_totals = {
+            account_id: amount
+            for account_id, _account_number, _account_name, _account_type, amount
+            in _account_totals_by_period(db, None, start_of_year, today, account_ids=favorite_ids)
+        }
+        return [{
+            "account_id": account.id,
+            "account_number": account.account_number or "",
+            "account_name": account.name,
+            "this_month": float(month_totals.get(account.id, Decimal("0.00"))),
+            "ytd": float(ytd_totals.get(account.id, Decimal("0.00"))),
+            "cta_hash": "#/accounts",
+        } for account in favorite_accounts]
+
     watchlist_types = (AccountType.INCOME, AccountType.COGS, AccountType.EXPENSE)
 
     month_totals = {

@@ -33,6 +33,7 @@ class Account(Base):
     description = Column(String(500), nullable=True)          # field 0x04, LPSTR[255]
     is_active = Column(Boolean, default=True)                 # field 0x08, BOOL (0xFF = inactive)
     is_system = Column(Boolean, default=False)  # seed accounts can't be deleted
+    is_dashboard_favorite = Column(Boolean, default=False, nullable=False)
     balance = Column(Numeric(12, 2), default=0)               # field 0x06, BCD[6] packed decimal
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

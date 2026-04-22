@@ -193,6 +193,32 @@ class DashboardSnapshotMetricsTests(unittest.TestCase):
         self.assertEqual(len(payload["cash_flow"]["months"]), 6)
         self.assertEqual(payload["cash_flow"]["months"][-1]["month"], "Apr")
 
+    def test_dashboard_watchlist_prefers_favorite_accounts_and_keeps_zero_activity_rows(self):
+        from app.models.accounts import Account
+        from app.routes.dashboard import get_dashboard
+
+        with self.Session() as db:
+            bank = db.query(Account).filter(Account.account_number == "090").one()
+            loan = db.query(Account).filter(Account.account_number == "850").one()
+            bank.is_dashboard_favorite = True
+            loan.is_dashboard_favorite = True
+            db.commit()
+
+        with mock.patch("app.routes.dashboard.date", FrozenDate), mock.patch("app.services.dashboard_metrics.date", FrozenDate):
+            with self.Session() as db:
+                payload = get_dashboard(
+                    db=db,
+                    auth=SimpleNamespace(permissions={"dashboard.financials.view"}),
+                )
+
+        self.assertEqual([row["account_number"] for row in payload["watchlist"]], ["090", "850"])
+        bank_row = payload["watchlist"][0]
+        loan_row = payload["watchlist"][1]
+        self.assertEqual(bank_row["this_month"], -30.0)
+        self.assertEqual(bank_row["ytd"], 1020.0)
+        self.assertEqual(loan_row["this_month"], 0.0)
+        self.assertEqual(loan_row["ytd"], 0.0)
+
     def test_dashboard_hides_financial_summary_without_permission(self):
         from app.routes.dashboard import get_dashboard
 
