@@ -5,8 +5,13 @@ const FixedAssetsPage = {
         App.navigate(detailHash);
     },
 
-    openEditAssetForm(assetId) {
-        return FixedAssetsPage.showAssetForm(assetId);
+    async openEditAssetForm(assetId) {
+        try {
+            return await FixedAssetsPage.showAssetForm(assetId);
+        } catch (err) {
+            toast(err.message || 'Unable to open asset details', 'error');
+            return null;
+        }
     },
 
     _queryParam(name) {

@@ -99,6 +99,12 @@ vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;\nth
 
     const editCalls = [];
     context.FixedAssetsPage.showAssetForm = (id) => { editCalls.push(id); };
-    context.FixedAssetsPage.openEditAssetForm(1);
+    await context.FixedAssetsPage.openEditAssetForm(1);
     assert.deepStrictEqual(editCalls, [1]);
+
+    const toasts = [];
+    context.toast = (message, tone) => { toasts.push([message, tone]); };
+    context.FixedAssetsPage.showAssetForm = async () => { throw new Error('boom'); };
+    await context.FixedAssetsPage.openEditAssetForm(1);
+    assert.deepStrictEqual(toasts, [['boom', 'error']]);
 })();
