@@ -60,6 +60,7 @@ from app.services.gst_return_filing import (
     get_confirmed_return,
 )
 from app.services.gst_settlement import build_settlement_state, confirm_settlement
+from app.services.fixed_assets import fixed_asset_reconciliation as build_fixed_asset_reconciliation
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -719,6 +720,15 @@ def balance_sheet_pdf(
         tables=_report_tables_balance_sheet(report, company),
     )
     return _report_pdf_response(pdf_bytes, f'BalanceSheet_{report["as_of_date"]}.pdf')
+
+
+@router.get("/fixed-assets-reconciliation")
+def fixed_assets_reconciliation_report(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    return build_fixed_asset_reconciliation(db, as_of_date or date.today())
 
 
 @router.get("/trial-balance")

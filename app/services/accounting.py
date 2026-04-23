@@ -385,6 +385,33 @@ def get_employer_kiwisaver_expense_account_id(db: Session, allow_create: bool = 
     )
 
 
+def get_fixed_asset_accumulated_depreciation_account_id(db: Session, allow_create: bool = True) -> int | None:
+    return _resolve_system_account_id(
+        db,
+        "system_account_fixed_asset_accumulated_depreciation_id",
+        account_type=AccountType.ASSET,
+        fallback_numbers=("711", "721", "1510"),
+        fallback_names=(
+            "Less Accumulated Depreciation on Office Equipment",
+            "Less Accumulated Depreciation on Computer Equipment",
+            "Accumulated Depreciation",
+        ),
+        allow_create=allow_create,
+    )
+
+
+def get_fixed_asset_depreciation_expense_account_id(db: Session, allow_create: bool = True) -> int | None:
+    return _resolve_system_account_id(
+        db,
+        "system_account_fixed_asset_depreciation_expense_id",
+        account_type=AccountType.EXPENSE,
+        fallback_numbers=("416", "6800"),
+        fallback_names=("Depreciation", "Depreciation Expense"),
+        prefer_first_by_type=True,
+        allow_create=allow_create,
+    )
+
+
 def get_paye_payable_account_id(db: Session, allow_create: bool = True) -> int | None:
     return _resolve_system_account_id(
         db,
@@ -526,6 +553,27 @@ SYSTEM_ACCOUNT_ROLE_DEFINITIONS = (
         auto_create_on_use=True,
     ),
     SystemAccountRoleDefinition(
+        key="system_account_fixed_asset_accumulated_depreciation_id",
+        label="Fixed Asset Accumulated Depreciation",
+        description="Default accumulated depreciation account for fixed asset types.",
+        account_type=AccountType.ASSET,
+        fallback_numbers=("711", "721", "1510"),
+        fallback_names=(
+            "Less Accumulated Depreciation on Office Equipment",
+            "Less Accumulated Depreciation on Computer Equipment",
+            "Accumulated Depreciation",
+        ),
+    ),
+    SystemAccountRoleDefinition(
+        key="system_account_fixed_asset_depreciation_expense_id",
+        label="Fixed Asset Depreciation Expense",
+        description="Default depreciation expense account for fixed asset types.",
+        account_type=AccountType.EXPENSE,
+        fallback_numbers=("416", "6800"),
+        fallback_names=("Depreciation", "Depreciation Expense"),
+        prefer_first_by_type=True,
+    ),
+    SystemAccountRoleDefinition(
         key="system_account_paye_payable_id",
         label="PAYE Payable",
         description="Payroll liability for PAYE, ACC earners levy, and student loan deductions.",
@@ -608,6 +656,10 @@ def _role_resolved_account_id(db: Session, role_key: str, allow_create: bool = F
         return get_wages_expense_account_id(db, allow_create=allow_create)
     if role_key == "system_account_employer_kiwisaver_expense_id":
         return get_employer_kiwisaver_expense_account_id(db, allow_create=allow_create)
+    if role_key == "system_account_fixed_asset_accumulated_depreciation_id":
+        return get_fixed_asset_accumulated_depreciation_account_id(db, allow_create=allow_create)
+    if role_key == "system_account_fixed_asset_depreciation_expense_id":
+        return get_fixed_asset_depreciation_expense_account_id(db, allow_create=allow_create)
     if role_key == "system_account_paye_payable_id":
         return get_paye_payable_account_id(db, allow_create=allow_create)
     if role_key == "system_account_kiwisaver_payable_id":

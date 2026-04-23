@@ -35,6 +35,7 @@ from app.models.backups import Backup
 from app.models.companies import Company
 from app.models.payroll import Employee, PayRun, PayStub
 from app.models.payroll_filing import PayrollFilingAudit
+from app.models.fixed_assets import FixedAsset, FixedAssetType
 
 __all__ = [
     "Account", "Customer", "Vendor", "Item",
@@ -58,4 +59,5 @@ __all__ = [
     "TaxCategoryMapping", "Backup",
     # Phase 6
     "Company", "Employee", "PayRun", "PayStub", "PayrollFilingAudit",
+    "FixedAsset", "FixedAssetType",
 ]

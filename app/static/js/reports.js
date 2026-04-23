@@ -43,6 +43,10 @@ const ReportsPage = {
                     <div class="card-header">General Ledger</div>
                     <p style="font-size:13px; color:var(--gray-500);">All journal entries by account</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.fixedAssetsReconciliation()">
+                    <div class="card-header">Fixed Asset Reconciliation</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Cost, accumulated depreciation, and book value by asset</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.incomeByCustomer()">
                     <div class="card-header">Income by Customer</div>
                     <p style="font-size:13px; color:var(--gray-500);">Sales totals per customer</p>
@@ -421,6 +425,15 @@ const ReportsPage = {
                 },
                 renderContent: (data) => ReportsPage.renderIncomeByCustomerContent(data),
             },
+            "fixed-assets-reconciliation": {
+                title: "Fixed Asset Reconciliation",
+                filterMode: "as_of",
+                loadData: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return API.get(`/reports/fixed-assets-reconciliation?as_of_date=${asOfDate}`);
+                },
+                renderContent: (data) => ReportsPage.renderFixedAssetsReconciliationContent(data),
+            },
         };
     },
 
@@ -494,7 +507,7 @@ const ReportsPage = {
             ${customRow}
             <div class="form-actions" style="justify-content:flex-start;">
                 <button class="btn btn-secondary" onclick="ReportsPage.refreshReport('${key}')">Refresh</button>
-                <button class="btn btn-primary" onclick="ReportsPage.openReportPdf('${key}')">View / Print PDF</button>
+                ${definition.pdfPath ? `<button class="btn btn-primary" onclick="ReportsPage.openReportPdf('${key}')">View / Print PDF</button>` : ''}
             </div>`;
     },
 
@@ -566,6 +579,29 @@ const ReportsPage = {
                     <tr style="font-weight:600; background:var(--gray-50);"><td>Total Equity</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
                     <tr style="font-weight:600; background:var(--gray-50);"><td>Total Liabilities + Equity</td><td class="amount">${formatCurrency(data.total_liabilities_and_equity)}</td></tr>
                     <tr style="font-weight:700; ${diffStyle}"><td>Difference</td><td class="amount">${formatCurrency(data.balance_difference)}</td></tr>
+                </tbody>
+            </table></div>`;
+    },
+
+    renderFixedAssetsReconciliationContent(data) {
+        const rows = (data.assets || []).map(asset => `
+            <tr>
+                <td>${escapeHtml(asset.asset_number || '')}</td>
+                <td>${escapeHtml(asset.asset_name || '')}</td>
+                <td>${escapeHtml(asset.asset_type || '')}</td>
+                <td>${formatDate(asset.purchase_date)}</td>
+                <td class="amount">${formatCurrency(asset.purchase_price || 0)}</td>
+                <td class="amount">${formatCurrency(asset.accumulated_depreciation || 0)}</td>
+                <td class="amount">${formatCurrency(asset.book_value || 0)}</td>
+            </tr>
+        `).join('') || `<tr><td colspan="7" style="color:var(--gray-400);">No fixed assets for this date</td></tr>`;
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">As of ${formatDate(data.as_of_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>No.</th><th>Asset</th><th>Type</th><th>Purchase Date</th><th class="amount">Cost</th><th class="amount">Accumulated Depreciation</th><th class="amount">Book Value</th></tr></thead>
+                <tbody>
+                    ${rows}
+                    <tr style="font-weight:600; background:var(--gray-50);"><td colspan="4">Totals</td><td class="amount">${formatCurrency(data.total_cost || 0)}</td><td class="amount">${formatCurrency(data.total_accumulated_depreciation || 0)}</td><td class="amount">${formatCurrency(data.total_book_value || 0)}</td></tr>
                 </tbody>
             </table></div>`;
     },
@@ -1082,6 +1118,14 @@ const ReportsPage = {
 
     renderGeneralLedgerScreen() {
         return ReportsPage.renderReportScreen("general-ledger");
+    },
+
+    renderFixedAssetsReconciliationScreen() {
+        return ReportsPage.renderReportScreen("fixed-assets-reconciliation");
+    },
+
+    fixedAssetsReconciliation() {
+        return ReportsPage.openReport("fixed-assets-reconciliation");
     },
 
     async incomeByCustomer() {

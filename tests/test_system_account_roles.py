@@ -4,6 +4,7 @@ import types
 import unittest
 from datetime import date
 from decimal import Decimal
+from unittest import mock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -85,12 +86,13 @@ class SystemAccountRoleTests(unittest.TestCase):
             db.commit()
             db.refresh(invoice)
 
-            payment = create_payment(PaymentCreate(
-                customer_id=customer.id,
-                date=date(2026, 4, 15),
-                amount=Decimal("100.00"),
-                allocations=[PaymentAllocationCreate(invoice_id=invoice.id, amount=Decimal("100.00"))],
-            ), db=db)
+            with mock.patch("app.routes.payments.check_closing_date", return_value=None):
+                payment = create_payment(PaymentCreate(
+                    customer_id=customer.id,
+                    date=date(2026, 4, 15),
+                    amount=Decimal("100.00"),
+                    allocations=[PaymentAllocationCreate(invoice_id=invoice.id, amount=Decimal("100.00"))],
+                ), db=db)
             payment_row = db.query(__import__("app.models.payments", fromlist=["Payment"]).Payment).filter_by(id=payment.id).one()
             lines = payment_row.transaction.lines
             account_ids = {line.account_id for line in lines}
@@ -131,12 +133,13 @@ class SystemAccountRoleTests(unittest.TestCase):
             db.commit()
             db.refresh(bill)
 
-            payment = create_bill_payment(BillPaymentCreate(
-                vendor_id=vendor.id,
-                date=date(2026, 4, 15),
-                amount=Decimal("100.00"),
-                allocations=[BillPaymentAllocationCreate(bill_id=bill.id, amount=Decimal("100.00"))],
-            ), db=db)
+            with mock.patch("app.routes.bill_payments.check_closing_date", return_value=None):
+                payment = create_bill_payment(BillPaymentCreate(
+                    vendor_id=vendor.id,
+                    date=date(2026, 4, 15),
+                    amount=Decimal("100.00"),
+                    allocations=[BillPaymentAllocationCreate(bill_id=bill.id, amount=Decimal("100.00"))],
+                ), db=db)
             payment_row = db.query(__import__("app.models.bills", fromlist=["BillPayment"]).BillPayment).filter_by(id=payment.id).one()
             lines = payment_row.transaction.lines
             account_ids = {line.account_id for line in lines}
@@ -192,7 +195,8 @@ class SystemAccountRoleTests(unittest.TestCase):
                 pay_date=date(2026, 4, 15),
                 stubs=[PayStubInput(employee_id=employee.id)],
             ), db=db)
-            processed = process_pay_run(draft.id, db=db)
+            with mock.patch("app.routes.payroll.check_closing_date", return_value=None):
+                processed = process_pay_run(draft.id, db=db)
             pay_run_row = db.query(__import__("app.models.payroll", fromlist=["PayRun"]).PayRun).filter_by(id=processed.id).one()
             account_ids = {line.account_id for line in pay_run_row.transaction.lines}
 

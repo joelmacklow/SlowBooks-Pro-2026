@@ -86,6 +86,8 @@ DEFAULT_SETTINGS = {
     "system_account_default_bank_id": "",
     "system_account_wages_expense_id": "",
     "system_account_employer_kiwisaver_expense_id": "",
+    "system_account_fixed_asset_accumulated_depreciation_id": "",
+    "system_account_fixed_asset_depreciation_expense_id": "",
     "system_account_paye_payable_id": "",
     "system_account_kiwisaver_payable_id": "",
     "system_account_esct_payable_id": "",
