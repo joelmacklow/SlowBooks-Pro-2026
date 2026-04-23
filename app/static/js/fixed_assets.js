@@ -1,4 +1,10 @@
 const FixedAssetsPage = {
+    openAssetDetail(assetId) {
+        const detailHash = `#/fixed-assets/detail?id=${assetId}`;
+        App.setDetailOrigin(detailHash, '#/fixed-assets');
+        App.navigate(detailHash);
+    },
+
     _queryParam(name) {
         const hash = location.hash || '';
         const query = hash.includes('?') ? hash.split('?')[1] : '';
@@ -21,7 +27,7 @@ const FixedAssetsPage = {
                 <td class="amount">${formatCurrency(asset.purchase_price || 0)}</td>
                 <td class="amount">${formatCurrency(asset.book_value || 0)}</td>
                 <td>${escapeHtml(asset.status || '')}</td>
-                <td class="actions"><button class="btn btn-sm btn-secondary" onclick="App.navigate('#/fixed-assets/detail?id=${asset.id}')">Open</button></td>
+                <td class="actions"><button class="btn btn-sm btn-secondary" onclick="FixedAssetsPage.openAssetDetail(${asset.id})">Open</button></td>
             </tr>
         `).join('') || `<tr><td colspan="7" style="color:var(--text-muted);">No fixed assets registered yet.</td></tr>`;
 

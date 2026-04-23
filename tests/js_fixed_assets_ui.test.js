@@ -7,6 +7,8 @@ const fixedAssetsCode = fs.readFileSync('app/static/js/fixed_assets.js', 'utf8')
 const context = {
     console,
     location: { hash: '#/fixed-assets' },
+    __navigations: [],
+    __detailOrigins: [],
     API: {
         get: async (path) => {
             if (path === '/fixed-assets') {
@@ -56,8 +58,8 @@ const context = {
         },
     },
     App: {
-        navigate() {},
-        setDetailOrigin() {},
+        navigate(hash) { context.__navigations.push(hash); },
+        setDetailOrigin(detailHash, originHash) { context.__detailOrigins.push([detailHash, originHash]); },
         detailBackLabel() { return 'Back to Fixed Assets'; },
     },
     openModal() {},
@@ -80,6 +82,11 @@ vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;`, c
     assert.ok(listHtml.includes('Register Asset'));
     assert.ok(listHtml.includes('BMW 123D'));
     assert.ok(listHtml.includes('Asset Types & Account Mapping'));
+    assert.ok(listHtml.includes('onclick="FixedAssetsPage.openAssetDetail(1)"'));
+
+    context.FixedAssetsPage.openAssetDetail(1);
+    assert.deepStrictEqual(context.__detailOrigins, [['#/fixed-assets/detail?id=1', '#/fixed-assets']]);
+    assert.deepStrictEqual(context.__navigations, ['#/fixed-assets/detail?id=1']);
 
     context.location.hash = '#/fixed-assets/detail?id=1';
     const detailHtml = await context.FixedAssetsPage.renderDetailScreen();
