@@ -75,9 +75,10 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;`, context);
+vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;\nthis.__fixedAssetsGlobalMatch = (typeof globalThis !== 'undefined' && globalThis.FixedAssetsPage === FixedAssetsPage);`, context);
 
 (async () => {
+    assert.strictEqual(context.__fixedAssetsGlobalMatch, true);
     const listHtml = await context.FixedAssetsPage.render();
     assert.ok(listHtml.includes('Register Asset'));
     assert.ok(listHtml.includes('BMW 123D'));

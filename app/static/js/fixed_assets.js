@@ -362,3 +362,7 @@ const FixedAssetsPage = {
         input.click();
     },
 };
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.FixedAssetsPage = FixedAssetsPage;
+}
