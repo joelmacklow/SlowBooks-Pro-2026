@@ -4,6 +4,7 @@ import types
 import unittest
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -140,6 +141,35 @@ class FixedAssetsTests(unittest.TestCase):
 
         self.assertEqual(result["imported"], 1)
         self.assertEqual(result["created_asset_types"], 1)
+
+    def test_sample_fixed_asset_csv_import_fixture_loads_multiple_assets(self):
+        from app.models.fixed_assets import FixedAsset
+        from app.services.fixed_assets import import_assets_from_csv
+
+        fixture_path = Path(__file__).with_name("fixed_assets_sample_import.csv")
+        csv_text = fixture_path.read_text(encoding="utf-8-sig")
+
+        with self.Session() as db:
+            asset_account = Account(name="Office Equipment", account_number="710", account_type=AccountType.ASSET, is_active=True)
+            acc_dep = Account(name="Less Accumulated Depreciation on Office Equipment", account_number="711", account_type=AccountType.ASSET, is_active=True)
+            dep_exp = Account(name="Depreciation", account_number="416", account_type=AccountType.EXPENSE, is_active=True)
+            db.add_all([asset_account, acc_dep, dep_exp])
+            db.commit()
+            db.add_all([
+                Settings(key="system_account_fixed_asset_accumulated_depreciation_id", value=str(acc_dep.id)),
+                Settings(key="system_account_fixed_asset_depreciation_expense_id", value=str(dep_exp.id)),
+            ])
+            db.commit()
+
+            result = import_assets_from_csv(db, csv_text)
+            rows = db.query(FixedAsset).order_by(FixedAsset.asset_number).all()
+
+        self.assertEqual(result["imported"], 6)
+        self.assertEqual(result["errors"], [])
+        self.assertGreaterEqual(result["created_asset_types"], 4)
+        self.assertEqual(rows[0].asset_number, "FA-1001")
+        self.assertEqual(rows[-1].asset_number, "FA-1006")
+        self.assertEqual(rows[4].status.value, "disposed")
 
 
 if __name__ == "__main__":
