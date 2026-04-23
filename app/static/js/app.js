@@ -224,7 +224,12 @@ const App = {
     },
 
     async navigate(hash) {
-        const path = App.routePathFromHash(hash);
+        const targetHash = hash || '#/';
+        if (typeof location !== 'undefined' && targetHash.startsWith('#') && (location.hash || '#/') !== targetHash) {
+            App._suppressNextHashChange = true;
+            location.hash = targetHash;
+        }
+        const path = App.routePathFromHash(targetHash);
         const route = App.routes[path];
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
         if (path === '/login' && App.authState.authenticated) {

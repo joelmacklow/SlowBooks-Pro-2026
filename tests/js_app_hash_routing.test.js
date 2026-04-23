@@ -28,3 +28,18 @@ assert.strictEqual(context.App.routePathFromHash('#/login?bootstrap_token=setup-
 assert.strictEqual(context.App.routePathFromHash('#/reports/gst-return/detail?period=2026-04'), '/reports/gst-return/detail');
 assert.strictEqual(context.App.routePathFromHash('#/reports/trial-balance?period=this_year_to_date'), '/reports/trial-balance');
 assert.strictEqual(context.App.routePathFromHash('#/'), '/');
+
+context.App.routes = {
+    '/fixed-assets/detail': { page: 'fixed-assets', label: 'Fixed Asset', render: async () => '<div>detail</div>' },
+};
+context.App.authState = { authenticated: true, bootstrap_required: false, user: { membership: { effective_permissions: [] } } };
+context.App.hasPermission = () => true;
+context.App.syncNavAccordion = () => {};
+context.App.setStatus = () => {};
+context.App.syncAuthUI = () => {};
+context.App.syncNavVisibility = () => {};
+
+(async () => {
+    await context.App.navigate('#/fixed-assets/detail?id=7');
+    assert.strictEqual(context.location.hash, '#/fixed-assets/detail?id=7');
+})();
