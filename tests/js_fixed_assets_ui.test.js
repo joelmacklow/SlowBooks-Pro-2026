@@ -94,4 +94,10 @@ vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;`, c
     assert.ok(detailHtml.includes('Book depreciation settings'));
     assert.ok(detailHtml.includes('Sell / Dispose'));
     assert.ok(detailHtml.includes('Current Earnings') === false);
+    assert.ok(detailHtml.includes('onclick="FixedAssetsPage.openEditAssetForm(1)"'));
+
+    const editCalls = [];
+    context.FixedAssetsPage.showAssetForm = (id) => { editCalls.push(id); };
+    context.FixedAssetsPage.openEditAssetForm(1);
+    assert.deepStrictEqual(editCalls, [1]);
 })();

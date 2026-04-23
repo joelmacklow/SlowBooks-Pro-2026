@@ -5,6 +5,10 @@ const FixedAssetsPage = {
         App.navigate(detailHash);
     },
 
+    openEditAssetForm(assetId) {
+        return FixedAssetsPage.showAssetForm(assetId);
+    },
+
     _queryParam(name) {
         const hash = location.hash || '';
         const query = hash.includes('?') ? hash.split('?')[1] : '';
@@ -87,7 +91,7 @@ const FixedAssetsPage = {
                 </div>
                 <div class="btn-group">
                     ${asset.status === 'registered' ? `<button class="btn btn-secondary" onclick="FixedAssetsPage.showDisposeForm(${asset.id})">Sell / Dispose</button>` : ''}
-                    <button class="btn btn-primary" onclick="FixedAssetsPage.showAssetForm(${asset.id})">Edit details</button>
+                    <button class="btn btn-primary" onclick="FixedAssetsPage.openEditAssetForm(${asset.id})">Edit details</button>
                 </div>
             </div>
             <div class="card-grid">
