@@ -15,7 +15,7 @@ const FixedAssetsPage = {
         FixedAssetsPage._assetTypes = assetTypes || [];
         const rows = (assets || []).map(asset => `
             <tr>
-                <td><a href="#/fixed-assets/detail?id=${asset.id}" onclick="App.setDetailOrigin('#/fixed-assets/detail?id=${asset.id}', '#/fixed-assets')"><strong>${escapeHtml(asset.name)}</strong></a></td>
+                <td><strong>${escapeHtml(asset.name)}</strong></td>
                 <td>${escapeHtml(asset.asset_type_name || '')}</td>
                 <td>${formatDate(asset.purchase_date)}</td>
                 <td class="amount">${formatCurrency(asset.purchase_price || 0)}</td>
