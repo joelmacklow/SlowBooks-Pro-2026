@@ -67,7 +67,10 @@ const context = {
     toast() {},
     todayISO: () => '2026-04-23',
     URLSearchParams,
-    escapeHtml: value => String(value || ''),
+    escapeHtml: value => {
+        if (!value) return '';
+        return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
     formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
     formatDate: value => String(value || ''),
     FormData,
@@ -98,7 +101,7 @@ vm.runInContext(`${fixedAssetsCode}\nthis.FixedAssetsPage = FixedAssetsPage;\nth
     assert.ok(detailHtml.includes('onclick="FixedAssetsPage.openEditAssetForm(1)"'));
 
     const editCalls = [];
-    context.FixedAssetsPage.showAssetForm = (id) => { editCalls.push(id); };
+    context.FixedAssetsPage.showAssetForm = async (id) => { editCalls.push(id); };
     await context.FixedAssetsPage.openEditAssetForm(1);
     assert.deepStrictEqual(editCalls, [1]);
 

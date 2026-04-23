@@ -1,4 +1,8 @@
 const FixedAssetsPage = {
+    _escapedValue(value, fallback = '') {
+        return escapeHtml(value === null || value === undefined || value === '' ? fallback : String(value));
+    },
+
     openAssetDetail(assetId) {
         const detailHash = `#/fixed-assets/detail?id=${assetId}`;
         App.setDetailOrigin(detailHash, '#/fixed-assets');
@@ -235,12 +239,12 @@ const FixedAssetsPage = {
         openModal(id ? 'Edit Fixed Asset' : 'Register Fixed Asset', `
             <form onsubmit="FixedAssetsPage.saveAsset(event, ${id || 'null'})">
                 <div class="form-grid">
-                    <div class="form-group"><label>Asset Number</label><input name="asset_number" value="${escapeHtml(current.asset_number || '')}"></div>
-                    <div class="form-group"><label>Asset Name *</label><input name="name" required value="${escapeHtml(current.name || '')}"></div>
+                    <div class="form-group"><label>Asset Number</label><input name="asset_number" value="${FixedAssetsPage._escapedValue(current.asset_number)}"></div>
+                    <div class="form-group"><label>Asset Name *</label><input name="name" required value="${FixedAssetsPage._escapedValue(current.name)}"></div>
                     <div class="form-group"><label>Asset Type *</label><select name="asset_type_id" required>${typeOptions}</select></div>
-                    <div class="form-group"><label>Purchase Date *</label><input name="purchase_date" type="date" required value="${escapeHtml(current.purchase_date || todayISO())}"></div>
-                    <div class="form-group"><label>Purchase Price *</label><input name="purchase_price" type="number" step="0.01" required value="${escapeHtml(current.purchase_price ?? '')}"></div>
-                    <div class="form-group"><label>Depreciation Start Date *</label><input name="depreciation_start_date" type="date" required value="${escapeHtml(current.depreciation_start_date || current.purchase_date || todayISO())}"></div>
+                    <div class="form-group"><label>Purchase Date *</label><input name="purchase_date" type="date" required value="${FixedAssetsPage._escapedValue(current.purchase_date || todayISO())}"></div>
+                    <div class="form-group"><label>Purchase Price *</label><input name="purchase_price" type="number" step="0.01" required value="${FixedAssetsPage._escapedValue(current.purchase_price)}"></div>
+                    <div class="form-group"><label>Depreciation Start Date *</label><input name="depreciation_start_date" type="date" required value="${FixedAssetsPage._escapedValue(current.depreciation_start_date || current.purchase_date || todayISO())}"></div>
                     <div class="form-group"><label>Depreciation Method</label><select name="depreciation_method">
                         <option value="dv" ${(current.depreciation_method || 'dv') === 'dv' ? 'selected' : ''}>Diminishing value</option>
                         <option value="sl" ${(current.depreciation_method || '') === 'sl' ? 'selected' : ''}>Straight line</option>
@@ -249,12 +253,12 @@ const FixedAssetsPage = {
                         <option value="rate" ${(current.calculation_basis || 'rate') === 'rate' ? 'selected' : ''}>Rate</option>
                         <option value="effective_life" ${(current.calculation_basis || '') === 'effective_life' ? 'selected' : ''}>Effective life</option>
                     </select></div>
-                    <div class="form-group"><label>Rate</label><input name="rate" type="number" step="0.0001" value="${escapeHtml(current.rate ?? '')}"></div>
-                    <div class="form-group"><label>Effective Life (years)</label><input name="effective_life_years" type="number" step="0.01" value="${escapeHtml(current.effective_life_years ?? '')}"></div>
-                    <div class="form-group"><label>Cost Limit</label><input name="cost_limit" type="number" step="0.01" value="${escapeHtml(current.cost_limit ?? '')}"></div>
-                    <div class="form-group"><label>Residual Value</label><input name="residual_value" type="number" step="0.01" value="${escapeHtml(current.residual_value ?? '0')}"></div>
-                    <div class="form-group"><label>Opening Accumulated Depreciation</label><input name="opening_accumulated_depreciation" type="number" step="0.01" value="${escapeHtml(current.opening_accumulated_depreciation ?? '0')}"></div>
-                    <div class="form-group"><label>Investment Boost</label><input name="investment_boost" type="number" step="0.01" value="${escapeHtml(current.investment_boost ?? '')}"></div>
+                    <div class="form-group"><label>Rate</label><input name="rate" type="number" step="0.0001" value="${FixedAssetsPage._escapedValue(current.rate)}"></div>
+                    <div class="form-group"><label>Effective Life (years)</label><input name="effective_life_years" type="number" step="0.01" value="${FixedAssetsPage._escapedValue(current.effective_life_years)}"></div>
+                    <div class="form-group"><label>Cost Limit</label><input name="cost_limit" type="number" step="0.01" value="${FixedAssetsPage._escapedValue(current.cost_limit)}"></div>
+                    <div class="form-group"><label>Residual Value</label><input name="residual_value" type="number" step="0.01" value="${FixedAssetsPage._escapedValue(current.residual_value, '0')}"></div>
+                    <div class="form-group"><label>Opening Accumulated Depreciation</label><input name="opening_accumulated_depreciation" type="number" step="0.01" value="${FixedAssetsPage._escapedValue(current.opening_accumulated_depreciation, '0')}"></div>
+                    <div class="form-group"><label>Investment Boost</label><input name="investment_boost" type="number" step="0.01" value="${FixedAssetsPage._escapedValue(current.investment_boost)}"></div>
                     <div class="form-group"><label>Acquisition Method</label><select name="acquisition_method">
                         <option value="cash" ${(current.acquisition_method || 'cash') === 'cash' ? 'selected' : ''}>Cash</option>
                         <option value="accounts_payable" ${(current.acquisition_method || '') === 'accounts_payable' ? 'selected' : ''}>Accounts Payable</option>
@@ -262,10 +266,10 @@ const FixedAssetsPage = {
                         <option value="opening_balance" ${(current.acquisition_method || '') === 'opening_balance' ? 'selected' : ''}>Opening Balance</option>
                     </select></div>
                     <div class="form-group"><label>Offset Account</label><select name="offset_account_id"><option value="">--</option>${offsetOptions}</select></div>
-                    <div class="form-group"><label>Serial Number</label><input name="serial_number" value="${escapeHtml(current.serial_number || '')}"></div>
-                    <div class="form-group"><label>Warranty Expiry</label><input name="warranty_expiry" type="date" value="${escapeHtml(current.warranty_expiry || '')}"></div>
-                    <div class="form-group full-width"><label>Source Reference</label><input name="source_reference" value="${escapeHtml(current.source_reference || '')}"></div>
-                    <div class="form-group full-width"><label>Description</label><textarea name="description">${escapeHtml(current.description || '')}</textarea></div>
+                    <div class="form-group"><label>Serial Number</label><input name="serial_number" value="${FixedAssetsPage._escapedValue(current.serial_number)}"></div>
+                    <div class="form-group"><label>Warranty Expiry</label><input name="warranty_expiry" type="date" value="${FixedAssetsPage._escapedValue(current.warranty_expiry)}"></div>
+                    <div class="form-group full-width"><label>Source Reference</label><input name="source_reference" value="${FixedAssetsPage._escapedValue(current.source_reference)}"></div>
+                    <div class="form-group full-width"><label>Description</label><textarea name="description">${FixedAssetsPage._escapedValue(current.description)}</textarea></div>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
