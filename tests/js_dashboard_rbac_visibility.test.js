@@ -104,9 +104,9 @@ const makeContext = ({ permissions, dashboardData, chartsData }) => {
             },
             cash_flow: {
                 months: [{ month: 'Apr', cash_in: 1000, cash_out: 600 }],
-                cash_in_total: 1000,
-                cash_out_total: 600,
-                net_total: 400,
+                cash_in_total: 123456789.12,
+                cash_out_total: 98765432.1,
+                net_total: 24691357.02,
             },
         },
     });
@@ -119,6 +119,7 @@ const makeContext = ({ permissions, dashboardData, chartsData }) => {
     assert.ok(ownerHtml.includes('Sales'));
     assert.ok(ownerHtml.includes('snapshot-compare-bar__track'));
     assert.ok(ownerHtml.includes('snapshot-widget__trend'));
+    assert.ok(ownerHtml.includes('snapshot-split-metrics__difference'));
     assert.ok(ownerHtml.includes('snapshot-watchlist-table'));
     assert.deepStrictEqual(ownerContext.__apiCalls, ['/dashboard', '/dashboard/charts']);
 
