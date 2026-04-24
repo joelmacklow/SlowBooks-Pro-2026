@@ -74,6 +74,9 @@ class InvoiceCreditApplicationResponse(BaseModel):
     amount: Decimal
     model_config = {"from_attributes": True}
 
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
 
 class InvoiceResponse(BaseModel):
     id: int

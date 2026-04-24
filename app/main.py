@@ -40,11 +40,35 @@ from app.routes import bank_import, tax, backups, gst
 # Phase 6: Ambitious
 from app.routes import companies, employees, payroll
 
-from app.config import CORS_ALLOW_ORIGINS, UPLOADS_DIR
+from app.config import CORS_ALLOW_ORIGINS, SECURITY_HEADERS_ENABLE_HSTS, UPLOADS_DIR
 from app.database import SessionLocal
 from app.services.audit import register_audit_hooks
 
 app = FastAPI(title="Slowbooks Pro 2026", version="2.0.0")
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'",
+    )
+    if SECURITY_HEADERS_ENABLE_HSTS:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 app.add_middleware(
     CORSMiddleware,

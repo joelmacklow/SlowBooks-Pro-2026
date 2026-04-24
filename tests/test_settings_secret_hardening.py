@@ -52,7 +52,7 @@ class SettingsSecretHardeningTests(unittest.TestCase):
 
         self.assertEqual(settings["closing_date_password"], "")
 
-    def test_update_settings_masks_smtp_password_and_preserves_stored_value_on_blank(self):
+    def test_update_settings_masks_smtp_password_and_removes_legacy_stored_value(self):
         with self.Session() as db:
             first = update_settings(
                 {"smtp_password": "smtp-secret"},
@@ -67,12 +67,12 @@ class SettingsSecretHardeningTests(unittest.TestCase):
                 {"company_name": "Updated Co", "smtp_password": ""},
                 db=db,
             )
-            stored = db.query(Settings).filter(Settings.key == "smtp_password").one().value
+            stored = db.query(Settings).filter(Settings.key == "smtp_password").first()
 
         self.assertEqual(first["smtp_password"], "")
         self.assertEqual(second["smtp_password"], "")
         self.assertEqual(second["company_name"], "Updated Co")
-        self.assertEqual(stored, "legacy-secret")
+        self.assertIsNone(stored)
 
     def test_get_settings_masks_existing_smtp_password(self):
         with self.Session() as db:
@@ -81,16 +81,16 @@ class SettingsSecretHardeningTests(unittest.TestCase):
 
         self.assertEqual(settings["smtp_password"], "")
 
-    def test_legacy_smtp_password_is_retained_without_env_secret_and_notice_is_returned(self):
+    def test_legacy_smtp_password_is_removed_without_env_secret_and_notice_is_returned(self):
         with self.Session() as db:
             db.add(Settings(key="smtp_password", value="legacy-secret"))
             db.commit()
             settings = get_settings(db=db, auth={"user_id": 1})
-            stored = db.query(Settings).filter(Settings.key == "smtp_password").one().value
+            stored = db.query(Settings).filter(Settings.key == "smtp_password").first()
 
-        self.assertEqual(stored, "legacy-secret")
-        self.assertEqual(settings["smtp_password_status"], "legacy_db_password_present")
-        self.assertIn("remains in the database", settings["smtp_password_notice"])
+        self.assertIsNone(stored)
+        self.assertEqual(settings["smtp_password_status"], "legacy_db_password_removed")
+        self.assertIn("removed", settings["smtp_password_notice"])
 
     def test_legacy_smtp_password_is_removed_when_env_secret_is_configured(self):
         import app.config as app_config

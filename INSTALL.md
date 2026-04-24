@@ -261,3 +261,9 @@ Your local OS may be missing native libraries needed by WeasyPrint/PDF generatio
 
 ### Backups fail
 Make sure `pg_dump` / `pg_restore` are installed and reachable in `PATH`.
+## Security-sensitive environment settings
+
+- Set `BOOTSTRAP_ADMIN_TOKEN` in `.env` before remote first-admin setup. The Docker entrypoint no longer generates or prints this token.
+- Keep `POSTGRES_SSLMODE=disable` for the bundled Docker-only Postgres network, or use a TLS mode such as `require` for external or untrusted database networks.
+- Configure SMTP only through `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS`). The Settings UI shows status and can send a test email, but it does not persist SMTP connection settings.
+- Set `SESSION_COOKIE_SECURE=true` and `SECURITY_HEADERS_ENABLE_HSTS=true` when serving SlowBooks over HTTPS.

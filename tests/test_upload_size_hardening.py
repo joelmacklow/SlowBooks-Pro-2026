@@ -21,6 +21,8 @@ sys.modules.setdefault("weasyprint", weasyprint_stub)
 
 from app.database import Base
 
+PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
 
 class UploadSizeHardeningTests(unittest.TestCase):
     def setUp(self):
@@ -53,7 +55,7 @@ class UploadSizeHardeningTests(unittest.TestCase):
                     uploads_route.upload_logo(
                         file=UploadFile(
                             filename="logo.png",
-                            file=BytesIO(b"png-data"),
+                            file=BytesIO(PNG_BYTES),
                             headers=Headers({"content-type": "image/png"}),
                         ),
                         db=db,
@@ -75,7 +77,7 @@ class UploadSizeHardeningTests(unittest.TestCase):
                     uploads_route.upload_logo(
                         file=UploadFile(
                             filename="logo.png",
-                            file=BytesIO(b"png-data"),
+                            file=BytesIO(PNG_BYTES),
                             headers=Headers({"content-type": "image/png"}),
                         ),
                         db=db,
@@ -101,6 +103,26 @@ class UploadSizeHardeningTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 413)
         self.assertIn("too large", ctx.exception.detail.lower())
+
+    def test_logo_upload_rejects_spoofed_image_content(self):
+        uploads_route = self._load_route_module("app.routes.uploads")
+
+        with self.Session() as db:
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(
+                    uploads_route.upload_logo(
+                        file=UploadFile(
+                            filename="logo.png",
+                            file=BytesIO(b"<script>alert(1)</script>"),
+                            headers=Headers({"content-type": "image/png"}),
+                        ),
+                        db=db,
+                        auth={"user_id": 1},
+                    )
+                )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("supported image", ctx.exception.detail.lower())
 
     def test_csv_import_rejects_oversized_file(self):
         csv_route = self._load_route_module("app.routes.csv")

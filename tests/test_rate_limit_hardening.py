@@ -22,6 +22,8 @@ sys.modules.setdefault("weasyprint", weasyprint_stub)
 
 from app.database import Base
 
+PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
 
 def make_request(host: str) -> Request:
     scope = {
@@ -257,7 +259,7 @@ class RateLimitHardeningTests(unittest.TestCase):
                     uploads_route.upload_logo(
                         file=UploadFile(
                             filename="logo.png",
-                            file=BytesIO(b"png-data"),
+                            file=BytesIO(PNG_BYTES),
                             headers=Headers({"content-type": "image/png"}),
                         ),
                         db=db,
@@ -271,7 +273,7 @@ class RateLimitHardeningTests(unittest.TestCase):
                     uploads_route.upload_logo(
                         file=UploadFile(
                             filename="logo.png",
-                            file=BytesIO(b"png-data"),
+                            file=BytesIO(PNG_BYTES),
                             headers=Headers({"content-type": "image/png"}),
                         ),
                         db=db,

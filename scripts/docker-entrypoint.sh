@@ -3,28 +3,16 @@ set -eu
 
 mkdir -p /app/backups /tmp/slowbooks/uploads 2>/dev/null || true
 
-if [ -z "${BOOTSTRAP_ADMIN_TOKEN:-}" ]; then
-BOOTSTRAP_ADMIN_TOKEN="$(python - <<'PY'
-import secrets
-print(secrets.token_urlsafe(24))
-PY
-)"
-export BOOTSTRAP_ADMIN_TOKEN
-printf '%s\n' 'BOOTSTRAP_ADMIN_TOKEN was not set; generated a startup token for first-admin setup.'
-fi
-
 BOOTSTRAP_SETUP_URL="$(python - <<'PY'
 import os
-from urllib.parse import quote
 
 port = os.environ.get("APP_PORT", "3001").strip() or "3001"
-token = os.environ.get("BOOTSTRAP_ADMIN_TOKEN", "")
-print(f"http://localhost:{port}/#/login?bootstrap_token={quote(token, safe='')}")
+print(f"http://localhost:{port}/#/login")
 PY
 )"
 
-printf '%s %s\n' 'Bootstrap admin token:' "$BOOTSTRAP_ADMIN_TOKEN"
 printf '%s %s\n' 'Bootstrap admin setup URL:' "$BOOTSTRAP_SETUP_URL"
+printf '%s\n' 'Set BOOTSTRAP_ADMIN_TOKEN in .env before remote first-admin setup; the token is never printed to logs.'
 printf '%s\n' 'If accessing SlowBooks remotely, replace localhost with your Docker host name or IP before opening the URL.'
 
 python - <<'PY'
@@ -39,7 +27,7 @@ for attempt in range(60):
         engine = create_engine(DATABASE_URL, pool_pre_ping=True)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print(f"Database ready: {DATABASE_URL}")
+        print("Database ready")
         sys.exit(0)
     except Exception as exc:
         last_error = exc

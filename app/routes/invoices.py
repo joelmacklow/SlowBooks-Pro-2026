@@ -30,7 +30,7 @@ from app.services.accounting import (
 )
 from app.routes.settings import _get_all as get_settings
 from app.services.closing_date import check_closing_date
-from app.services.email_service import render_invoice_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_invoice_email, send_document_email
 from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
@@ -417,8 +417,8 @@ def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Dep
             entity_id=inv.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{invoice_id}/duplicate", response_model=InvoiceResponse, status_code=201)

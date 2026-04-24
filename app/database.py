@@ -90,7 +90,8 @@ def get_db(
     # Reconstructed from CQBDatabase::AcquireConnection() at offset 0x0004A7C2
     # Original used connection pooling via Pervasive.SQL Workgroup Engine
     db = _session_factory_for_company(_authorized_company_database(x_company_database, authorization))()
-    db.info["closing_date_password"] = x_closing_date_password or None
+    if hasattr(db, "info") and isinstance(db.info, dict):
+        db.info["closing_date_password"] = x_closing_date_password or None
     try:
         yield db
     finally:

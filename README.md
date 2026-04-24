@@ -147,16 +147,20 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 cp .env.example .env
 # edit .env before first run:
 # - set POSTGRES_PASSWORD to a long random secret
+# - set BOOTSTRAP_ADMIN_TOKEN to a long random secret for remote first-admin setup
 # - leave APP_DEBUG=false unless you explicitly need debug/reload
 # - set CORS_ALLOW_ORIGINS explicitly if browsers will access the API from another trusted origin
-# - set SMTP_PASSWORD only if authenticated SMTP is required
+# - set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM_EMAIL in .env for outbound email
 docker compose up --build
 ```
 
 This starts:
 - `postgres:18`
 - Postgres is not published to the host by default; expose it only deliberately if you need local DB tooling access.
+- `POSTGRES_SSLMODE=disable` is the default for the bundled Docker network; use a TLS mode such as `require` for external or untrusted database networks.
+- `BOOTSTRAP_ADMIN_TOKEN` is read from `.env` and is not generated or printed in container logs.
 - `CORS_ALLOW_ORIGINS` defaults to loopback browser origins only; set it explicitly for real deployments that serve the UI/API across other trusted origins.
+- SMTP connection settings are environment-owned so app users cannot redirect outbound mail from the Settings UI.
 - the Slowbooks app on **http://localhost:3001**
 
 Default compose behavior:

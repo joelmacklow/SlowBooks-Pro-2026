@@ -26,7 +26,7 @@ from app.services.accounting import (
 )
 from app.services.closing_date import check_closing_date
 from app.services.document_sequences import allocate_document_number
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
 from app.services.pdf_service import generate_credit_memo_pdf
@@ -304,8 +304,8 @@ def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depe
             entity_id=cm.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{cm_id}/apply")

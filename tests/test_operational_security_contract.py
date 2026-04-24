@@ -13,6 +13,7 @@ weasyprint_stub.HTML = object
 sys.modules.setdefault("weasyprint", weasyprint_stub)
 
 RATE_LIMIT_EXPECTATIONS = {
+    "app.routes.auth": ["bootstrap_admin", "login"],
     "app.routes.backups": ["make_backup", "download_backup", "restore"],
     "app.routes.settings": ["test_email"],
     "app.routes.uploads": ["upload_logo"],
@@ -105,6 +106,22 @@ class OperationalSecurityContractTests(unittest.TestCase):
         main_source = Path("app/main.py").read_text()
         self.assertIn("allow_origins=CORS_ALLOW_ORIGINS", main_source)
         self.assertNotIn('allow_origins=["*"]', main_source)
+
+    def test_main_app_sets_browser_security_headers(self):
+        main_source = Path("app/main.py").read_text()
+        self.assertIn("add_security_headers", main_source)
+        self.assertIn("X-Content-Type-Options", main_source)
+        self.assertIn("X-Frame-Options", main_source)
+        self.assertIn("Content-Security-Policy", main_source)
+        self.assertIn("Strict-Transport-Security", main_source)
+
+    def test_smtp_settings_are_environment_owned(self):
+        settings_source = Path("app/routes/settings.py").read_text()
+        email_source = Path("app/services/email_service.py").read_text()
+        self.assertIn("SMTP_SETTING_KEYS", settings_source)
+        self.assertIn("key in SMTP_SETTING_KEYS", settings_source)
+        self.assertIn("SMTP_HOST", email_source)
+        self.assertNotIn("db.query(Settings).filter(Settings.key.in_(keys))", email_source)
 
 
 if __name__ == "__main__":

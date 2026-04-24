@@ -24,6 +24,16 @@ UPLOAD_DIR = Path(UPLOADS_DIR)
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
 
+def _detect_logo_image(content: bytes) -> tuple[str, str]:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png", "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "jpg", "image/jpeg"
+    if content.startswith((b"GIF87a", b"GIF89a")):
+        return "gif", "image/gif"
+    raise HTTPException(status_code=400, detail="Uploaded logo content is not a supported image type")
+
+
 def ensure_upload_dir() -> Path:
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,8 +64,10 @@ async def upload_logo(
         max_bytes=LOGO_UPLOAD_MAX_BYTES,
         detail="Logo image is too large",
     )
+    ext, detected_content_type = _detect_logo_image(content)
+    if file.content_type and file.content_type != detected_content_type:
+        raise HTTPException(status_code=400, detail="Uploaded logo content does not match its declared image type")
 
-    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "png"
     filename = f"company_logo.{ext}"
     filepath = ensure_upload_dir() / filename
 

@@ -57,7 +57,17 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "3001"))
 APP_DEBUG = os.getenv("APP_DEBUG", "false").lower() == "true"
 BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "")
+SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "slowbooks_session")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
+SECURITY_HEADERS_ENABLE_HSTS = os.getenv("SECURITY_HEADERS_ENABLE_HSTS", "false").lower() == "true"
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Slowbooks Pro").strip() or "Slowbooks Pro"
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", "/tmp/slowbooks/uploads"))
 
 # CCompanyInfo fields — originally at .QBW header offset 0x40

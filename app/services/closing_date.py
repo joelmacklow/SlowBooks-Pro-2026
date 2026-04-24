@@ -8,6 +8,7 @@ from datetime import date
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -59,6 +60,8 @@ def get_org_lock_date(db: Session) -> date | None:
     try:
         company = master_db.query(Company).filter(Company.database_name == database_name, Company.is_active == True).first()
         return company.org_lock_date if company else None
+    except SQLAlchemyError:
+        return None
     finally:
         master_db.close()
 
@@ -168,7 +171,7 @@ def check_closing_date(db: Session, txn_date: date, password: str = None):
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"Transaction date {txn_date} is on or before the company admin lock date "
+                    f"Transaction date {txn_date} is on or before the company admin closing date "
                     f"({context.company_lock_date}). Modifications to closed periods are not allowed without the company override password."
                 ),
             )

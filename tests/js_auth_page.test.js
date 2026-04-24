@@ -92,7 +92,7 @@ vm.runInContext(code, context);
     assert.strictEqual(lastRawRequest.path, '/auth/bootstrap-admin');
     assert.strictEqual(lastRawRequest.options.headers['X-Bootstrap-Token'], 'setup-url-token');
     assert.strictEqual(lastRawRequest.options.body.email, 'owner@example.com');
-    assert.strictEqual(localStore['slowbooks-auth-token'], 'tok-bootstrap');
+    assert.strictEqual(localStore['slowbooks-auth-token'], undefined);
 
     context.App.authState = { authenticated: false, bootstrap_required: false, user: null };
     const loginHtml = await context.AuthPage.render();

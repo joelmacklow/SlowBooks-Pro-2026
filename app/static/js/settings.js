@@ -243,28 +243,22 @@ const SettingsPage = {
                 <div class="settings-section">
                     <h3>Email (SMTP)</h3>
                     <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
-                        Configure SMTP for sending invoices by email. SMTP passwords are managed via the <code>SMTP_PASSWORD</code> environment variable, not stored in SlowBooks settings.
+                        SMTP delivery is managed from the server <code>.env</code> file so browser users cannot redirect outbound mail settings.
                     </div>
                     ${s.smtp_password_notice ? `<div style="font-size:10px; margin-bottom:8px; color:var(--text-muted);">${escapeHtml(s.smtp_password_notice)}</div>` : ''}
                     <div class="form-grid">
                         <div class="form-group"><label>SMTP Host</label>
-                            <input name="smtp_host" value="${escapeHtml(s.smtp_host || '')}" placeholder="smtp.gmail.com"></div>
+                            <input value="${escapeHtml(s.smtp_host || 'Configured in .env')}" readonly></div>
                         <div class="form-group"><label>SMTP Port</label>
-                            <input name="smtp_port" type="number" value="${escapeHtml(s.smtp_port || '587')}"></div>
+                            <input value="${escapeHtml(s.smtp_port || 'Configured in .env')}" readonly></div>
                         <div class="form-group"><label>Username</label>
-                            <input name="smtp_user" value="${escapeHtml(s.smtp_user || '')}"></div>
-                        <div class="form-group"><label>Password</label>
-                            <input name="smtp_password" type="password" value=""
-                                placeholder="Managed via SMTP_PASSWORD environment variable" autocomplete="new-password"></div>
+                            <input value="${escapeHtml(s.smtp_user || 'Configured in .env')}" readonly></div>
                         <div class="form-group"><label>From Email</label>
-                            <input name="smtp_from_email" type="email" value="${escapeHtml(s.smtp_from_email || '')}"></div>
+                            <input value="${escapeHtml(s.smtp_from_email || 'Configured in .env')}" readonly></div>
                         <div class="form-group"><label>From Name</label>
-                            <input name="smtp_from_name" value="${escapeHtml(s.smtp_from_name || '')}"></div>
+                            <input value="${escapeHtml(s.smtp_from_name || 'Configured in .env')}" readonly></div>
                         <div class="form-group"><label>Use TLS</label>
-                            <select name="smtp_use_tls">
-                                <option value="true" ${s.smtp_use_tls !== 'false' ? 'selected' : ''}>Yes</option>
-                                <option value="false" ${s.smtp_use_tls === 'false' ? 'selected' : ''}>No</option>
-                            </select></div>
+                            <input value="${s.smtp_use_tls === 'false' ? 'No' : 'Yes'}" readonly></div>
                     </div>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="SettingsPage.testEmail()" style="margin-top:8px;">
                         Send Test Email</button>

@@ -29,7 +29,7 @@ from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRu
 from app.schemas.email import StatementEmailRequest
 from app.schemas.invoice_reminders import InvoiceReminderPreviewResponse
 from pydantic import BaseModel
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.pdf_service import generate_report_pdf, generate_statement_pdf
 from app.services.formatting import format_currency, format_date
 from app.routes.settings import _get_all as get_settings
@@ -1554,8 +1554,8 @@ def email_customer_statement(
             entity_id=customer.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 

@@ -109,7 +109,6 @@ const AuthPage = {
                 email: form.get('email'),
                 password: form.get('password'),
             });
-            localStorage.setItem('slowbooks-auth-token', response.token);
             App.setAuthState({ authenticated: true, bootstrap_required: false, user: response.user });
             await App.loadSettings();
             if (typeof App.syncAuthUI === 'function') App.syncAuthUI();
@@ -134,7 +133,6 @@ const AuthPage = {
                 headers: bootstrapToken ? { 'X-Bootstrap-Token': bootstrapToken } : {},
             });
             const response = await responseRaw.json();
-            localStorage.setItem('slowbooks-auth-token', response.token);
             App.setAuthState({ authenticated: true, bootstrap_required: false, user: response.user });
             await App.loadSettings();
             if (typeof App.syncAuthUI === 'function') App.syncAuthUI();
@@ -151,7 +149,6 @@ const AuthPage = {
         } catch (_err) {
             // Ignore logout transport failures; local session should still clear.
         }
-        localStorage.removeItem('slowbooks-auth-token');
         App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
         App.settings = {};
         if (typeof App.syncAuthUI === 'function') App.syncAuthUI();

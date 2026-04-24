@@ -7,9 +7,10 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import SESSION_COOKIE_NAME
 from app.database import get_master_db
 from app.models.auth import AuthSession, MembershipPermissionOverride, User, UserMembership
 from app.services.company_service import current_database_name, list_company_scope_options
@@ -368,12 +369,21 @@ def _get_session_by_token(db: Session, raw_token: str) -> AuthSession | None:
     return session
 
 
-def get_auth_context(db: Session, authorization: str | None, requested_company_scope: str | None = None, *, required: bool = True) -> AuthContext | None:
+def get_auth_context(
+    db: Session,
+    authorization: str | None,
+    requested_company_scope: str | None = None,
+    *,
+    session_cookie: str | None = None,
+    required: bool = True,
+) -> AuthContext | None:
     raw_token = None
     if authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() == "bearer" and token:
             raw_token = token.strip()
+    if not raw_token and isinstance(session_cookie, str) and session_cookie:
+        raw_token = session_cookie.strip()
     session = _get_session_by_token(db, raw_token)
     if not session:
         if required:
@@ -400,8 +410,15 @@ def get_optional_auth_context(
     db: Session = Depends(get_master_db),
     authorization: str | None = Header(default=None),
     x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> AuthContext | None:
-    return get_auth_context(db, authorization, requested_company_scope=x_company_database, required=False)
+    return get_auth_context(
+        db,
+        authorization,
+        requested_company_scope=x_company_database,
+        session_cookie=session_cookie,
+        required=False,
+    )
 
 
 def require_permissions(*required_permissions: str):
@@ -411,8 +428,15 @@ def require_permissions(*required_permissions: str):
         db: Session = Depends(get_master_db),
         authorization: str | None = Header(default=None),
         x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+        session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     ) -> AuthContext:
-        context = get_auth_context(db, authorization, requested_company_scope=x_company_database, required=True)
+        context = get_auth_context(
+            db,
+            authorization,
+            requested_company_scope=x_company_database,
+            session_cookie=session_cookie,
+            required=True,
+        )
         missing = [permission for permission in validated if permission not in context.permissions]
         if missing:
             raise HTTPException(status_code=403, detail=f"Missing required permissions: {', '.join(missing)}")

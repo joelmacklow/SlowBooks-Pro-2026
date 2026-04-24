@@ -10,7 +10,7 @@ const context = {
         return { ok: true, json: async () => ({ ok: true }) };
     },
     localStorage: {
-        getItem(key) { return key === 'slowbooks-auth-token' ? 'abc123' : null; },
+        getItem() { return null; },
     },
 };
 
@@ -20,7 +20,8 @@ vm.runInContext(code, context);
 (async () => {
     await context.API.get('/auth/me');
     assert.strictEqual(fetchCalls[0].url, '/api/auth/me');
-    assert.strictEqual(fetchCalls[0].opts.headers.Authorization, 'Bearer abc123');
+    assert.strictEqual(fetchCalls[0].opts.headers.Authorization, undefined);
+    assert.strictEqual(fetchCalls[0].opts.credentials, 'same-origin');
 })().catch(err => {
     console.error(err);
     process.exit(1);
