@@ -66,6 +66,17 @@ def _settings_for_client(settings: dict) -> dict:
     return result
 
 
+SMTP_SETTING_KEYS = {
+    "smtp_host",
+    "smtp_port",
+    "smtp_user",
+    "smtp_password",
+    "smtp_from_email",
+    "smtp_from_name",
+    "smtp_use_tls",
+}
+
+
 def _validate_period_settings(data: dict) -> None:
     start_value = data.get("financial_year_start")
     end_value = data.get("financial_year_end")
@@ -90,15 +101,22 @@ def _apply_smtp_secret_status(db: Session, settings: dict) -> dict:
     result = dict(settings)
     legacy_row = db.query(Settings).filter(Settings.key == "smtp_password").first()
     env_ready = bool((app_config.SMTP_PASSWORD or "").strip())
+    result.update(
+        {
+            "smtp_host": app_config.SMTP_HOST,
+            "smtp_port": str(app_config.SMTP_PORT),
+            "smtp_user": app_config.SMTP_USER,
+            "smtp_from_email": app_config.SMTP_FROM_EMAIL,
+            "smtp_from_name": app_config.SMTP_FROM_NAME,
+            "smtp_use_tls": "true" if app_config.SMTP_USE_TLS else "false",
+        }
+    )
 
-    if legacy_row and env_ready:
+    if legacy_row:
         db.delete(legacy_row)
         db.flush()
-        result["smtp_password_status"] = "env_managed_legacy_removed"
-        result["smtp_password_notice"] = "Legacy stored SMTP password was removed because SMTP_PASSWORD is configured."
-    elif legacy_row:
-        result["smtp_password_status"] = "legacy_db_password_present"
-        result["smtp_password_notice"] = "Legacy stored SMTP password remains in the database until SMTP_PASSWORD is configured."
+        result["smtp_password_status"] = "env_managed_legacy_removed" if env_ready else "legacy_db_password_removed"
+        result["smtp_password_notice"] = "Legacy stored SMTP password was removed; SMTP secrets are managed only via the environment."
     elif env_ready:
         result["smtp_password_status"] = "env_managed"
         result["smtp_password_notice"] = "SMTP password is managed via the SMTP_PASSWORD environment variable."
@@ -181,7 +199,7 @@ def update_settings(
                     if existing is None:
                         _set(db, key, "")
                 continue
-            if key == "smtp_password":
+            if key in SMTP_SETTING_KEYS:
                 continue
             if key in ("financial_year_start", "financial_year_end"):
                 _set(db, key, normalize_financial_year_boundary(str(value) if value is not None else ""))
@@ -301,11 +319,12 @@ def test_email(
         window_seconds=60,
         detail="Too many SMTP test email requests. Please wait and try again.",
     )
-    settings = _get_all(db)
+    from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, _get_smtp_settings, send_email_or_raise
+
+    settings = _get_smtp_settings(db)
     if not settings.get("smtp_host"):
         raise HTTPException(status_code=400, detail="SMTP not configured")
     try:
-        from app.services.email_service import send_email_or_raise
         send_email_or_raise(
             db,
             to_email=settings.get("smtp_from_email") or settings.get("smtp_user", ""),
@@ -315,8 +334,8 @@ def test_email(
             entity_id=0,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/load-chart-template/{template_key}")

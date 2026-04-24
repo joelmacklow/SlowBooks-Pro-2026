@@ -17,8 +17,7 @@ const API = {
     },
 
     authHeaders(path = '') {
-        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks-auth-token') : null;
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const headers = {};
         const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
         if (selectedCompany && !path.startsWith('/auth/') && !path.startsWith('/companies')) {
             headers['X-Company-Database'] = selectedCompany;
@@ -34,6 +33,7 @@ const API = {
     async raw(method, path, { body = null, headers = {} } = {}) {
         const opts = {
             method,
+            credentials: 'same-origin',
             headers: { ...this.authHeaders(path), ...headers },
         };
         if (body !== null) {

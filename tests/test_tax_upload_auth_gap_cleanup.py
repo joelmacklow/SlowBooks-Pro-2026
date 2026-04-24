@@ -99,7 +99,7 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
 
             owner_auth = require_permissions('settings.manage')(db=db, authorization=f'Bearer {owner.token}')
             upload = UploadFile(
-                file=BytesIO(b'png-data'),
+                file=BytesIO(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'),
                 filename='logo.png',
                 headers=Headers({'content-type': 'image/png'}),
             )

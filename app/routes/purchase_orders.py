@@ -17,7 +17,7 @@ from app.models.contacts import Vendor
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.bills import BillCreate, BillLineCreate
 from app.schemas.purchase_orders import POCreate, POUpdate, POResponse
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.auth import require_permissions
@@ -289,8 +289,8 @@ def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = D
             entity_id=po.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{po_id}/convert-to-bill")

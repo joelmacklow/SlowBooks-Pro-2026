@@ -204,7 +204,6 @@ const App = {
 
     handleUnauthorized(path, _message) {
         if (path.startsWith('/auth/')) return;
-        localStorage.removeItem('slowbooks-auth-token');
         App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
         App.syncAuthUI();
         App.syncNavVisibility();

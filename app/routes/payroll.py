@@ -16,7 +16,7 @@ from app.schemas.email import DocumentEmailRequest
 from app.schemas.payroll import PayRunCreate, PayRunResponse, PayStubResponse
 from app.services.pdf_service import generate_payroll_payslip_pdf
 from app.services.payday_filing import generate_employment_information_csv
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.accounting import (
     create_journal_entry,
     get_child_support_payable_account_id,
@@ -382,8 +382,8 @@ def email_payroll_payslip(
             entity_id=stub.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.get("/{run_id}/employment-information/export")

@@ -23,7 +23,7 @@ from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceRespon
 from app.services.document_sequences import allocate_document_number
 from app.services.pdf_service import generate_estimate_pdf
 from app.routes.settings import _get_all as get_settings
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 from app.services.payment_terms import resolve_due_date_for_terms
@@ -222,8 +222,8 @@ def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = D
             entity_id=est.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{estimate_id}/convert", response_model=InvoiceResponse)

@@ -110,11 +110,14 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('USER slowbooks', dockerfile_text)
         self.assertIn('set -eo pipefail', backup_script)
         self.assertIn('mkdir -p /app/backups /tmp/slowbooks/uploads 2>/dev/null || true', entrypoint_script)
-        self.assertIn("BOOTSTRAP_ADMIN_TOKEN=\"$(python - <<'PY'", entrypoint_script)
-        self.assertIn('export BOOTSTRAP_ADMIN_TOKEN', entrypoint_script)
-        self.assertIn('Bootstrap admin token:', entrypoint_script)
+        self.assertNotIn("BOOTSTRAP_ADMIN_TOKEN=\"$(python - <<'PY'", entrypoint_script)
+        self.assertNotIn('export BOOTSTRAP_ADMIN_TOKEN', entrypoint_script)
+        self.assertNotIn('Bootstrap admin token:', entrypoint_script)
         self.assertIn("BOOTSTRAP_SETUP_URL=\"$(python - <<'PY'", entrypoint_script)
         self.assertIn('Bootstrap admin setup URL:', entrypoint_script)
+        self.assertIn('the token is never printed to logs', entrypoint_script)
+        self.assertIn('print("Database ready")', entrypoint_script)
+        self.assertNotIn('Database ready: {DATABASE_URL}', entrypoint_script)
         self.assertIn('replace localhost with your Docker host name or IP', entrypoint_script)
         compose_text = (root / "docker-compose.yml").read_text()
         self.assertIn("image: postgres:18", compose_text)
@@ -127,6 +130,10 @@ class DockerConfigTests(unittest.TestCase):
         self.assertNotIn('      - "${POSTGRES_PORT:-5432}:5432"', compose_text)
         self.assertIn('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in your .env or environment}', compose_text)
         self.assertIn('APP_DEBUG: ${APP_DEBUG:-false}', compose_text)
+        self.assertIn('BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-}', compose_text)
+        self.assertIn('SMTP_HOST: ${SMTP_HOST:-}', compose_text)
+        self.assertIn('SMTP_PASSWORD: ${SMTP_PASSWORD:-}', compose_text)
+        self.assertIn('SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}', compose_text)
 
         for key in (
             "DATABASE_URL=",
@@ -137,6 +144,15 @@ class DockerConfigTests(unittest.TestCase):
             "POSTGRES_PASSWORD=",
             "POSTGRES_SSLMODE=",
             "CORS_ALLOW_ORIGINS=",
+            "BOOTSTRAP_ADMIN_TOKEN=",
+            "SESSION_COOKIE_SECURE=",
+            "SMTP_HOST=",
+            "SMTP_PORT=",
+            "SMTP_USER=",
+            "SMTP_PASSWORD=",
+            "SMTP_FROM_EMAIL=",
+            "SMTP_FROM_NAME=",
+            "SMTP_USE_TLS=",
         ):
             self.assertIn(key, env_example)
         self.assertIn("POSTGRES_PASSWORD=replace-with-a-long-random-password", env_example)
