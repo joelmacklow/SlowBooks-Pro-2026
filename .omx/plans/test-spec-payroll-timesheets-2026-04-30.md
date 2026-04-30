@@ -7,7 +7,7 @@
 This is a high-risk payroll/employee-data feature. Build it in test-first slices. Each implementation slice should add targeted backend tests before code changes, then frontend tests for rendering/permission behavior where UI is touched. Do not rely on manual QA for access-control boundaries.
 
 ## Global invariants to protect
-1. Employee users can only access their own linked employee/timesheet/pay records.
+1. Employee users can only access their own linked employee/timesheet/pay records and payslips for the active company scope.
 2. Payroll admins with explicit permissions can manage timesheets across employees.
 3. Approved/locked/processed payroll source data cannot be silently mutated.
 4. Timesheet totals are deterministic and use consistent decimal rounding.
@@ -20,7 +20,8 @@ This is a high-risk payroll/employee-data feature. Build it in test-first slices
 - A linked employee user receives only self-service permissions.
 - An employee user cannot call `employees.view_private`, `payroll.view`, or admin-only timesheet routes.
 - Employee self-context resolves the expected `employee_id` for the active company scope.
-- Cross-company or inactive links are rejected.
+- Link resolution does not assume a cross-database FK from master auth records into company-scoped `employees`.
+- Cross-company, inactive, duplicate-active, and stale employee links are rejected.
 
 ### Verification
 - Targeted auth tests, likely in `tests/test_auth_rbac.py` or a new `tests/test_employee_portal_auth.py`.
@@ -52,6 +53,9 @@ This is a high-risk payroll/employee-data feature. Build it in test-first slices
 - Employee cannot edit submitted/approved/locked timesheets.
 - Employee can submit a valid draft.
 - Employee can export/print only own timesheet.
+- Employee can list/download only their own processed payslips through self-service routes.
+- Employee cannot access another employee's payslip by guessing `run_id` or `employee_id`.
+- Self-service payslip access does not require or imply broad `payroll.payslips.view`.
 - Unauthenticated access returns 401; wrong employee returns 403 or 404 consistently.
 
 ### Verification
@@ -76,6 +80,7 @@ This is a high-risk payroll/employee-data feature. Build it in test-first slices
 ### Tests to add first
 - Draft pay run imports approved hourly timesheet totals into `PayStub.hours`.
 - Missing/unapproved hourly timesheets are reported before processing.
+- Approved-hours lookup/import and lock-on-process behavior are covered at the payroll-timesheet integration service seam, not only through route tests.
 - Manual-hours override, if retained, requires explicit admin permission/path and is audited.
 - Processing a pay run locks linked source timesheets.
 - Processed pay-run totals match existing NZ payroll expected values for hourly employees.
@@ -83,7 +88,7 @@ This is a high-risk payroll/employee-data feature. Build it in test-first slices
 - Payslip and payday filing exports continue to work with source-timesheet stubs.
 
 ### Verification
-- Extend `tests/test_nz_payroll_runs.py` or add `tests/test_payroll_timesheet_integration.py`.
+- Extend `tests/test_nz_payroll_runs.py` or add `tests/test_payroll_timesheet_integration.py`; prefer service-level tests for `app/services/payroll_timesheet_integration.py` plus route smoke coverage.
 - Run existing payroll tests after targeted changes.
 
 ## Slice 6 — Employee UI
@@ -148,6 +153,7 @@ Use the smallest targeted checks first, then broaden before commit:
 - Process pay run; linked timesheet becomes locked.
 - Employee can view/export own approved/locked timesheet and cannot edit it.
 - Employee cannot access another employee's timesheet by ID.
+- Employee cannot access another employee's payslip PDF or pay-stub listing by ID.
 
 ## Non-goals for testing in MVP
 - Native mobile app automation.

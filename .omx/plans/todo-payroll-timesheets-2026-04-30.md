@@ -17,14 +17,16 @@
 - [x] Create PRD: `.omx/plans/prd-payroll-timesheets-2026-04-30.md`.
 - [x] Create test spec: `.omx/plans/test-spec-payroll-timesheets-2026-04-30.md`.
 - [x] Create multi-session todo: `.omx/plans/todo-payroll-timesheets-2026-04-30.md`.
-- [ ] Revisit open decisions before implementation: pay-calendar source, overnight shifts, salary exceptions, project metadata shape, invite flow.
+- [x] Revisit graph-backed plan changes before implementation: period-keyed MVP, master-side employee link, own-payslip self routes, and payroll integration service seam.
+- [ ] Revisit remaining open decisions before implementation as needed: overnight shifts, salary exceptions, project metadata shape, invite flow.
 
 ## Slice 1 — Employee identity linkage and RBAC foundation
 - [ ] Add/extend plan and test spec if employee identity design changes.
-- [ ] Add tests for employee-user link creation, inactive links, company scope isolation, and duplicate active link prevention.
+- [ ] Add tests for employee-user link creation, inactive links, company scope isolation, stale employee IDs, and duplicate active link prevention.
 - [ ] Add tests for employee role permissions and forbidden payroll/admin access.
-- [ ] Implement employee-user link model/service/schema.
-- [ ] Add self-service permissions and employee role in `app/services/auth.py`.
+- [ ] Implement master auth-side employee-user link model/service/schema with `company_scope` and company-local `employee_id`.
+- [ ] Avoid assuming a cross-database FK from auth/master records into company-scoped employee tables.
+- [ ] Add self-service permissions and employee role in `app/services/auth.py`, including own payslip view permission if delivered in Slice 3.
 - [ ] Add helper to resolve authenticated user's linked employee for active company scope.
 - [ ] Add admin API for link/unlink/invite or account creation path.
 - [ ] Run targeted auth tests and `git diff --check`.
@@ -44,10 +46,12 @@
 - [ ] Lore commit and push branch.
 
 ## Slice 3 — Employee self-service API
-- [ ] Add route tests for own list/detail/create/update/submit/export.
+- [ ] Add route tests for own timesheet list/detail/create/update/submit/export.
 - [ ] Add negative tests for spoofed `employee_id`, cross-employee ID access, unauthenticated access, and locked edits.
+- [ ] Add tests for own payslip list/PDF access and cross-employee payslip denial.
 - [ ] Implement `app/routes/timesheets.py` self endpoints.
 - [ ] Register route in `app/main.py`.
+- [ ] Add employee self-service payslip route(s) that verify the active employee link instead of granting broad payroll permissions.
 - [ ] Ensure self routes never trust client-supplied employee ownership.
 - [ ] Add simple own-timesheet CSV/print export.
 - [ ] Run targeted route tests and `git diff --check`.
@@ -71,7 +75,8 @@
 - [ ] Add tests for manual override path if retained.
 - [ ] Add tests that pay-run processing locks linked timesheets.
 - [ ] Add `timesheet_id` linkage to pay stubs if needed.
-- [ ] Extend payroll creation/preview to consume approved timesheets.
+- [ ] Add `app/services/payroll_timesheet_integration.py` or equivalent service seam for readiness, import, and locking.
+- [ ] Extend payroll creation/preview to consume approved timesheets through the service seam without bloating payroll route functions.
 - [ ] Preserve existing salary employee payroll behavior.
 - [ ] Verify payday filing and payslip paths still work.
 - [ ] Run payroll regression tests and `git diff --check`.

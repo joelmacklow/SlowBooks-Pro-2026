@@ -12,7 +12,7 @@ Add a payroll timesheeting feature so employees can log in, enter their own time
 - Payroll UI exists in `app/static/js/payroll.js`, including manual hourly inputs for draft pay runs.
 - Auth/RBAC exists in `app/routes/auth.py` and `app/services/auth.py`, with payroll/admin permissions but no employee self-service identity linkage.
 - No durable timesheet model or employee portal workflow currently exists; `PayStub.hours` is only the final payroll input/output.
-- Code-review graph was checked before planning, but this repo graph currently has zero indexed files, so impact mapping is based on repository search.
+- Code-review graph was rebuilt before this plan review: 373 files, 3,340 nodes, 33,087 edges, and 212 affected flows across the projected auth/payroll/timesheet integration surface. The graph shows the highest-risk existing hotspots are `app/routes/payroll.py::process_pay_run`, `app/routes/payroll.py::create_pay_run`, and `app/static/js/payroll.js::render`, so implementation should keep route/UI changes thin and move orchestration into services.
 
 ## External product reference
 Xero's payroll timesheet page describes a self-service model where employees submit timesheets digitally, admins review and approve them, approved time is included in pay runs, and employees can use phone/tablet/desktop while only accessing their own pay records. It also highlights automatic hour totals, total-hours or start/end-time entry, admin corrections before approval, employee copies/export/print, project/client time tracking, and reporting for project/productivity insights.
@@ -68,20 +68,24 @@ Hourly payroll currently relies on payroll admins manually entering hours during
 - Actions: open employee timesheet, make correction with reason, approve, reject with reason, bulk approve submitted timesheets, import approved hours into draft pay run, view audit history.
 
 ### Payroll integration
+- MVP timesheets are keyed by explicit `period_start` and `period_end`; they are created before pay runs and linked to a pay run only when approved hours are imported or processed.
 - Draft pay-run creation defaults hourly employee hours from approved timesheets for the selected period.
 - Missing/unapproved hourly timesheets produce a blocking warning unless admin explicitly uses a controlled override.
 - `PayStub` stores source timesheet linkage when generated from approved timesheets.
 - Processing a pay run locks linked timesheets and prevents silent edits.
+- Add a service seam such as `app/services/payroll_timesheet_integration.py` for approved-timesheet lookup, missing/unapproved readiness checks, import mapping, and lock-on-process logic; do not grow `app/routes/payroll.py::create_pay_run` or `process_pay_run` with this orchestration.
 
 ## Data model proposal
 Prefer a new `app/models/timesheets.py` module to keep the lifecycle distinct from final payroll stubs.
 
 ### `EmployeePortalLink` or equivalent
-- `id`, `employee_id`, `user_id`, `company_scope`, `is_active`, timestamps.
-- Unique constraints preventing ambiguous active links.
+- Store the employee-user link on the auth/master side, because `User`/`UserMembership` live in the master auth database while `Employee` lives in the selected company database.
+- Fields: `id`, `user_id`, `company_scope`, `employee_id`, `is_active`, timestamps, optional `created_by_user_id` / `deactivated_by_user_id`.
+- Do **not** rely on a normal database foreign key from this link to company-scoped `employees`; resolve `employee_id` by opening the authorised company database for `company_scope`.
+- Unique constraints must prevent ambiguous active links, especially multiple active links for the same `(user_id, company_scope)` and duplicate active user links to the same employee.
 
 ### `Timesheet`
-- `id`, `employee_id`, nullable `pay_run_id` or explicit `period_start` / `period_end`.
+- `id`, `employee_id`, required `period_start` / `period_end`, nullable `pay_run_id` assigned only during import/process linkage.
 - `status`, `total_hours`, submitted/approved/rejected/locked timestamps and actor IDs.
 - `rejection_reason`, notes, timestamps.
 
@@ -105,9 +109,12 @@ Prefer a new `app/models/timesheets.py` module to keep the lifecycle distinct fr
 - `PUT /api/timesheets/self/{timesheet_id}` — update own draft/rejected timesheet.
 - `POST /api/timesheets/self/{timesheet_id}/submit` — submit own timesheet.
 - `GET /api/timesheets/self/{timesheet_id}/export` — own CSV/print export.
+- `GET /api/payroll/self/payslips` or equivalent employee-portal route — list only the linked employee's processed pay stubs.
+- `GET /api/payroll/self/payslips/{run_id}/pdf` or equivalent employee-portal route — download only the linked employee's payslip PDF.
 
 ### Admin
-- `GET /api/timesheets/pay-runs/{pay_run_id}` — pay-run readiness dashboard.
+- `GET /api/timesheets/periods` — period-based readiness dashboard before a pay run exists.
+- `GET /api/timesheets/pay-runs/{pay_run_id}` — pay-run readiness dashboard once a pay run exists.
 - `GET /api/timesheets/{timesheet_id}` — admin detail.
 - `PUT /api/timesheets/{timesheet_id}` — admin correction before approval/lock.
 - `POST /api/timesheets/{timesheet_id}/approve` — approve.
@@ -128,6 +135,7 @@ Add explicit permissions so employee self-service does not reuse broad payroll a
 - `timesheets.manage`
 - `timesheets.approve`
 - `timesheets.export`
+- `payroll.self.payslips.view`
 
 Add an `employee` or `employee_self_service` role whose permissions are limited to self-service data only.
 
@@ -136,10 +144,10 @@ Add an `employee` or `employee_self_service` role whose permissions are limited 
 Create and maintain this PRD, the paired test spec, and the multi-session todo backlog.
 
 ### Slice 1 — Employee identity linkage and RBAC foundation
-- Add employee-user link model/schema/service.
-- Add employee self-service role/permissions.
+- Add auth/master-side employee-user link model/schema/service that stores `company_scope` and company-local `employee_id` without assuming a cross-database FK.
+- Add employee self-service role/permissions, including own payslip view permission if payslip self routes are delivered in Slice 3.
 - Add admin invite/link/unlink workflow, initially API-first.
-- Enforce server-side ownership checks.
+- Enforce server-side ownership checks by resolving the current user to an active employee link for the requested company scope.
 
 ### Slice 2 — Timesheet core model/service
 - Add timesheet, line, and audit models.
@@ -148,9 +156,10 @@ Create and maintain this PRD, the paired test spec, and the multi-session todo b
 - Add locked/rejected/approved edit rules.
 
 ### Slice 3 — Employee self-service API
-- Add `self` endpoints.
+- Add timesheet `self` endpoints.
 - Enforce current user to employee mapping.
 - Add save draft, submit, list, detail, export basics.
+- Add own-payslip list/PDF endpoints or a dedicated employee portal payroll route that never grants broad `payroll.payslips.view`.
 
 ### Slice 4 — Admin review API
 - Add pay-period/pay-run readiness lists.
@@ -158,6 +167,7 @@ Create and maintain this PRD, the paired test spec, and the multi-session todo b
 - Add CSV export.
 
 ### Slice 5 — Payroll integration
+- Add `app/services/payroll_timesheet_integration.py` or equivalent service seam for readiness, import, and locking.
 - Import approved timesheet totals into draft pay runs.
 - Store source `timesheet_id` on stubs.
 - Lock timesheets after payroll processing.
@@ -186,21 +196,23 @@ Create and maintain this PRD, the paired test spec, and the multi-session todo b
 ## Impacted files and likely blast radius
 - `app/models/payroll.py` — PayStub source linkage and employee relationships.
 - New `app/models/timesheets.py` — primary data model.
-- `app/models/auth.py` — user/employee linkage if not isolated.
+- `app/models/auth.py` — master-side user/employee linkage and company-scope mapping.
 - `app/models/__init__.py` — model imports.
 - New `app/schemas/timesheets.py` — request/response contracts.
 - `app/schemas/payroll.py` — pay-run source-timesheet fields if exposed.
 - New `app/services/timesheets.py` — lifecycle, totals, ownership, audit.
 - `app/services/auth.py` — permissions/roles and employee auth context helpers.
+- New `app/services/employee_portal.py` or equivalent — active employee-link resolution across auth/master and company databases.
 - New `app/routes/timesheets.py` — API routes.
-- `app/routes/payroll.py` — approved hours import and locking during process.
+- New `app/services/payroll_timesheet_integration.py` — approved hours import/readiness/locking seam.
+- `app/routes/payroll.py` — thin integration calls only; avoid expanding large create/process route functions.
 - `app/main.py` — router registration.
 - `app/static/js/payroll.js` — admin integration.
 - New or existing employee portal JS/CSS under `app/static/js/` and `app/static/css/`.
 - Tests under `tests/`, especially auth, payroll, and JS route/render tests.
 
 ## Acceptance criteria
-1. Employees can log in and only access their linked employee record, own timesheets, and own pay records.
+1. Employees can log in and only access their linked employee record, own timesheets, and own pay records/payslips for the active company scope.
 2. Employees can create, edit, save, and submit timesheets for open pay periods.
 3. Total hours are calculated correctly for total-hours and start/end/break entry modes.
 4. Payroll admins can review, correct with an audit reason, approve, reject, bulk approve, and export timesheets.
@@ -212,7 +224,7 @@ Create and maintain this PRD, the paired test spec, and the multi-session todo b
 10. Existing payroll calculations and payslip generation continue to pass.
 
 ## Security and privacy requirements
-- Employee routes must never trust client-supplied `employee_id` without verifying linkage to authenticated user.
+- Employee routes must never trust client-supplied `employee_id` without verifying linkage to authenticated user and active company scope.
 - Admin routes must require explicit timesheet/payroll permissions.
 - Timesheet exports must be scoped and filename-safe.
 - Audit events must not expose secrets or raw session tokens.
@@ -224,12 +236,12 @@ Create and maintain this PRD, the paired test spec, and the multi-session todo b
 - **High — privacy leak between employees.** Mitigate with server-side ownership checks and negative tests for cross-employee access.
 - **High — payroll record tampering.** Mitigate with locked states, audit events, and no silent edits after processing.
 - **High — payroll calculation regressions.** Mitigate by keeping approved timesheets as input to existing `calculate_payroll_stub` rather than duplicating payroll math.
-- **Medium — period/pay-run ambiguity.** Mitigate by using explicit period dates first and linking to pay runs when created/processed.
+- **Medium — period/pay-run ambiguity.** Mitigated for MVP by requiring explicit period dates first and linking to pay runs only when approved time is imported/processed.
 - **Medium — start/end edge cases.** Mitigate with clear validation for overnight shifts, breaks, decimal precision, and invalid ranges.
 - **Medium — UI scope creep.** Mitigate by building the API/lifecycle first and deferring leave/expenses/native mobile/project analytics.
 
 ## Open decisions for future slices
-- Whether timesheets are created from pay-run drafts or from recurring pay calendars before pay-run creation.
+- Confirmed for MVP: timesheets are period-keyed and created before pay runs; `pay_run_id` linkage is assigned only during import/process.
 - Whether overnight shifts are allowed in MVP or deferred.
 - Whether salary employees can submit exception timesheets initially.
 - Whether project/client/task fields should reference existing customer/project tables or start as free-text metadata.
