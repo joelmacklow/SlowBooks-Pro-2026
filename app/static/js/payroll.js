@@ -2,6 +2,8 @@
  * Payroll — NZ draft pay runs with PAYE calculations and posting.
  */
 const PayrollPage = {
+    _detailState: null,
+
     _timeInputValue(value) {
         const raw = value == null ? '' : String(value).trim();
         if (!raw) return '';
@@ -201,6 +203,164 @@ const PayrollPage = {
         } catch (err) {
             toast(err.message, 'error');
         }
+    },
+
+    _detailQueryState() {
+        const rawHash = location?.hash || '#/payroll/detail';
+        const query = rawHash.includes('?') ? rawHash.split('?')[1] : '';
+        const params = {};
+        for (const part of query.split('&').filter(Boolean)) {
+            const [key, value = ''] = part.split('=');
+            if (!key) continue;
+            params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
+        }
+        const mode = params.mode || (params.id ? 'view' : 'new');
+        const id = Number(params.id || 0) || null;
+        return { mode, id };
+    },
+
+    _detailBackButtonHtml() {
+        const backLabel = App.detailBackLabel('#/payroll/detail', '#/payroll', 'Payroll');
+        return `<button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/payroll/detail', '#/payroll')">${escapeHtml(backLabel)}</button>`;
+    },
+
+    _detailPayRunRows(run = {}, canViewPayslips = false, canEmailPayslips = false) {
+        return (run.stubs || []).map(stub => `
+            <tr>
+                <td>${escapeHtml(stub.employee_name || '')}</td>
+                <td>${escapeHtml(stub.tax_code || '')}</td>
+                <td class="amount">${formatCurrency(stub.gross_pay)}</td>
+                <td class="amount">${formatCurrency(stub.paye)}</td>
+                <td class="amount">${formatCurrency(stub.acc_earners_levy)}</td>
+                <td class="amount">${formatCurrency(stub.student_loan_deduction)}</td>
+                <td class="amount">${formatCurrency(stub.kiwisaver_employee_deduction)}</td>
+                <td class="amount">${formatCurrency(stub.child_support_deduction)}</td>
+                <td class="amount">${formatCurrency(stub.net_pay)}</td>
+                <td>${String(run.status || '').toLowerCase() === 'processed' ? `${canViewPayslips ? `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.openPayslip(${run.id}, ${stub.employee_id})">Print / PDF</button>` : ''} ${canEmailPayslips ? `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.emailPayslip(${run.id}, ${stub.employee_id})">Email</button>` : ''}` : ''}</td>
+            </tr>
+        `).join('');
+    },
+
+    async renderDetailScreen() {
+        const { mode, id } = PayrollPage._detailQueryState();
+        const canProcessRun = !App.hasPermission || App.hasPermission('payroll.process');
+        const canViewPayslips = !App.hasPermission || App.hasPermission('payroll.payslips.view');
+        const canEmailPayslips = !App.hasPermission || App.hasPermission('payroll.payslips.email');
+        const canExportFiling = !App.hasPermission || App.hasPermission('payroll.filing.export');
+
+        if (mode === 'new') {
+            let state = PayrollPage._detailState;
+            if (!state || state.mode !== 'new') {
+                const employees = await API.get('/employees?active_only=true');
+                state = { mode: 'new', employees };
+                PayrollPage._detailState = state;
+            }
+            const employees = state.employees || [];
+            if (!employees.length) {
+                return `
+                    <div class="page-header">
+                        <div>
+                            ${PayrollPage._detailBackButtonHtml()}
+                            <h2 style="margin-top:8px;">New Pay Run</h2>
+                        </div>
+                    </div>
+                    <div class="empty-state"><p>Add an active employee before creating a pay run.</p></div>`;
+            }
+            const today = todayISO();
+            const rows = employees.map(emp => `
+                <tr>
+                    <td>
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" name="include_${emp.id}" checked>
+                            <span>${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</span>
+                        </label>
+                    </td>
+                    <td>${escapeHtml(emp.pay_type)}</td>
+                    <td>${escapeHtml(emp.tax_code || '')}</td>
+                    <td>${escapeHtml(emp.pay_frequency || '')}</td>
+                    <td><input name="hours_${emp.id}" type="number" step="0.01" min="0" value="${emp.pay_type === 'hourly' ? '0' : ''}" ${emp.pay_type === 'salary' ? 'disabled' : ''}></td>
+                </tr>
+            `).join('');
+            return `
+                <div class="page-header">
+                    <div>
+                        ${PayrollPage._detailBackButtonHtml()}
+                        <h2 style="margin-top:8px;">New Pay Run</h2>
+                    </div>
+                </div>
+                <div class="detail-panel">
+                    <form onsubmit="PayrollPage.save(event)">
+                        <div class="form-grid">
+                            <div class="form-group"><label>Period Start</label><input name="period_start" type="date" value="${today}" required></div>
+                            <div class="form-group"><label>Period End</label><input name="period_end" type="date" value="${today}" required></div>
+                            <div class="form-group"><label>Pay Date</label><input name="pay_date" type="date" value="${today}" required></div>
+                        </div>
+                        <div class="table-container" style="margin-top:12px;">
+                            <table>
+                                <thead><tr><th>Employee</th><th>Pay Type</th><th>Tax Code</th><th>Frequency</th><th>Hours</th></tr></thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                        <p style="font-size:11px; color:var(--text-muted); margin-top:10px;">Salary employees use their annual salary and pay frequency. Enter hours for hourly staff.</p>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="App.navigate('#/payroll')">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Draft Run</button>
+                        </div>
+                    </form>
+                </div>`;
+        }
+
+        if (!id) {
+            return `
+                <div class="page-header">
+                    <div>
+                        ${PayrollPage._detailBackButtonHtml()}
+                        <h2 style="margin-top:8px;">Payroll Run</h2>
+                    </div>
+                </div>
+                <div class="empty-state"><p>Select a payroll run or create a new one first.</p></div>`;
+        }
+
+        let state = PayrollPage._detailState;
+        if (!state || state.mode !== 'view' || Number(state.run?.id) !== id) {
+            const [run, filingHistory] = await Promise.all([
+                API.get(`/payroll/${id}`),
+                API.get(`/payroll/${id}/filing/history`).catch(() => []),
+            ]);
+            state = { mode: 'view', run, filingHistory };
+            PayrollPage._detailState = state;
+        }
+        const run = state.run || {};
+        const latestFiling = (state.filingHistory || [])[0];
+        const rows = PayrollPage._detailPayRunRows(run, canViewPayslips, canEmailPayslips);
+        return `
+            <div class="page-header">
+                <div>
+                    ${PayrollPage._detailBackButtonHtml()}
+                    <h2 style="margin-top:8px;">Pay Run ${escapeHtml(String(run.id || id))}</h2>
+                </div>
+                <div class="btn-group">
+                    ${String(run.status || '').toLowerCase() === 'draft' && canProcessRun ? `<button class="btn btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>` : ''}
+                    ${String(run.status || '').toLowerCase() === 'processed' && canViewPayslips ? `<button class="btn btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Refresh</button>` : ''}
+                    ${String(run.status || '').toLowerCase() === 'processed' && canExportFiling ? `<button class="btn btn-secondary" onclick="PayrollPage.exportEmploymentInformation(${run.id})">Employment Information</button>` : ''}
+                </div>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
+                Pay Date: <strong>${formatDate(run.pay_date)}</strong>
+                · Tax Year: <strong>${escapeHtml(String(run.tax_year || ''))}</strong>
+                · Status: <strong>${escapeHtml(run.status || '')}</strong>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Employee</th><th>Tax Code</th><th class="amount">Gross</th><th class="amount">PAYE</th><th class="amount">ACC</th><th class="amount">Student Loan</th><th class="amount">KiwiSaver</th><th class="amount">Child Support</th><th class="amount">Net</th><th>Actions</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">
+                Employer KiwiSaver: <strong>${formatCurrency(run.total_employer_kiwisaver || 0)}</strong>
+                · ESCT: <strong>${formatCurrency(run.total_esct || 0)}</strong>
+                ${latestFiling ? `<div>Employment Information ${escapeHtml(latestFiling.status)}${latestFiling.changed_since_source ? ' · Changed since source' : ''}</div>` : ''}
+            </div>`;
     },
 
     async showTimesheetPeriodReview() {
@@ -511,42 +671,8 @@ const PayrollPage = {
             toast('Add an active employee before creating a pay run', 'error');
             return;
         }
-
-        const today = todayISO();
-        const rows = employees.map(emp => `
-            <tr>
-                <td>
-                    <label style="display:flex; align-items:center; gap:6px;">
-                        <input type="checkbox" name="include_${emp.id}" checked>
-                        <span>${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</span>
-                    </label>
-                </td>
-                <td>${escapeHtml(emp.pay_type)}</td>
-                <td>${escapeHtml(emp.tax_code || '')}</td>
-                <td>${escapeHtml(emp.pay_frequency || '')}</td>
-                <td><input name="hours_${emp.id}" type="number" step="0.01" min="0" value="${emp.pay_type === 'hourly' ? '0' : ''}" ${emp.pay_type === 'salary' ? 'disabled' : ''}></td>
-            </tr>
-        `).join('');
-
-        openModal('New Pay Run', `
-            <form onsubmit="PayrollPage.save(event)">
-                <div class="form-grid">
-                    <div class="form-group"><label>Period Start</label><input name="period_start" type="date" value="${today}" required></div>
-                    <div class="form-group"><label>Period End</label><input name="period_end" type="date" value="${today}" required></div>
-                    <div class="form-group"><label>Pay Date</label><input name="pay_date" type="date" value="${today}" required></div>
-                </div>
-                <div class="table-container" style="margin-top:12px;">
-                    <table>
-                        <thead><tr><th>Employee</th><th>Pay Type</th><th>Tax Code</th><th>Frequency</th><th>Hours</th></tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>
-                <p style="font-size:11px; color:var(--text-muted); margin-top:10px;">Salary employees use their annual salary and pay frequency. Enter hours for hourly staff.</p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Draft Run</button>
-                </div>
-            </form>`);
+        PayrollPage._detailState = { mode: 'new', employees };
+        App.openDetail('#/payroll/detail?mode=new', '#/payroll');
     },
 
     async save(e) {
@@ -571,7 +697,7 @@ const PayrollPage = {
                 pay_date: form.get('pay_date'),
                 stubs,
             });
-            closeModal();
+            PayrollPage._detailState = null;
             toast('Draft pay run created');
             App.navigate('#/payroll');
         } catch (err) {
@@ -592,42 +718,10 @@ const PayrollPage = {
 
     async viewRun(id) {
         try {
-            const canViewPayslips = !App.hasPermission || App.hasPermission('payroll.payslips.view');
-            const canEmailPayslips = !App.hasPermission || App.hasPermission('payroll.payslips.email');
             const run = await API.get(`/payroll/${id}`);
-            const rows = (run.stubs || []).map(stub => `
-                <tr>
-                    <td>${escapeHtml(stub.employee_name || '')}</td>
-                    <td>${escapeHtml(stub.tax_code || '')}</td>
-                    <td class="amount">${formatCurrency(stub.gross_pay)}</td>
-                    <td class="amount">${formatCurrency(stub.paye)}</td>
-                    <td class="amount">${formatCurrency(stub.acc_earners_levy)}</td>
-                    <td class="amount">${formatCurrency(stub.student_loan_deduction)}</td>
-                    <td class="amount">${formatCurrency(stub.kiwisaver_employee_deduction)}</td>
-                    <td class="amount">${formatCurrency(stub.child_support_deduction)}</td>
-                    <td class="amount">${formatCurrency(stub.net_pay)}</td>
-                    <td>${String(run.status || '').toLowerCase() === 'processed' ? `${canViewPayslips ? `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.openPayslip(${run.id}, ${stub.employee_id})">Print / PDF</button>` : ''} ${canEmailPayslips ? `<button class="btn btn-sm btn-secondary" onclick="PayrollPage.emailPayslip(${run.id}, ${stub.employee_id})">Email</button>` : ''}` : ''}</td>
-                </tr>
-            `).join('');
-            openModal(`Pay Run ${id}`, `
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
-                    Pay Date: <strong>${formatDate(run.pay_date)}</strong>
-                    · Tax Year: <strong>${escapeHtml(String(run.tax_year || ''))}</strong>
-                    · Status: <strong>${escapeHtml(run.status)}</strong>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Employee</th><th>Tax Code</th><th class="amount">Gross</th><th class="amount">PAYE</th><th class="amount">ACC</th><th class="amount">Student Loan</th><th class="amount">KiwiSaver</th><th class="amount">Child Support</th><th class="amount">Net</th><th>Actions</th></tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>
-                <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">
-                    Employer KiwiSaver: <strong>${formatCurrency(run.total_employer_kiwisaver || 0)}</strong>
-                    · ESCT: <strong>${formatCurrency(run.total_esct || 0)}</strong>
-                </div>
-                <div class="form-actions">
-                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                </div>`);
+            const filingHistory = await API.get(`/payroll/${id}/filing/history`).catch(() => []);
+            PayrollPage._detailState = { mode: 'view', run, filingHistory };
+            App.openDetail(`#/payroll/detail?id=${id}`, '#/payroll');
         } catch (err) {
             toast(err.message, 'error');
         }
