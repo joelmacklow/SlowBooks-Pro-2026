@@ -28,6 +28,8 @@ assert.strictEqual(context.App.routePathFromHash('#/login?bootstrap_token=setup-
 assert.strictEqual(context.App.routePathFromHash('#/reports/gst-return/detail?period=2026-04'), '/reports/gst-return/detail');
 assert.strictEqual(context.App.routePathFromHash('#/reports/trial-balance?period=this_year_to_date'), '/reports/trial-balance');
 assert.strictEqual(context.App.routePathFromHash('#/'), '/');
+assert.strictEqual(context.App.routes['/reports/statement-of-changes-in-equity'].label, 'Statement of Changes in Equity');
+assert.strictEqual(typeof context.App.routes['/reports/statement-of-changes-in-equity'].render, 'function');
 
 context.App.routes = {
     '/fixed-assets/detail': { page: 'fixed-assets', label: 'Fixed Asset', render: async () => '<div>detail</div>' },

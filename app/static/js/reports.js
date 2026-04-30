@@ -31,6 +31,18 @@ const ReportsPage = {
                     <div class="card-header">Download Statements Pack</div>
                     <p style="font-size:13px; color:var(--gray-500);">Download a zipped audit bundle for the current financial year to date</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.statementOfChangesInEquity()">
+                    <div class="card-header">Statement of Changes in Equity</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Equity roll-forward and current year profit</p>
+                </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.accountingPolicies()">
+                    <div class="card-header">Accounting Policies</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Template policy note for the financial pack</p>
+                </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.directorsApproval()">
+                    <div class="card-header">Directors Approval</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Basic approval and signature page</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
                     <div class="card-header">A/R Aging</div>
                     <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
@@ -446,6 +458,23 @@ const ReportsPage = {
                 },
                 renderContent: (data) => ReportsPage.renderFixedAssetsReconciliationContent(data),
             },
+            "statement-of-changes-in-equity": {
+                title: "Statement of Changes in Equity",
+                filterMode: "range",
+                loadData: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return API.get(`/reports/statement-of-changes-in-equity?start_date=${range.start}&end_date=${range.end}`);
+                },
+                pdfPath: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `/reports/statement-of-changes-in-equity/pdf?start_date=${range.start}&end_date=${range.end}`;
+                },
+                pdfFilename: (state) => {
+                    const range = ReportsPage.getDateRange(state.period, state.custom_start, state.custom_end);
+                    return `StatementOfChangesInEquity_${range.start}_${range.end}.pdf`;
+                },
+                renderContent: (data) => ReportsPage.renderStatementOfChangesInEquityContent(data),
+            },
         };
     },
 
@@ -666,6 +695,20 @@ const ReportsPage = {
         return API.download(`/reports/financial-statements-pack?start_date=${start}&end_date=${end}`, `FinancialStatementsPack_${start}_${end}.zip`);
     },
 
+    async statementOfChangesInEquity() {
+        return ReportsPage.openReport("statement-of-changes-in-equity");
+    },
+
+    async accountingPolicies() {
+        const asOfDate = todayISO();
+        return API.open(`/reports/accounting-policies/pdf?as_of_date=${asOfDate}`, `AccountingPolicies_${asOfDate}.pdf`);
+    },
+
+    async directorsApproval() {
+        const asOfDate = todayISO();
+        return API.open(`/reports/directors-approval/pdf?as_of_date=${asOfDate}`, `DirectorsApproval_${asOfDate}.pdf`);
+    },
+
     renderCashFlowContent(data) {
         const section = (title, payload) => {
             const rows = (payload.items || []).map((item) => `
@@ -707,6 +750,46 @@ const ReportsPage = {
 
     renderCashFlowScreen() {
         return ReportsPage.renderReportScreen("cash-flow");
+    },
+
+    renderStatementOfChangesInEquityScreen() {
+        return ReportsPage.renderReportScreen("statement-of-changes-in-equity");
+    },
+
+    renderStatementOfChangesInEquityContent(data) {
+        const equityRows = (data.equity_accounts || []).map((entry) => `
+            <tr>
+                <td>${escapeHtml(entry.account_number || '')}</td>
+                <td>${escapeHtml(entry.account_name)}</td>
+                <td class="amount">${formatCurrency(entry.opening_balance || 0)}</td>
+                <td class="amount">${formatCurrency(entry.movement || 0)}</td>
+                <td class="amount">${formatCurrency(entry.closing_balance || 0)}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" style="text-align:center; color:var(--gray-400);">No equity accounts for this period.</td></tr>';
+
+        return `
+            <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th>No.</th><th>Account</th><th class="amount">Opening</th><th class="amount">Movement</th><th class="amount">Closing</th></tr></thead>
+                <tbody>
+                    ${equityRows}
+                    <tr style="font-weight:700; background:var(--gray-50);">
+                        <td colspan="2">Totals</td>
+                        <td class="amount">${formatCurrency(data.opening_total || 0)}</td>
+                        <td class="amount">${formatCurrency(data.direct_movements_total || 0)}</td>
+                        <td class="amount">${formatCurrency(data.account_closing_total || 0)}</td>
+                    </tr>
+                </tbody>
+            </table></div>
+            <div class="table-container" style="margin-top:12px;"><table>
+                <thead><tr><th>Measure</th><th class="amount">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td>Opening equity</td><td class="amount">${formatCurrency(data.opening_total || 0)}</td></tr>
+                    <tr><td>Direct equity movements</td><td class="amount">${formatCurrency(data.direct_movements_total || 0)}</td></tr>
+                    <tr><td>Current period profit / (loss)</td><td class="amount">${formatCurrency(data.current_period_profit || 0)}</td></tr>
+                    <tr style="font-weight:700; background:var(--primary-light);"><td>Closing equity</td><td class="amount">${formatCurrency(data.closing_total || 0)}</td></tr>
+                </tbody>
+            </table></div>`;
     },
 
     async profitLoss() {

@@ -563,6 +563,190 @@ def _report_tables_fixed_assets_reconciliation(report: dict, company: dict) -> l
     }]
 
 
+def _statement_of_changes_in_equity_rows(db: Session, start_date: date, end_date: date, auth) -> dict:
+    opening_date = start_date - timedelta(days=1)
+
+    def _balances(as_of_date: date) -> dict:
+        results = (
+            db.query(
+                Account.id,
+                Account.account_number,
+                Account.name,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
+            .join(TransactionLine, TransactionLine.account_id == Account.id)
+            .join(Transaction, TransactionLine.transaction_id == Transaction.id)
+            .filter(Account.account_type == AccountType.EQUITY)
+            .filter(Transaction.date <= as_of_date)
+            .group_by(Account.id, Account.account_number, Account.name)
+            .all()
+        )
+        rows = []
+        total = Decimal("0.00")
+        by_id = {}
+        for account_id, account_number, account_name, debit_total, credit_total in results:
+            opening_or_closing = _natural_balance_amount(AccountType.EQUITY, debit_total, credit_total)
+            rows.append({
+                "account_id": account_id,
+                "account_number": account_number,
+                "account_name": account_name,
+                "balance": float(opening_or_closing),
+            })
+            by_id[account_id] = opening_or_closing
+            total += opening_or_closing
+        rows.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+        return {"rows": rows, "total": float(total), "by_id": by_id}
+
+    opening = _balances(opening_date)
+    closing = _balances(end_date)
+    current_period_profit = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)["net_income"]
+
+    equity_rows = []
+    opening_total = Decimal(str(opening["total"]))
+    account_closing_total = Decimal(str(closing["total"]))
+    direct_movements_total = Decimal("0.00")
+
+    closing_lookup = closing["by_id"]
+    for row in opening["rows"]:
+        opening_balance = Decimal(str(row["balance"]))
+        closing_balance = Decimal(str(closing_lookup.get(row["account_id"], Decimal("0.00"))))
+        movement = closing_balance - opening_balance
+        direct_movements_total += movement
+        equity_rows.append({
+            "account_number": row["account_number"],
+            "account_name": row["account_name"],
+            "opening_balance": float(opening_balance),
+            "movement": float(movement),
+            "closing_balance": float(closing_balance),
+        })
+
+    for row in closing["rows"]:
+        if any(existing["account_number"] == row["account_number"] and existing["account_name"] == row["account_name"] for existing in equity_rows):
+            continue
+        closing_balance = Decimal(str(row["balance"]))
+        direct_movements_total += closing_balance
+        equity_rows.append({
+            "account_number": row["account_number"],
+            "account_name": row["account_name"],
+            "opening_balance": 0.0,
+            "movement": float(closing_balance),
+            "closing_balance": float(closing_balance),
+        })
+
+    equity_rows.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+
+    reported_closing_total = opening_total + direct_movements_total + Decimal(str(current_period_profit))
+    difference = account_closing_total - (opening_total + direct_movements_total)
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "equity_accounts": equity_rows,
+        "opening_total": float(opening_total),
+        "direct_movements_total": float(direct_movements_total),
+        "current_period_profit": float(current_period_profit),
+        "account_closing_total": float(account_closing_total),
+        "closing_total": float(reported_closing_total),
+        "difference": float(difference),
+        "is_balanced": abs(difference) < Decimal("0.005"),
+    }
+
+
+def _report_tables_statement_of_changes_in_equity(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["account_number"] or ""),
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(entry["opening_balance"], company), align="right"),
+            _pdf_cell(format_currency(entry["movement"], company), align="right"),
+            _pdf_cell(format_currency(entry["closing_balance"], company), align="right"),
+        )
+        for entry in report["equity_accounts"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=2),
+            _pdf_cell(format_currency(report["opening_total"], company), align="right"),
+            _pdf_cell(format_currency(report["direct_movements_total"], company), align="right"),
+            _pdf_cell(format_currency(report["account_closing_total"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [
+        {
+            "title": "Equity account roll-forward",
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "No.", "width": "12%"},
+                {"label": "Account", "width": "30%"},
+                {"label": "Opening", "align": "right", "width": "19%"},
+                {"label": "Movement", "align": "right", "width": "19%"},
+                {"label": "Closing", "align": "right", "width": "20%"},
+            ],
+            "rows": rows,
+            "empty_message": "No equity accounts for this period.",
+        },
+        {
+            "title": "Reconciliation",
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "Measure", "width": "72%"},
+                {"label": "Amount", "align": "right", "width": "28%"},
+            ],
+            "rows": [
+                _pdf_row(_pdf_cell("Opening equity"), _pdf_cell(format_currency(report["opening_total"], company), align="right")),
+                _pdf_row(_pdf_cell("Direct equity movements"), _pdf_cell(format_currency(report["direct_movements_total"], company), align="right")),
+                _pdf_row(_pdf_cell("Current period profit / (loss)"), _pdf_cell(format_currency(report["current_period_profit"], company), align="right")),
+                _pdf_row(_pdf_cell("Closing equity"), _pdf_cell(format_currency(report["closing_total"], company), align="right"), class_name="total-row"),
+                _pdf_row(_pdf_cell("Reconciliation difference"), _pdf_cell(format_currency(report["difference"], company), align="right"), class_name="total-row"),
+            ],
+        },
+    ]
+
+
+def _report_tables_accounting_policies(company: dict, as_of_date: date) -> list[dict]:
+    policies = [
+        ("Basis of accounting", "The records are maintained on an accrual, double-entry basis."),
+        ("Presentation currency", f'{company.get("currency") or "NZD"} is used for presentation and reporting.'),
+        ("GST", f'GST is reported using the configured {company.get("gst_basis") or "invoice"} basis and the current company settings.'),
+        ("Revenue and expenses", "Revenue and expenses are recorded from source documents and journal entries in the general ledger."),
+        ("Fixed assets", "Fixed assets are carried at cost less accumulated depreciation and are reviewed through the fixed asset reconciliation."),
+        ("Reporting date", f'This document is prepared for the period ending {format_date(as_of_date, company)}.'),
+    ]
+    return [{
+        "title": "Accounting policies",
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Policy", "width": "30%"},
+            {"label": "Description", "width": "70%"},
+        ],
+        "rows": [_pdf_row(_pdf_cell(label), _pdf_cell(detail)) for label, detail in policies],
+        "empty_message": "No accounting policies available.",
+    }]
+
+
+def _report_tables_directors_approval(company: dict, as_of_date: date) -> list[dict]:
+    company_name = company.get("company_name") or "SlowBooks Pro 2026"
+    return [{
+        "title": "Directors' approval and signatures",
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Item", "width": "28%"},
+            {"label": "Details", "width": "72%"},
+        ],
+        "rows": [
+            _pdf_row(_pdf_cell("Company"), _pdf_cell(company_name)),
+            _pdf_row(_pdf_cell("Balance date"), _pdf_cell(format_date(as_of_date, company))),
+            _pdf_row(_pdf_cell("Approval"), _pdf_cell("The directors approve these financial statements for issue.")),
+            _pdf_row(_pdf_cell("Director signature"), _pdf_cell("____________________________")),
+            _pdf_row(_pdf_cell("Director name"), _pdf_cell("____________________________")),
+            _pdf_row(_pdf_cell("Date"), _pdf_cell("____________________________")),
+        ],
+        "empty_message": "No signature page content available.",
+    }]
+
+
 def _draft_return_confirmation_state(start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> dict:
     state = build_return_confirmation_state(None)
     state["due_date"] = gst_due_date(end_date).isoformat()
@@ -833,6 +1017,73 @@ def fixed_assets_reconciliation_pdf(
         tables=_report_tables_fixed_assets_reconciliation(report, company),
     )
     return _report_pdf_response(pdf_bytes, f'FixedAssetReconciliation_{report["as_of_date"]}.pdf')
+
+
+@router.get("/statement-of-changes-in-equity")
+def statement_of_changes_in_equity(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = _financial_year_start_for_date(company, end_date)
+    return _statement_of_changes_in_equity_rows(db, start_date, end_date, auth)
+
+
+@router.get("/statement-of-changes-in-equity/pdf")
+def statement_of_changes_in_equity_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = statement_of_changes_in_equity(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Statement of Changes in Equity",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_statement_of_changes_in_equity(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'StatementOfChangesInEquity_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/accounting-policies/pdf")
+def accounting_policies_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    as_of_date = as_of_date or date.today()
+    pdf_bytes = generate_report_pdf(
+        title="Accounting Policies",
+        company_settings=company,
+        subtitle=f'As of {format_date(as_of_date, company)}',
+        tables=_report_tables_accounting_policies(company, as_of_date),
+    )
+    return _report_pdf_response(pdf_bytes, f'AccountingPolicies_{as_of_date.isoformat()}.pdf')
+
+
+@router.get("/directors-approval/pdf")
+def directors_approval_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    as_of_date = as_of_date or date.today()
+    pdf_bytes = generate_report_pdf(
+        title="Directors' Approval and Signatures",
+        company_settings=company,
+        subtitle=f'As of {format_date(as_of_date, company)}',
+        tables=_report_tables_directors_approval(company, as_of_date),
+    )
+    return _report_pdf_response(pdf_bytes, f'DirectorsApproval_{as_of_date.isoformat()}.pdf')
 
 
 @router.get("/trial-balance")
@@ -1582,15 +1833,55 @@ def financial_statements_pack(
         "media_type": "application/pdf",
     })
 
+    soce_data = statement_of_changes_in_equity(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    soce_pdf_bytes = generate_report_pdf(
+        title="Statement of Changes in Equity",
+        company_settings=company,
+        subtitle=f'{format_date(soce_data["start_date"], company)} - {format_date(soce_data["end_date"], company)}',
+        tables=_report_tables_statement_of_changes_in_equity(soce_data, company),
+    )
+    zip_entries.append((f'equity/StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf', soce_pdf_bytes))
+    included_documents.append({
+        "label": "Statement of Changes in Equity",
+        "path": f'equity/StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf',
+        "filename": f'StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    accounting_policies_pdf_bytes = generate_report_pdf(
+        title="Accounting Policies",
+        company_settings=company,
+        subtitle=f'As of {format_date(end_date, company)}',
+        tables=_report_tables_accounting_policies(company, end_date),
+    )
+    zip_entries.append((f'policies/AccountingPolicies_{end_date.isoformat()}.pdf', accounting_policies_pdf_bytes))
+    included_documents.append({
+        "label": "Accounting Policies",
+        "path": f'policies/AccountingPolicies_{end_date.isoformat()}.pdf',
+        "filename": f'AccountingPolicies_{end_date.isoformat()}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    directors_approval_pdf_bytes = generate_report_pdf(
+        title="Directors' Approval and Signatures",
+        company_settings=company,
+        subtitle=f'As of {format_date(end_date, company)}',
+        tables=_report_tables_directors_approval(company, end_date),
+    )
+    zip_entries.append((f'directors/DirectorsApproval_{end_date.isoformat()}.pdf', directors_approval_pdf_bytes))
+    included_documents.append({
+        "label": "Directors Approval and Signatures",
+        "path": f'directors/DirectorsApproval_{end_date.isoformat()}.pdf',
+        "filename": f'DirectorsApproval_{end_date.isoformat()}.pdf',
+        "media_type": "application/pdf",
+    })
+
     manifest = _financial_statements_pack_manifest(
         start_date=start_date,
         end_date=end_date,
         included_documents=included_documents,
         missing_documents=[
-            "statement_of_changes_in_equity",
-            "accounting_policies",
             "notes_to_financial_statements",
-            "directors_approval_or_signature_page",
             "auditor_report",
             "tax_reconciliation_to_taxable_income",
             "tax_fixed_asset_schedule",

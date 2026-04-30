@@ -40,6 +40,7 @@ const App = {
         '/reports/balance-sheet': { page: 'reports', label: 'Balance Sheet',      permission: 'accounts.manage', render: () => ReportsPage.renderBalanceSheetScreen() },
         '/reports/trial-balance': { page: 'reports', label: 'Trial Balance',      permission: 'accounts.manage', render: () => ReportsPage.renderTrialBalanceScreen() },
         '/reports/cash-flow': { page: 'reports',     label: 'Cash Flow',          permission: 'accounts.manage', render: () => ReportsPage.renderCashFlowScreen() },
+        '/reports/statement-of-changes-in-equity': { page: 'reports', label: 'Statement of Changes in Equity', permission: 'accounts.manage', render: () => ReportsPage.renderStatementOfChangesInEquityScreen() },
         '/reports/ar-aging': { page: 'reports',      label: 'A/R Aging',          permission: 'accounts.manage', render: () => ReportsPage.renderArAgingScreen() },
         '/reports/ap-aging': { page: 'reports',      label: 'A/P Aging',          permission: 'accounts.manage', render: () => ReportsPage.renderApAgingScreen() },
         '/reports/general-ledger': { page: 'reports', label: 'General Ledger',    permission: 'accounts.manage', render: () => ReportsPage.renderGeneralLedgerScreen() },

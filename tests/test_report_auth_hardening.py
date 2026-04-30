@@ -114,6 +114,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             (self.reports_route.balance_sheet, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.trial_balance, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.cash_flow_report, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
+            (self.reports_route.statement_of_changes_in_equity, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30)}),
             (self.reports_route.ar_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.ap_aging, {"as_of_date": date(2026, 4, 30)}),
             (self.reports_route.general_ledger, {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 30), "account_id": None}),
@@ -140,6 +141,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
             self.reports_route.trial_balance_pdf,
             self.reports_route.cash_flow_pdf,
             self.reports_route.financial_statements_pack,
+            self.reports_route.statement_of_changes_in_equity_pdf,
+            self.reports_route.accounting_policies_pdf,
+            self.reports_route.directors_approval_pdf,
             self.reports_route.fixed_assets_reconciliation_pdf,
             self.reports_route.ar_aging_pdf,
             self.reports_route.ap_aging_pdf,
@@ -171,6 +175,15 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 pack_auth = self._auth_dependency(self.reports_route.financial_statements_pack)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                soce_pdf_auth = self._auth_dependency(self.reports_route.statement_of_changes_in_equity_pdf)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                policies_pdf_auth = self._auth_dependency(self.reports_route.accounting_policies_pdf)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                directors_pdf_auth = self._auth_dependency(self.reports_route.directors_approval_pdf)(
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 fixed_assets_pdf_auth = self._auth_dependency(self.reports_route.fixed_assets_reconciliation_pdf)(
@@ -231,6 +244,22 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     end_date=date(2026, 4, 30),
                     db=db,
                     auth=cash_flow_pdf_auth,
+                )
+                soce_pdf = self.reports_route.statement_of_changes_in_equity_pdf(
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 4, 30),
+                    db=db,
+                    auth=soce_pdf_auth,
+                )
+                policies_pdf = self.reports_route.accounting_policies_pdf(
+                    as_of_date=date(2026, 4, 30),
+                    db=db,
+                    auth=policies_pdf_auth,
+                )
+                directors_pdf = self.reports_route.directors_approval_pdf(
+                    as_of_date=date(2026, 4, 30),
+                    db=db,
+                    auth=directors_pdf_auth,
                 )
                 pack_response = self.reports_route.financial_statements_pack(
                     start_date=date(2026, 4, 1),
@@ -314,6 +343,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
         self.assertEqual(balance_sheet_pdf.media_type, "application/pdf")
         self.assertEqual(trial_balance_pdf.media_type, "application/pdf")
         self.assertEqual(cash_flow_pdf.media_type, "application/pdf")
+        self.assertEqual(soce_pdf.media_type, "application/pdf")
+        self.assertEqual(policies_pdf.media_type, "application/pdf")
+        self.assertEqual(directors_pdf.media_type, "application/pdf")
         self.assertEqual(pack_response.media_type, "application/zip")
         self.assertEqual(fixed_assets_pdf.media_type, "application/pdf")
         self.assertEqual(ar_pdf.media_type, "application/pdf")

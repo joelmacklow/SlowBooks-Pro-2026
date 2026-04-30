@@ -126,6 +126,9 @@ class FinancialStatementsPackTests(unittest.TestCase):
             "aging/APAging_2026-04-30.pdf",
             "gst/GST101A_2026-04-01_2026-04-30.pdf",
             "fixed-assets/FixedAssetReconciliation_2026-04-30.pdf",
+            "equity/StatementOfChangesInEquity_2026-04-01_2026-04-30.pdf",
+            "policies/AccountingPolicies_2026-04-30.pdf",
+            "directors/DirectorsApproval_2026-04-30.pdf",
         }
         self.assertSetEqual(names, expected_names)
 
@@ -133,8 +136,7 @@ class FinancialStatementsPackTests(unittest.TestCase):
         self.assertEqual(manifest["pack_type"], "financial_statements_pack")
         self.assertEqual(manifest["status"], "partial")
         self.assertEqual(manifest["period"], {"start_date": "2026-04-01", "end_date": "2026-04-30"})
-        self.assertEqual(len(manifest["included_documents"]), 9)
-        self.assertIn("statement_of_changes_in_equity", manifest["missing_document_categories"])
+        self.assertEqual(len(manifest["included_documents"]), 12)
         self.assertIn("notes_to_financial_statements", manifest["missing_document_categories"])
         self.assertIn("tax_fixed_asset_schedule", manifest["missing_document_categories"])
 
@@ -142,10 +144,19 @@ class FinancialStatementsPackTests(unittest.TestCase):
         self.assertSetEqual(included_paths, expected_names - {"manifest.json"})
         fixed_asset_entry = next(entry for entry in manifest["included_documents"] if entry["label"] == "Fixed Asset Reconciliation")
         self.assertEqual(fixed_asset_entry["media_type"], "application/pdf")
+        soce_entry = next(entry for entry in manifest["included_documents"] if entry["label"] == "Statement of Changes in Equity")
+        policies_entry = next(entry for entry in manifest["included_documents"] if entry["label"] == "Accounting Policies")
+        directors_entry = next(entry for entry in manifest["included_documents"] if entry["label"] == "Directors Approval and Signatures")
+        self.assertEqual(soce_entry["media_type"], "application/pdf")
+        self.assertEqual(policies_entry["media_type"], "application/pdf")
+        self.assertEqual(directors_entry["media_type"], "application/pdf")
 
         self.assertEqual(archive.read("statements/ProfitLoss_2026-04-01_2026-04-30.pdf"), b"%PDF-Profit & Loss")
         self.assertEqual(archive.read("gst/GST101A_2026-04-01_2026-04-30.pdf"), b"%PDF-GST101A")
         self.assertEqual(archive.read("fixed-assets/FixedAssetReconciliation_2026-04-30.pdf"), b"%PDF-Fixed Asset Reconciliation")
+        self.assertEqual(archive.read("equity/StatementOfChangesInEquity_2026-04-01_2026-04-30.pdf"), b"%PDF-Statement of Changes in Equity")
+        self.assertEqual(archive.read("policies/AccountingPolicies_2026-04-30.pdf"), b"%PDF-Accounting Policies")
+        self.assertEqual(archive.read("directors/DirectorsApproval_2026-04-30.pdf"), b"%PDF-Directors' Approval and Signatures")
 
 
 if __name__ == "__main__":
