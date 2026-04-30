@@ -157,22 +157,12 @@ const AuthPage = {
     },
 
     async renderUserManagement() {
-        const [users, meta, links] = await Promise.all([
+        const [users, meta] = await Promise.all([
             API.get('/auth/users'),
             API.get('/auth/meta'),
-            API.get('/employee-portal/links'),
         ]);
-        let employees = [];
-        let employeeLoadError = '';
-        try {
-            employees = await API.get('/employees?active_only=true');
-        } catch (err) {
-            employeeLoadError = err.message || 'Unable to load employee list';
-        }
         AuthPage._usersCache = users;
         AuthPage._metaCache = meta;
-        AuthPage._employeeLinksCache = links;
-        AuthPage._employeeListCache = employees;
         return `
             <div class="page-header">
                 <h2>Users & Access</h2>
@@ -213,122 +203,7 @@ const AuthPage = {
                             </tr>`).join('')}
                     </tbody>
                 </table></div>
-            </div>
-            <div class="settings-section">
-                <h3>Employee Portal Links</h3>
-                <div style="font-size:10px; color:var(--text-muted); margin-bottom:10px;">
-                    Link a user login to one active employee record so self-service timesheet and payslip routes resolve ownership safely.
-                </div>
-                ${AuthPage.renderEmployeeLinkForm(users, employees, links, employeeLoadError)}
-                <div class="table-container" style="margin-top:10px;"><table>
-                    <thead><tr><th>User</th><th>Employee</th><th>Company Scope</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        ${AuthPage.renderEmployeeLinkRows(links)}
-                    </tbody>
-                </table></div>
             </div>`;
-    },
-
-    renderEmployeeLinkRows(links = []) {
-        if (!links.length) {
-            return '<tr><td colspan="5" style="font-size:11px; color:var(--text-muted);">No active employee links.</td></tr>';
-        }
-        return links.map((link) => `
-            <tr>
-                <td>
-                    <strong>${escapeHtml(link.user?.full_name || `User #${link.user?.id || ''}`)}</strong><br>
-                    <span style="font-size:10px; color:var(--text-muted);">${escapeHtml(link.user?.email || '')}</span>
-                </td>
-                <td>
-                    <strong>${escapeHtml(`${link.employee?.first_name || ''} ${link.employee?.last_name || ''}`.trim() || `Employee #${link.employee?.id || ''}`)}</strong><br>
-                    <span style="font-size:10px; color:var(--text-muted);">Employee ID: ${escapeHtml(String(link.employee?.id || ''))}</span>
-                </td>
-                <td>${escapeHtml(link.company_scope || '__current__')}</td>
-                <td>${link.is_active ? 'Active' : 'Inactive'}</td>
-                <td class="actions">
-                    ${link.is_active ? `<button class="btn btn-sm btn-danger" onclick="AuthPage.deactivateEmployeeLink(${link.id})">Deactivate</button>` : '—'}
-                </td>
-            </tr>
-        `).join('');
-    },
-
-    renderEmployeeLinkForm(users = [], employees = [], links = [], employeeLoadError = '') {
-        const activeLinkUserIds = new Set((links || []).filter((link) => link.is_active).map((link) => link.user?.id));
-        const eligibleUsers = (users || [])
-            .filter((user) => user?.is_active && user?.membership?.is_active)
-            .filter((user) => !activeLinkUserIds.has(user.id))
-            .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
-
-        const preferredUsers = eligibleUsers.filter((user) => user.membership?.role_key === 'employee_self_service');
-        const userOptions = (preferredUsers.length ? preferredUsers : eligibleUsers).map((user) => `
-            <option value="${user.id}">
-                ${escapeHtml(user.full_name)} (${escapeHtml(user.email)}) — ${escapeHtml(user.membership?.role_key || 'user')}
-            </option>
-        `).join('');
-
-        const employeeOptions = (employees || [])
-            .filter((employee) => employee?.is_active !== false)
-            .sort((a, b) => `${a.first_name || ''} ${a.last_name || ''}`.localeCompare(`${b.first_name || ''} ${b.last_name || ''}`))
-            .map((employee) => `<option value="${employee.id}">${escapeHtml(`${employee.first_name || ''} ${employee.last_name || ''}`.trim())} (ID ${employee.id})</option>`)
-            .join('');
-
-        if (!userOptions) {
-            return `<div style="font-size:11px; color:var(--text-muted);">No active users are available for new employee links.</div>`;
-        }
-
-        return `
-            <form onsubmit="AuthPage.createEmployeeLink(event)">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>User Login</label>
-                        <select name="user_id" required>${userOptions}</select>
-                    </div>
-                    <div class="form-group">
-                        <label>Employee</label>
-                        ${employeeOptions
-                            ? `<select name="employee_id" required>${employeeOptions}</select>`
-                            : `<input type="number" min="1" step="1" name="employee_id" required placeholder="Employee ID">`}
-                        ${employeeLoadError ? `<div style="margin-top:4px; font-size:10px; color:var(--text-muted);">Employee list unavailable: ${escapeHtml(employeeLoadError)}. Enter employee ID manually if needed.</div>` : ''}
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Link User to Employee</button>
-                </div>
-            </form>
-        `;
-    },
-
-    async createEmployeeLink(e) {
-        e.preventDefault();
-        const form = e.target;
-        const userId = Number(form.user_id?.value || '');
-        const employeeId = Number(form.employee_id?.value || '');
-        if (!Number.isFinite(userId) || userId <= 0 || !Number.isFinite(employeeId) || employeeId <= 0) {
-            toast('Select a valid user and employee', 'error');
-            return;
-        }
-        try {
-            await API.post('/employee-portal/links', {
-                user_id: userId,
-                employee_id: employeeId,
-            });
-            toast('Employee portal link created');
-            App.navigate('#/users-access');
-        } catch (err) {
-            toast(err.message, 'error');
-        }
-    },
-
-    async deactivateEmployeeLink(linkId) {
-        const confirmed = await App.confirm('Deactivate Link', 'Deactivate this employee portal link? The user will lose self-service access.');
-        if (!confirmed) return;
-        try {
-            await API.post(`/employee-portal/links/${linkId}/deactivate`, {});
-            toast('Employee portal link deactivated');
-            App.navigate('#/users-access');
-        } catch (err) {
-            toast(err.message, 'error');
-        }
     },
 
     showUserForm(index = null) {
