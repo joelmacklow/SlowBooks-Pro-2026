@@ -222,6 +222,13 @@ async function runPayrollPage() {
     assert.ok(viewDetailHtml.includes('Back to Payroll'));
     assert.ok(viewDetailHtml.indexOf('>Process<') > -1);
     assert.ok(viewDetailHtml.indexOf('>Process<') < viewDetailHtml.indexOf('Back to Payroll'));
+    navigations.length = 0;
+    await context.PayrollPage.viewRun(2);
+    assert.deepStrictEqual(navigations, ['#/payroll/detail?id=2']);
+    const processedDetailHtml = await context.PayrollPage.renderDetailScreen();
+    assert.ok(processedDetailHtml.includes('Pay Run 2'));
+    assert.ok(processedDetailHtml.includes('Employment Information generated'));
+    assert.ok(processedDetailHtml.includes('Aroha Ngata'));
 })().catch(err => {
     console.error(err);
     process.exit(1);
