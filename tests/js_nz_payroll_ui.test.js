@@ -101,6 +101,18 @@ async function runPayrollPage() {
                 if (path === '/payroll/2/filing/history') {
                     return [{ filing_type: 'employment_information', status: 'generated', changed_since_source: false }];
                 }
+                if (path === '/payroll/1') {
+                    return {
+                        id: 1,
+                        status: 'draft',
+                        tax_year: 2027,
+                        pay_date: '2026-04-15',
+                        total_gross: 4200,
+                        total_net: 2922.13,
+                        total_taxes: 1277.87,
+                        stubs: [],
+                    };
+                }
                 if (path === '/payroll/2') {
                     return {
                         id: 2,
@@ -203,12 +215,13 @@ async function runPayrollPage() {
     assert.ok(newDetailHtml.includes('Create Draft Run'));
 
     navigations.length = 0;
-    await context.PayrollPage.viewRun(2);
-    assert.deepStrictEqual(navigations, ['#/payroll/detail?id=2']);
+    await context.PayrollPage.viewRun(1);
+    assert.deepStrictEqual(navigations, ['#/payroll/detail?id=1']);
     const viewDetailHtml = await context.PayrollPage.renderDetailScreen();
-    assert.ok(viewDetailHtml.includes('Pay Run 2'));
-    assert.ok(viewDetailHtml.includes('Employment Information generated'));
-    assert.ok(viewDetailHtml.includes('Aroha Ngata'));
+    assert.ok(viewDetailHtml.includes('Pay Run 1'));
+    assert.ok(viewDetailHtml.includes('Back to Payroll'));
+    assert.ok(viewDetailHtml.indexOf('>Process<') > -1);
+    assert.ok(viewDetailHtml.indexOf('>Process<') < viewDetailHtml.indexOf('Back to Payroll'));
 })().catch(err => {
     console.error(err);
     process.exit(1);
