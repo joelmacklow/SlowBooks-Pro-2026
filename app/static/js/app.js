@@ -117,6 +117,11 @@ const App = {
         return App._detailOrigins[detailHash] || null;
     },
 
+    openDetail(detailHash, originHash = null) {
+        App.setDetailOrigin(detailHash, originHash);
+        App.navigate(detailHash);
+    },
+
     labelForHash(hash, fallback = 'Previous') {
         const route = App.routes[App.routePathFromHash(hash || '')];
         return route?.label || fallback;

@@ -60,6 +60,10 @@ const context = {
     App: {
         navigate(hash) { context.__navigations.push(hash); },
         setDetailOrigin(detailHash, originHash) { context.__detailOrigins.push([detailHash, originHash]); },
+        openDetail(detailHash, originHash) {
+            context.App.setDetailOrigin(detailHash, originHash);
+            context.App.navigate(detailHash);
+        },
         detailBackLabel() { return 'Back to Fixed Assets'; },
     },
     openModal() {},

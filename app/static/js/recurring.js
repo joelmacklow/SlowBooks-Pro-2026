@@ -189,15 +189,13 @@ const RecurringPage = {
     },
 
     async startNew(originHash = '#/recurring') {
-        App.setDetailOrigin('#/recurring/detail', originHash);
         await RecurringPage._loadEditorContext(null);
-        App.navigate('#/recurring/detail');
+        App.openDetail('#/recurring/detail', originHash);
     },
 
     async open(id, originHash = '#/recurring') {
-        App.setDetailOrigin('#/recurring/detail', originHash);
         await RecurringPage._loadEditorContext(id);
-        App.navigate('#/recurring/detail');
+        App.openDetail('#/recurring/detail', originHash);
     },
 
     async showForm(id = null) {

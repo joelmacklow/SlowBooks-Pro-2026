@@ -43,15 +43,13 @@ const CreditMemosPage = {
     },
 
     async startNew(originHash = '#/credit-memos') {
-        App.setDetailOrigin('#/credit-memos/detail', originHash);
         await CreditMemosPage._loadEditorContext(null);
-        App.navigate('#/credit-memos/detail');
+        App.openDetail('#/credit-memos/detail', originHash);
     },
 
     async open(id, originHash = '#/credit-memos') {
-        App.setDetailOrigin('#/credit-memos/detail', originHash);
         await CreditMemosPage._loadEditorContext(id);
-        App.navigate('#/credit-memos/detail');
+        App.openDetail('#/credit-memos/detail', originHash);
     },
 
     async showForm(id = null) {

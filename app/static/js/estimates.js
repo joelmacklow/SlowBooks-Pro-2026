@@ -55,15 +55,13 @@ const EstimatesPage = {
     },
 
     async startNew(originHash = '#/estimates') {
-        App.setDetailOrigin('#/estimates/detail', originHash);
         await EstimatesPage._loadEditorContext(null);
-        App.navigate('#/estimates/detail');
+        App.openDetail('#/estimates/detail', originHash);
     },
 
     async open(id, originHash = '#/estimates') {
-        App.setDetailOrigin('#/estimates/detail', originHash);
         await EstimatesPage._loadEditorContext(id);
-        App.navigate('#/estimates/detail');
+        App.openDetail('#/estimates/detail', originHash);
     },
 
     async view(id) {
