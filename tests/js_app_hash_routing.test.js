@@ -30,6 +30,7 @@ assert.strictEqual(context.App.routePathFromHash('#/reports/trial-balance?period
 assert.strictEqual(context.App.routePathFromHash('#/'), '/');
 assert.strictEqual(context.App.routes['/reports/statement-of-changes-in-equity'].label, 'Statement of Changes in Equity');
 assert.strictEqual(typeof context.App.routes['/reports/statement-of-changes-in-equity'].render, 'function');
+assert.ok(context.App.routes['/payroll/detail']);
 assert.strictEqual(typeof context.App.openDetail, 'function');
 
 context.App.setDetailOrigin('#/invoices/detail', '#/customers/detail');

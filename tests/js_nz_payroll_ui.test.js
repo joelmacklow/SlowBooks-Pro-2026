@@ -49,6 +49,7 @@ async function runEmployeesPage() {
 async function runPayrollPage() {
     const code = `${fs.readFileSync('app/static/js/payroll.js', 'utf8')}\nthis.PayrollPage = PayrollPage;`;
     const calls = [];
+    const navigations = [];
     const context = {
         API: {
             get: async (path) => {
@@ -73,7 +74,18 @@ async function runPayrollPage() {
                             total_gross: 4200,
                             total_net: 2922.13,
                             total_taxes: 1277.87,
-                            stubs: [],
+                            stubs: [{
+                                employee_id: 1,
+                                employee_name: 'Aroha Ngata',
+                                tax_code: 'M',
+                                gross_pay: 4200,
+                                paye: 1200,
+                                acc_earners_levy: 42,
+                                student_loan_deduction: 0,
+                                kiwisaver_employee_deduction: 200,
+                                child_support_deduction: 0,
+                                net_pay: 2758.13,
+                            }],
                         }
                     ];
                 }
@@ -89,6 +101,29 @@ async function runPayrollPage() {
                 if (path === '/payroll/2/filing/history') {
                     return [{ filing_type: 'employment_information', status: 'generated', changed_since_source: false }];
                 }
+                if (path === '/payroll/2') {
+                    return {
+                        id: 2,
+                        status: 'processed',
+                        tax_year: 2027,
+                        pay_date: '2026-04-29',
+                        total_gross: 4200,
+                        total_net: 2922.13,
+                        total_taxes: 1277.87,
+                        stubs: [{
+                            employee_id: 1,
+                            employee_name: 'Aroha Ngata',
+                            tax_code: 'M',
+                            gross_pay: 4200,
+                            paye: 1200,
+                            acc_earners_levy: 42,
+                            student_loan_deduction: 0,
+                            kiwisaver_employee_deduction: 200,
+                            child_support_deduction: 0,
+                            net_pay: 2758.13,
+                        }],
+                    };
+                }
                 throw new Error(`unexpected path ${path}`);
             },
         },
@@ -97,10 +132,19 @@ async function runPayrollPage() {
         statusBadge: value => value,
         toast() {},
         confirm: () => true,
-        App: { navigate() {} },
+        App: {
+            navigate() {},
+            openDetail(detailHash) {
+                navigations.push(detailHash);
+                context.location.hash = detailHash;
+            },
+            detailBackLabel() { return 'Back to Payroll'; },
+            navigateBackToDetailOrigin() {},
+        },
         closeModal() {},
         openModal() {},
         todayISO: () => '2026-04-01',
+        location: { hash: '#/payroll' },
         $: () => null,
         $$: () => [],
         escapeHtml: value => String(value || ''),
@@ -108,7 +152,7 @@ async function runPayrollPage() {
     };
     vm.createContext(context);
     vm.runInContext(code, context);
-    return { html: await context.PayrollPage.render(), calls };
+    return { html: await context.PayrollPage.render(), calls, navigations, context };
 }
 
 (async () => {
@@ -133,7 +177,7 @@ async function runPayrollPage() {
     assert.ok(!employeeHtml.includes('Filing Status'));
     assert.ok(!employeeHtml.includes('Allowances'));
 
-    const { html: payrollHtml, calls } = await runPayrollPage();
+    const { html: payrollHtml, calls, navigations, context } = await runPayrollPage();
     assert.ok(calls.includes('/payroll'));
     assert.ok(calls.includes('/employees?active_only=true'));
     assert.ok(payrollHtml.includes('New Pay Run'));
@@ -151,6 +195,20 @@ async function runPayrollPage() {
     assert.ok(!payrollHtml.includes('Federal'));
     assert.ok(!payrollHtml.includes('Medicare'));
     assert.ok(!payrollHtml.includes('Social Security'));
+
+    await context.PayrollPage.showForm();
+    assert.ok(navigations.includes('#/payroll/detail?mode=new'));
+    const newDetailHtml = await context.PayrollPage.renderDetailScreen();
+    assert.ok(newDetailHtml.includes('New Pay Run'));
+    assert.ok(newDetailHtml.includes('Create Draft Run'));
+
+    navigations.length = 0;
+    await context.PayrollPage.viewRun(2);
+    assert.deepStrictEqual(navigations, ['#/payroll/detail?id=2']);
+    const viewDetailHtml = await context.PayrollPage.renderDetailScreen();
+    assert.ok(viewDetailHtml.includes('Pay Run 2'));
+    assert.ok(viewDetailHtml.includes('Employment Information generated'));
+    assert.ok(viewDetailHtml.includes('Aroha Ngata'));
 })().catch(err => {
     console.error(err);
     process.exit(1);
