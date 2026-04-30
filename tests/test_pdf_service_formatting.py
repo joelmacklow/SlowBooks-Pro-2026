@@ -77,8 +77,13 @@ class PdfServiceFormattingTests(unittest.TestCase):
             pdf_service.generate_invoice_pdf(invoice, company)
 
         rendered = CapturingHTML.rendered[-1]
-        self.assertIn("fonts.googleapis.com/css2?family=Inter", rendered)
         self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn('class="company-logo"', rendered)
         self.assertIn(fake_logo.as_uri(), rendered)
@@ -301,8 +306,13 @@ class PdfServiceFormattingTests(unittest.TestCase):
         )
 
         rendered = CapturingHTML.rendered[-1]
-        self.assertIn("fonts.googleapis.com/css2?family=Inter", rendered)
         self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn("position: fixed; bottom: 0;", rendered)
         self.assertIn("Trial Balance", rendered)
@@ -316,6 +326,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
             resolved = pdf_service._resolve_static_asset_uri("/static/uploads/company_logo.png")
 
         self.assertEqual(resolved, legacy_logo.as_uri())
+
+    def test_pdf_font_assets_are_vendored_locally(self):
+        font_dir = Path("app/static/fonts/inter")
+        self.assertTrue((font_dir / "Inter-Regular.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Italic.woff2").exists())
+        self.assertTrue((font_dir / "Inter-SemiBold.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Bold.woff2").exists())
+        self.assertTrue((font_dir / "LICENSE.txt").exists())
 
 
 if __name__ == "__main__":

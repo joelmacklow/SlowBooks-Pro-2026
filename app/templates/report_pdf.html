@@ -2,7 +2,7 @@
 <html>
 <head>
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    {% include "_document_fonts.html" %}
     @page { size: {% if landscape %}A4 landscape{% else %}A4{% endif %}; margin: 1.5cm; }
     body { font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.35; }
     .header { margin-bottom: 18px; }
