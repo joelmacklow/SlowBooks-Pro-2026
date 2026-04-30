@@ -52,6 +52,9 @@ const noCacheContext = loadUtils();
 assert.strictEqual(noCacheContext.formatCurrency(1234.5), '$1,234.50');
 assert.strictEqual(noCacheContext.formatDate('2026-04-13'), 'Apr 13, 2026');
 
+assert.strictEqual(noCacheContext.escapeHtml(2027), '2027');
+assert.strictEqual(noCacheContext.escapeHtml(null), '');
+assert.strictEqual(noCacheContext.escapeHtml(false), 'false');
 
 assert.strictEqual(noCacheContext.escapeHtml(`O'Reilly & <tag>`), 'O&#39;Reilly &amp; &lt;tag&gt;');
 
