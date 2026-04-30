@@ -74,6 +74,8 @@ const App = {
         '/companies':     { page: 'companies',       label: 'Companies',          permission: 'companies.view', render: () => CompaniesPage.render() },
         '/employees':     { page: 'employees',       label: 'Employees',          permission: 'employees.view_private', render: () => EmployeesPage.render() },
         '/payroll':       { page: 'payroll',         label: 'Payroll',            permission: 'payroll.view', render: () => PayrollPage.render() },
+        '/my-timesheets': { page: 'my-timesheets',   label: 'My Timesheets',      permission: 'timesheets.self.view', render: () => TimesheetSelfServicePage.renderTimesheets() },
+        '/my-payslips':   { page: 'my-payslips',     label: 'My Payslips',        permission: 'payroll.self.payslips.view', render: () => TimesheetSelfServicePage.renderPayslips() },
         '/users-access':  { page: 'users-access',    label: 'Users & Access',     permission: 'users.manage', render: () => AuthPage.renderUserManagement() },
     },
 

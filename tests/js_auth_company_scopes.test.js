@@ -22,6 +22,7 @@ const context = {
                     { key: 'auckland_books', label: 'Auckland Books', database_name: 'auckland_books', is_default: false },
                 ],
             };
+            if (path === '/employee-portal/links') return [];
             throw new Error(`unexpected get ${path}`);
         },
     },

@@ -43,6 +43,7 @@ const context = {
                     { key: 'employees.manage', description: 'Create and update employee records.' },
                 ],
             };
+            if (path === '/employee-portal/links') return [];
             throw new Error(`unexpected get ${path}`);
         },
     },

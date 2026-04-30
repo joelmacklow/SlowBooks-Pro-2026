@@ -13,7 +13,7 @@ from app.models.gst_settlement import GstSettlement
 
 # Phase 1: Foundation
 from app.models.audit import AuditLog
-from app.models.auth import User, UserMembership, MembershipPermissionOverride, AuthSession
+from app.models.auth import User, UserMembership, MembershipPermissionOverride, AuthSession, EmployeePortalLink
 
 # Phase 2: Accounts Payable
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine
@@ -34,6 +34,7 @@ from app.models.backups import Backup
 # Phase 6: Ambitious
 from app.models.companies import Company
 from app.models.payroll import Employee, PayRun, PayStub
+from app.models.timesheets import Timesheet, TimesheetLine, TimesheetAuditEvent
 from app.models.payroll_filing import PayrollFilingAudit
 from app.models.fixed_assets import FixedAsset, FixedAssetType
 
@@ -46,7 +47,7 @@ __all__ = [
     "BankAccount", "BankRule", "BankTransaction", "Reconciliation",
     "Settings", "GstCode", "GstReturn", "GstSettlement",
     # Phase 1
-    "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession",
+    "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession", "EmployeePortalLink",
     # Phase 2
     "PurchaseOrder", "PurchaseOrderLine",
     "Bill", "BillLine", "BillPayment", "BillPaymentAllocation",
@@ -58,6 +59,6 @@ __all__ = [
     # Phase 5
     "TaxCategoryMapping", "Backup",
     # Phase 6
-    "Company", "Employee", "PayRun", "PayStub", "PayrollFilingAudit",
+    "Company", "Employee", "PayRun", "PayStub", "Timesheet", "TimesheetLine", "TimesheetAuditEvent", "PayrollFilingAudit",
     "FixedAsset", "FixedAssetType",
 ]

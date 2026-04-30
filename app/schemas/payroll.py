@@ -286,3 +286,14 @@ class PayRunResponse(BaseModel):
     transaction_id: Optional[int] = None
     stubs: list[PayStubResponse] = []
     model_config = {"from_attributes": True}
+
+
+class SelfPayslipSummaryResponse(BaseModel):
+    pay_run_id: int
+    pay_stub_id: int
+    period_start: date
+    period_end: date
+    pay_date: date
+    hours: float = 0
+    gross_pay: float = 0
+    net_pay: float = 0

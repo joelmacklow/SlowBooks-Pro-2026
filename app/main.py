@@ -38,7 +38,7 @@ from app.routes import uploads, xero_import
 # Phase 5: Advanced Integration
 from app.routes import bank_import, tax, backups, gst
 # Phase 6: Ambitious
-from app.routes import companies, employees, payroll
+from app.routes import companies, employees, payroll, employee_portal, timesheets
 
 from app.config import CORS_ALLOW_ORIGINS, SECURITY_HEADERS_ENABLE_HSTS, UPLOADS_DIR
 from app.database import SessionLocal
@@ -122,6 +122,8 @@ app.include_router(gst.router)
 app.include_router(companies.router)
 app.include_router(employees.router)
 app.include_router(payroll.router)
+app.include_router(employee_portal.router)
+app.include_router(timesheets.router)
 
 # Register audit log hooks
 register_audit_hooks(SessionLocal)
