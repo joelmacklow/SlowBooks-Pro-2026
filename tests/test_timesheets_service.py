@@ -421,6 +421,12 @@ class TimesheetServiceTests(unittest.TestCase):
             self.assertNotIn(hidden_field, detail)
             self.assertNotIn(hidden_field, listing)
 
+    def test_timesheet_enum_sql_values_match_lowercase_migration_contract(self):
+        from app.models.timesheets import TIMESHEET_ENTRY_MODE_ENUM, TIMESHEET_STATUS_ENUM
+
+        self.assertEqual(TIMESHEET_STATUS_ENUM.enums, ["draft", "submitted", "approved", "rejected", "locked"])
+        self.assertEqual(TIMESHEET_ENTRY_MODE_ENUM.enums, ["duration", "start_end"])
+
     def test_audit_events_are_written_for_each_mutation_in_order(self):
         from app.models.timesheets import TimesheetAuditEvent
         from app.services.timesheets import approve_timesheet, create_timesheet, lock_timesheet, submit_timesheet, update_timesheet

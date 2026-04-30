@@ -32,6 +32,22 @@ class TimesheetEntryMode(str, enum.Enum):
     START_END = "start_end"
 
 
+def _enum_values(enum_cls):
+    return [member.value for member in enum_cls]
+
+
+TIMESHEET_STATUS_ENUM = Enum(
+    TimesheetStatus,
+    name="timesheetstatus",
+    values_callable=_enum_values,
+)
+TIMESHEET_ENTRY_MODE_ENUM = Enum(
+    TimesheetEntryMode,
+    name="timesheetentrymode",
+    values_callable=_enum_values,
+)
+
+
 class Timesheet(Base):
     __tablename__ = "timesheets"
     __table_args__ = (
@@ -43,7 +59,7 @@ class Timesheet(Base):
     pay_run_id = Column(Integer, ForeignKey("pay_runs.id"), nullable=True)
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)
-    status = Column(Enum(TimesheetStatus), nullable=False, default=TimesheetStatus.DRAFT)
+    status = Column(TIMESHEET_STATUS_ENUM, nullable=False, default=TimesheetStatus.DRAFT)
     total_hours = Column(Numeric(10, 2), nullable=False, default=0)
 
     submitted_at = Column(DateTime(timezone=True), nullable=True)
@@ -65,7 +81,7 @@ class TimesheetLine(Base):
     id = Column(Integer, primary_key=True, index=True)
     timesheet_id = Column(Integer, ForeignKey("timesheets.id", ondelete="CASCADE"), nullable=False)
     work_date = Column(Date, nullable=False)
-    entry_mode = Column(Enum(TimesheetEntryMode), nullable=False, default=TimesheetEntryMode.DURATION)
+    entry_mode = Column(TIMESHEET_ENTRY_MODE_ENUM, nullable=False, default=TimesheetEntryMode.DURATION)
     duration_hours = Column(Numeric(10, 2), nullable=True)
     start_time = Column(Time, nullable=True)
     end_time = Column(Time, nullable=True)
@@ -84,8 +100,8 @@ class TimesheetAuditEvent(Base):
     timesheet_line_id = Column(Integer, ForeignKey("timesheet_lines.id", ondelete="SET NULL"), nullable=True)
     actor_user_id = Column(Integer, nullable=True)
     action = Column(String(60), nullable=False)
-    status_from = Column(Enum(TimesheetStatus), nullable=True)
-    status_to = Column(Enum(TimesheetStatus), nullable=True)
+    status_from = Column(TIMESHEET_STATUS_ENUM, nullable=True)
+    status_to = Column(TIMESHEET_STATUS_ENUM, nullable=True)
     reason = Column(Text, nullable=True)
     metadata_json = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

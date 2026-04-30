@@ -80,3 +80,23 @@
 
 ### Addendum finding
 - **No CRITICAL/HIGH issues identified in this UI bugfix addendum.**
+
+## Enum serialization bugfix addendum (PostgreSQL timesheetstatus)
+
+### Additional scope reviewed
+- `app/models/timesheets.py`
+- `tests/test_timesheets_service.py`
+
+### Additional checks
+1. **Data-integrity boundary**
+   - Updated SQLAlchemy enum bindings to serialize lowercase enum values (`draft`, `submitted`, etc.) matching the Alembic PostgreSQL enum contract (`timesheetstatus` / `timesheetentrymode`).
+   - Confirmed change is serialization-only and does not alter auth, ownership, or permission logic.
+2. **Regression guard**
+   - Added test asserting SQLAlchemy enum value sets match migration-defined lowercase values.
+
+### Additional verification evidence
+- `python -m unittest tests.test_timesheets_service tests.test_timesheets_self_service_routes`
+- `python -m compileall app/models app/services app/routes tests`
+
+### Addendum finding
+- **No CRITICAL/HIGH issues identified in this enum serialization bugfix addendum.**
