@@ -238,15 +238,13 @@ const InvoicesPage = {
     },
 
     async startNew(originHash = '#/invoices') {
-        App.setDetailOrigin('#/invoices/detail', originHash);
         await InvoicesPage._loadEditorContext(null);
-        App.navigate('#/invoices/detail');
+        App.openDetail('#/invoices/detail', originHash);
     },
 
     async open(id, originHash = '#/invoices') {
-        App.setDetailOrigin('#/invoices/detail', originHash);
         await InvoicesPage._loadEditorContext(id);
-        App.navigate('#/invoices/detail');
+        App.openDetail('#/invoices/detail', originHash);
     },
 
     async view(id) {

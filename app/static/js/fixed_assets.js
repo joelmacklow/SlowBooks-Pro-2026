@@ -5,8 +5,7 @@ const FixedAssetsPage = {
 
     openAssetDetail(assetId) {
         const detailHash = `#/fixed-assets/detail?id=${assetId}`;
-        App.setDetailOrigin(detailHash, '#/fixed-assets');
-        App.navigate(detailHash);
+        App.openDetail(detailHash, '#/fixed-assets');
     },
 
     async openEditAssetForm(assetId) {
