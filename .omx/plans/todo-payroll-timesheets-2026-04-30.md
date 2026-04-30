@@ -34,6 +34,7 @@
 - [ ] Lore commit and push branch.
 
 ## Slice 2 — Timesheet core model/service
+- [x] Create slice plan and test spec: `.omx/plans/prd-payroll-timesheet-core-model-service-2026-04-30.md` and `.omx/plans/test-spec-payroll-timesheet-core-model-service-2026-04-30.md`.
 - [ ] Add tests for draft creation, duplicate prevention, lifecycle transitions, totals, invalid ranges, and audit events.
 - [ ] Implement `Timesheet`, `TimesheetLine`, and `TimesheetAuditEvent` models.
 - [ ] Add schemas for timesheet detail/list/upsert/status actions.
