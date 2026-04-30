@@ -77,6 +77,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
             pdf_service.generate_invoice_pdf(invoice, company)
 
         rendered = CapturingHTML.rendered[-1]
+        self.assertIn("fonts.googleapis.com/css2?family=Inter", rendered)
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn('class="company-logo"', rendered)
         self.assertIn(fake_logo.as_uri(), rendered)
@@ -299,6 +301,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         )
 
         rendered = CapturingHTML.rendered[-1]
+        self.assertIn("fonts.googleapis.com/css2?family=Inter", rendered)
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn("position: fixed; bottom: 0;", rendered)
         self.assertIn("Trial Balance", rendered)
