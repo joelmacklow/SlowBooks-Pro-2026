@@ -233,7 +233,14 @@ const TimesheetSelfServicePage = {
     },
 
     async submitTimesheet(id) {
-        const confirmed = await App.confirm('Submit Timesheet', 'Submit this timesheet for payroll review?');
+        const confirmed = typeof App?.confirmAction === 'function'
+            ? await App.confirmAction({
+                title: 'Submit Timesheet',
+                message: 'Submit this timesheet for payroll review?',
+                confirmLabel: 'Submit',
+                cancelLabel: 'Cancel',
+            })
+            : (typeof confirm === 'function' ? confirm('Submit this timesheet for payroll review?') : true);
         if (!confirmed) return;
         try {
             await API.post(`/timesheets/self/${id}/submit`, {});
