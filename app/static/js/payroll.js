@@ -224,6 +224,19 @@ const PayrollPage = {
         return `<button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/payroll/detail', '#/payroll')">${escapeHtml(backLabel)}</button>`;
     },
 
+    _detailHeaderHtml(title, actionsHtml = '') {
+        return `
+            <div class="page-header">
+                <div>
+                    <h2>${escapeHtml(title)}</h2>
+                </div>
+                <div class="btn-group">
+                    ${actionsHtml}
+                    ${PayrollPage._detailBackButtonHtml()}
+                </div>
+            </div>`;
+    },
+
     _detailPayRunRows(run = {}, canViewPayslips = false, canEmailPayslips = false) {
         return (run.stubs || []).map(stub => `
             <tr>
@@ -258,12 +271,7 @@ const PayrollPage = {
             const employees = state.employees || [];
             if (!employees.length) {
                 return `
-                    <div class="page-header">
-                        <div>
-                            ${PayrollPage._detailBackButtonHtml()}
-                            <h2 style="margin-top:8px;">New Pay Run</h2>
-                        </div>
-                    </div>
+                    ${PayrollPage._detailHeaderHtml('New Pay Run')}
                     <div class="empty-state"><p>Add an active employee before creating a pay run.</p></div>`;
             }
             const today = todayISO();
@@ -282,12 +290,7 @@ const PayrollPage = {
                 </tr>
             `).join('');
             return `
-                <div class="page-header">
-                    <div>
-                        ${PayrollPage._detailBackButtonHtml()}
-                        <h2 style="margin-top:8px;">New Pay Run</h2>
-                    </div>
-                </div>
+                ${PayrollPage._detailHeaderHtml('New Pay Run')}
                 <div class="detail-panel">
                     <form onsubmit="PayrollPage.save(event)">
                         <div class="form-grid">
@@ -312,12 +315,7 @@ const PayrollPage = {
 
         if (!id) {
             return `
-                <div class="page-header">
-                    <div>
-                        ${PayrollPage._detailBackButtonHtml()}
-                        <h2 style="margin-top:8px;">Payroll Run</h2>
-                    </div>
-                </div>
+                ${PayrollPage._detailHeaderHtml('Payroll Run')}
                 <div class="empty-state"><p>Select a payroll run or create a new one first.</p></div>`;
         }
 
@@ -334,17 +332,12 @@ const PayrollPage = {
         const latestFiling = (state.filingHistory || [])[0];
         const rows = PayrollPage._detailPayRunRows(run, canViewPayslips, canEmailPayslips);
         return `
-            <div class="page-header">
-                <div>
-                    ${PayrollPage._detailBackButtonHtml()}
-                    <h2 style="margin-top:8px;">Pay Run ${escapeHtml(String(run.id || id))}</h2>
-                </div>
-                <div class="btn-group">
-                    ${String(run.status || '').toLowerCase() === 'draft' && canProcessRun ? `<button class="btn btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>` : ''}
-                    ${String(run.status || '').toLowerCase() === 'processed' && canViewPayslips ? `<button class="btn btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Refresh</button>` : ''}
-                    ${String(run.status || '').toLowerCase() === 'processed' && canExportFiling ? `<button class="btn btn-secondary" onclick="PayrollPage.exportEmploymentInformation(${run.id})">Employment Information</button>` : ''}
-                </div>
-            </div>
+            ${PayrollPage._detailHeaderHtml(
+                `Pay Run ${String(run.id || id)}`,
+                `${String(run.status || '').toLowerCase() === 'draft' && canProcessRun ? `<button class="btn btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>` : ''}` +
+                `${String(run.status || '').toLowerCase() === 'processed' && canViewPayslips ? `<button class="btn btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Refresh</button>` : ''}` +
+                `${String(run.status || '').toLowerCase() === 'processed' && canExportFiling ? `<button class="btn btn-secondary" onclick="PayrollPage.exportEmploymentInformation(${run.id})">Employment Information</button>` : ''}`,
+            )}
             <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
                 Pay Date: <strong>${formatDate(run.pay_date)}</strong>
                 · Tax Year: <strong>${escapeHtml(String(run.tax_year || ''))}</strong>
