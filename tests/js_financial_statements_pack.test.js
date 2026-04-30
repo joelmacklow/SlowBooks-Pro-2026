@@ -46,7 +46,7 @@ vm.runInContext(code, context);
 
 (async () => {
     const landing = await context.ReportsPage.render();
-    assert.ok(landing.includes('Financial Statements Pack'));
+    assert.ok(landing.includes('Download Statements Pack'));
     assert.ok(landing.includes('ReportsPage.financialStatementsPack()'));
 
     await context.ReportsPage.financialStatementsPack();

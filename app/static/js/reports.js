@@ -28,7 +28,7 @@ const ReportsPage = {
                     <p style="font-size:13px; color:var(--gray-500);">Operating, investing, and financing cash movements</p>
                 </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.financialStatementsPack()">
-                    <div class="card-header">Financial Statements Pack</div>
+                    <div class="card-header">Download Statements Pack</div>
                     <p style="font-size:13px; color:var(--gray-500);">Download a zipped audit bundle for the current financial year to date</p>
                 </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
