@@ -17,6 +17,9 @@ class ReportPdfLayoutTests(unittest.TestCase):
         template = Path("app/templates/report_pdf.html").read_text()
         self.assertIn("margin: 0 auto 14px auto;", template)
         self.assertIn("white-space: nowrap;", template)
+        self.assertIn("@bottom-left { content: element(report-footer); }", template)
+        self.assertIn("@bottom-right { content: \"Page \" counter(page) \" of \" counter(pages); }", template)
+        self.assertNotIn("position: fixed; bottom: 0;", template)
 
     def test_header_logo_copy_is_larger_and_report_tile_is_slightly_narrower(self):
         shared_theme = Path("app/templates/_document_theme.html").read_text()

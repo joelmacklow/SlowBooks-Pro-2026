@@ -4,6 +4,10 @@
 <style>
     {% include "_document_fonts.html" %}
     @page { size: {% if landscape %}A4 landscape{% else %}A4{% endif %}; margin: 1.5cm; }
+    @page {
+        @bottom-left { content: element(report-footer); }
+        @bottom-right { content: "Page " counter(page) " of " counter(pages); }
+    }
     body { font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.35; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1cm; margin-bottom: 18px; }
     .header-main { flex: 1 1 0; min-width: 0; max-width: 54%; }
@@ -21,10 +25,7 @@
     table.report tr.section-row td { border-bottom: none; padding-top: 10px; font-weight: 700; color: #2f3b4c; }
     table.report tr.total-row td { font-weight: 700; border-top: 1px solid #aeb7c3; }
     table.report tr.empty-row td { color: #7a8594; font-style: italic; }
-    .footer-left, .footer-right { position: fixed; bottom: 0; font-size: 7.5pt; color: #6a7482; }
-    .footer-left { left: 0; }
-    .footer-right { right: 0; text-align: right; }
-    .footer-right::after { content: "Page " counter(page) " of " counter(pages); }
+    .footer { position: running(report-footer); font-size: 7.5pt; color: #6a7482; }
 </style>
 </head>
 <body>
@@ -67,7 +68,6 @@
         </table>
     {% endfor %}
 
-    <div class="footer-left">{{ title }} | {{ company.company_name or 'SlowBooks Pro 2026' }} | {{ generated_on | fdate }}</div>
-    <div class="footer-right"></div>
+    <div class="footer">{{ title }} | {{ company.company_name or 'SlowBooks Pro 2026' }} | {{ generated_on | fdate }}</div>
 </body>
 </html>
