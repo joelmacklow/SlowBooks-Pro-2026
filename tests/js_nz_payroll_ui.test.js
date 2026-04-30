@@ -29,7 +29,10 @@ async function runEmployeesPage() {
         App: { navigate() {} },
         FormData,
         closeModal() {},
-        escapeHtml: value => String(value || ''),
+        escapeHtml: value => {
+            if (typeof value !== 'string') throw new Error(`escapeHtml expected string, got ${typeof value}`);
+            return value;
+        },
         formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
         openModal: (_title, html) => { modalHtml = html; },
         todayISO: () => '2026-04-01',

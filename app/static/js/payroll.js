@@ -50,7 +50,7 @@ const PayrollPage = {
             const latestFiling = (filingHistoryByRun.get(run.id) || [])[0];
             html += `<tr>
                 <td>${formatDate(run.pay_date)}</td>
-                <td>${escapeHtml(run.tax_year)}</td>
+                <td>${escapeHtml(String(run.tax_year || ''))}</td>
                 <td>${status === 'processed' ? '<span class="badge badge-paid">Processed</span>' : '<span class="badge badge-draft">Draft</span>'}</td>
                 <td class="amount">${formatCurrency(run.total_gross)}</td>
                 <td class="amount">${formatCurrency(run.total_net)}</td>
@@ -183,7 +183,7 @@ const PayrollPage = {
             openModal(`Pay Run ${id}`, `
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
                     Pay Date: <strong>${formatDate(run.pay_date)}</strong>
-                    · Tax Year: <strong>${escapeHtml(run.tax_year)}</strong>
+                    · Tax Year: <strong>${escapeHtml(String(run.tax_year || ''))}</strong>
                     · Status: <strong>${escapeHtml(run.status)}</strong>
                 </div>
                 <div class="table-container">
