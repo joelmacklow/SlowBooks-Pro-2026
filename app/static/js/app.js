@@ -477,7 +477,7 @@ const App = {
                 <div class="snapshot-split-metrics">
                     <div><span>Cash in</span><strong>${formatCurrency(cashFlow.cash_in_total || 0)}</strong></div>
                     <div><span>Cash out</span><strong>${formatCurrency(cashFlow.cash_out_total || 0)}</strong></div>
-                    <div><span>Difference</span><strong>${formatCurrency(cashFlow.net_total || 0)}</strong></div>
+                    <div class="snapshot-split-metrics__difference"><span>Difference</span><strong>${formatCurrency(cashFlow.net_total || 0)}</strong></div>
                 </div>
                 <div class="snapshot-bar-chart">${chart}</div>
             </section>`;

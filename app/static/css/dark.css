@@ -196,6 +196,10 @@
     border-top-color: #2e3948;
 }
 
+[data-theme="dark"] .snapshot-split-metrics__difference {
+    border-top-color: #2e3948;
+}
+
 [data-theme="dark"] .snapshot-compare-bar__track {
     background: linear-gradient(180deg, #242f3d 0%, #1c2531 100%);
     border-color: #364253;
