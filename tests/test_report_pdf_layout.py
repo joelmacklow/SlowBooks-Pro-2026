@@ -46,6 +46,7 @@ class ReportPdfLayoutTests(unittest.TestCase):
 
         self.assertEqual(response.media_type, "application/pdf")
         self.assertEqual(captured["title"], "Fixed Asset Reconciliation")
+        self.assertIn("width: 88%;", captured["tables"][0]["style"])
         self.assertIn("font-size: 8pt;", captured["tables"][0]["style"])
         self.assertEqual(captured["tables"][0]["columns"][-3:], [
             {"label": "Cost", "align": "right", "width": "10%"},
