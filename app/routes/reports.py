@@ -547,7 +547,7 @@ def _report_tables_fixed_assets_reconciliation(report: dict, company: dict) -> l
         )
     )
     return [{
-        "style": "width: 92%;",
+        "style": "width: 92%; font-size: 8pt;",
         "columns": [
             {"label": "No.", "width": "10%"},
             {"label": "Asset", "width": "26%"},
