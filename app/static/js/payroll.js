@@ -2,6 +2,14 @@
  * Payroll — NZ draft pay runs with PAYE calculations and posting.
  */
 const PayrollPage = {
+    _timeInputValue(value) {
+        const raw = value == null ? '' : String(value).trim();
+        if (!raw) return '';
+        const match = raw.match(/\b(\d{2}:\d{2})/);
+        if (match) return match[1];
+        return raw.length > 5 ? raw.slice(0, 5) : raw;
+    },
+
     _timesheetPermissions() {
         const hasPermission = typeof App !== 'undefined' && typeof App.hasPermission === 'function'
             ? (permission) => App.hasPermission(permission)
@@ -39,8 +47,8 @@ const PayrollPage = {
                     </select>
                 </td>
                 <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" value="${escapeHtml(String(line.duration_hours ?? ''))}"></td>
-                <td><input type="time" name="start_time" value="${escapeHtml((line.start_time || '').slice ? line.start_time.slice(0, 5) : String(line.start_time || ''))}"></td>
-                <td><input type="time" name="end_time" value="${escapeHtml((line.end_time || '').slice ? line.end_time.slice(0, 5) : String(line.end_time || ''))}"></td>
+                <td><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
+                <td><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
                 <td><input type="number" name="break_minutes" min="0" step="1" value="${escapeHtml(String(line.break_minutes ?? 0))}"></td>
                 <td><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
                 <td><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>
@@ -93,8 +101,8 @@ const PayrollPage = {
                 </select>
             </td>
             <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" value="${escapeHtml(String(line.duration_hours ?? ''))}"></td>
-            <td><input type="time" name="start_time" value="${escapeHtml((line.start_time || '').slice ? line.start_time.slice(0, 5) : String(line.start_time || ''))}"></td>
-            <td><input type="time" name="end_time" value="${escapeHtml((line.end_time || '').slice ? line.end_time.slice(0, 5) : String(line.end_time || ''))}"></td>
+            <td><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
+            <td><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
             <td><input type="number" name="break_minutes" min="0" step="1" value="${escapeHtml(String(line.break_minutes ?? 0))}"></td>
             <td><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
             <td><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>

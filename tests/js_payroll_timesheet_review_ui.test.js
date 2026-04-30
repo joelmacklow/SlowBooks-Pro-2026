@@ -52,7 +52,7 @@ function createPayrollContext(overrides = {}) {
                         period_end: '2026-04-07',
                         status: 'submitted',
                         total_hours: '8.00',
-                        lines: [{ work_date: '2026-04-01', entry_mode: 'duration', duration_hours: '8.00', notes: 'Shift' }],
+                        lines: [{ work_date: '2026-04-01', entry_mode: 'start_end', start_time: '2026-04-01T08:00:00', end_time: '2026-04-01T16:30:00', break_minutes: 30, notes: 'Shift' }],
                         audit_events: [{ id: 1, action: 'create', status_from: null, status_to: 'draft', reason: null }],
                     };
                 }
