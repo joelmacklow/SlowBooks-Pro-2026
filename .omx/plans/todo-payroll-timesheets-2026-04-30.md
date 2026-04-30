@@ -61,6 +61,7 @@
 - [ ] Lore commit and push branch.
 
 ## Slice 4 — Admin review API
+- [x] Create slice plan and test spec: `.omx/plans/prd-payroll-admin-timesheet-review-api-2026-04-30.md` and `.omx/plans/test-spec-payroll-admin-timesheet-review-api-2026-04-30.md`.
 - [ ] Add admin route tests for readiness list, detail, correction, approve, reject, bulk approve, audit, CSV export.
 - [ ] Add negative permission tests for payroll viewers and employee users.
 - [ ] Implement admin timesheet endpoints.
