@@ -113,6 +113,29 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn('class="no-wrap"', rendered)
         self.assertIn('payment-advice-table', rendered)
 
+    def test_report_pdf_prefers_database_logo_data_uri(self):
+        report_company = dict(self.company)
+        report_company["company_logo_path"] = "/static/uploads/missing-logo.png"
+        report_company["company_logo_data_uri"] = "data:image/png;base64,Zm9v"
+
+        pdf_service.generate_report_pdf(
+            title="Trial Balance",
+            company_settings=report_company,
+            subtitle="As of 30 Apr 2026",
+            tables=[{
+                "columns": [{"label": "Account"}, {"label": "Debit", "align": "right"}],
+                "rows": [{
+                    "cells": [{"text": "Business Bank"}, {"text": "$92.00", "align": "right"}],
+                }],
+            }],
+            landscape=False,
+        )
+
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("data:image/png;base64,Zm9v", rendered)
+        self.assertNotIn("missing-logo.png", rendered)
+        self.assertIn('class="header-logo"', rendered)
+
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(
             estimate_number="E-1001",

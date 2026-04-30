@@ -107,8 +107,10 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
                 result = asyncio.run(uploads_route.upload_logo(file=upload, db=db, auth=owner_auth))
                 saved = Path(tmpdir) / 'company_logo.png'
                 setting = db.query(Settings).filter(Settings.key == 'company_logo_path').one()
+                data_setting = db.query(Settings).filter(Settings.key == 'company_logo_data_uri').one()
                 self.assertEqual(result['path'], '/static/uploads/company_logo.png')
                 self.assertEqual(setting.value, '/static/uploads/company_logo.png')
+                self.assertTrue(data_setting.value.startswith('data:image/png;base64,'))
                 self.assertTrue(saved.exists())
 
     def test_logo_upload_rejects_svg_with_aligned_message(self):

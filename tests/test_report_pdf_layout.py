@@ -18,6 +18,17 @@ class ReportPdfLayoutTests(unittest.TestCase):
         self.assertIn("margin: 0 auto 14px auto;", template)
         self.assertIn("white-space: nowrap;", template)
 
+    def test_header_logo_copy_is_larger_and_report_tile_is_slightly_narrower(self):
+        shared_theme = Path("app/templates/_document_theme.html").read_text()
+        report_template = Path("app/templates/report_pdf.html").read_text()
+
+        self.assertIn("max-width: 3.2cm;", shared_theme)
+        self.assertIn("max-height: 1.8cm;", shared_theme)
+        self.assertIn("min-width: 4.4cm;", shared_theme)
+        self.assertIn("max-width: 54%;", report_template)
+        self.assertIn("max-width: 3.4cm;", report_template)
+        self.assertIn("max-height: 2cm;", report_template)
+
     def test_fixed_asset_reconciliation_pdf_uses_compact_table_style(self):
         from app.routes.reports import fixed_assets_reconciliation_pdf
 
