@@ -5,36 +5,34 @@ const vm = require('vm');
 const code = `${fs.readFileSync('app/static/js/purchase_orders.js', 'utf8')}
 this.PurchaseOrdersPage = PurchaseOrdersPage;`;
 const navigations = [];
+const openedDocs = [];
+const emailModals = [];
 
 const context = {
     console,
     Promise,
     setTimeout,
-    opened: [],
     API: {
         get: async (path) => {
             if (path === '/purchase-orders') return [{ id: 7, po_number: 'PO-0001', vendor_name: 'Harbour Supplies', date: '2026-04-16', status: 'draft', total: 115 }];
             if (path === '/vendors?active_only=true') return [{ id: 1, name: 'Harbour Supplies' }];
+            if (path === '/vendors/1') return { id: 1, name: 'Harbour Supplies', email: 'purchasing@harbour.test' };
             if (path === '/items?active_only=true') return [{ id: 2, name: 'Stationery', description: 'Pens', cost: 15 }];
-            if (path === '/settings/public') return { default_tax_rate: '15', prices_include_gst: 'false' };
+            if (path === '/settings') return { default_tax_rate: '15', prices_include_gst: 'false' };
             if (path === '/gst-codes') return [{ code: 'GST15', rate: 0.15, name: 'GST 15%' }];
-            if (path === '/purchase-orders/delivery-locations') return [
-                { label: 'SlowBooks HQ, 1 Queen Street, Auckland Auckland 1010', value: '1 Queen Street\nAuckland Auckland 1010' },
-                { label: 'Warehouse, 8 Depot Road, Wellington Wellington 6011', value: '8 Depot Road\nWellington Wellington 6011' },
-            ];
             if (path === '/purchase-orders/7') return { id: 7, vendor_id: 1, po_number: 'PO-0001', status: 'draft', date: '2026-04-16', expected_date: '2026-04-20', ship_to: '211 Lyndhurst Road', notes: 'Leave at front desk', lines: [{ item_id: 2, description: 'Pens', quantity: 2, rate: 15, gst_code: 'GST15', gst_rate: 0.15 }] };
             throw new Error(`unexpected path ${path}`);
         },
         post: async () => ({}),
         put: async () => ({}),
-        open: (path, filename) => context.opened.push([path, filename]),
+        open: (path, filename) => openedDocs.push([path, filename]),
     },
     App: {
         navigate: (hash) => navigations.push(hash),
         hasPermission: () => true,
         gstCodes: [],
         settings: { prices_include_gst: 'false' },
-        showDocumentEmailModal() {},
+        showDocumentEmailModal: (payload) => emailModals.push(payload),
     },
     escapeHtml: value => String(value || ''),
     formatDate: value => String(value || ''),
@@ -73,17 +71,11 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('Date Raised'));
     assert.ok(detailHtml.includes('Delivery Date'));
     assert.ok(detailHtml.includes('Delivery Address'));
-    assert.ok(detailHtml.includes('<select name="ship_to"'));
-    assert.ok(detailHtml.includes('SlowBooks HQ, 1 Queen Street, Auckland Auckland 1010'));
     assert.ok(detailHtml.includes('Delivery Instructions / Notes'));
     assert.ok(detailHtml.includes('Assigned on save'));
-    assert.ok(detailHtml.includes('Create & Add New'));
-    assert.ok(detailHtml.includes('>Create<'));
-    assert.ok(detailHtml.includes('Create & Print / PDF'));
-    assert.ok(detailHtml.includes('Create & Email'));
-    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'add-new\')"'));
-    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'pdf\')"'));
-    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, \'email\')"'));
+    assert.ok(detailHtml.includes('Email PO'));
+    assert.ok(detailHtml.includes('Print / PDF'));
+    assert.ok(detailHtml.includes('disabled'));
 
     navigations.length = 0;
     await context.PurchaseOrdersPage.open(7);
@@ -94,10 +86,18 @@ vm.runInContext(code, context);
     assert.ok(detailHtml.includes('Leave at front desk'));
     assert.ok(detailHtml.includes('Subtotal'));
     assert.ok(detailHtml.includes('Total'));
-    assert.ok(detailHtml.includes('Print / PDF'));
-    assert.ok(detailHtml.includes('Email PO'));
-    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.openPdf(7, \'PO-0001\')"'));
-    assert.ok(detailHtml.includes('type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.emailPurchaseOrder(7)"'));
-    context.PurchaseOrdersPage.openPdf(7, 'PO-0001');
-    assert.deepStrictEqual(context.opened, [['/purchase-orders/7/pdf', 'purchase-order-PO-0001.pdf']]);
+    assert.ok(detailHtml.includes('PurchaseOrdersPage.emailPurchaseOrder(7)'));
+    assert.ok(detailHtml.includes('PurchaseOrdersPage.openPdf(7)'));
+
+    await context.PurchaseOrdersPage.emailPurchaseOrder(7);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(emailModals)), [{
+        title: 'Email Purchase Order #PO-0001',
+        endpoint: '/purchase-orders/7/email',
+        recipient: 'purchasing@harbour.test',
+        defaultSubject: 'Purchase Order #PO-0001',
+        successMessage: 'Purchase order emailed',
+    }]);
+
+    context.PurchaseOrdersPage.openPdf(7);
+    assert.deepStrictEqual(openedDocs, [['/purchase-orders/7/pdf', 'purchase-order-PO-0001.pdf']]);
 })();

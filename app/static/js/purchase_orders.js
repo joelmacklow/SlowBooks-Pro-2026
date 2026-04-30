@@ -5,7 +5,6 @@
 const PurchaseOrdersPage = {
     _items: [],
     _vendors: [],
-    _deliveryLocations: [],
     _settings: {},
     _detailState: null,
     lineCount: 0,
@@ -34,7 +33,6 @@ const PurchaseOrdersPage = {
                     <td class="actions">
                         ${canManagePurchasing ? `<button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.open(${po.id})">Edit</button>
                         <button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.emailPurchaseOrder(${po.id})">Email</button>
-                        <button class="btn btn-sm btn-secondary" onclick="PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number)}')">Print / PDF</button>
                         ${po.status !== 'closed' ? `<button class="btn btn-sm btn-primary" onclick="PurchaseOrdersPage.convertToBill(${po.id})">To Bill</button>` : ''}` : ''}
                     </td>
                 </tr>`;
@@ -55,18 +53,16 @@ const PurchaseOrdersPage = {
     },
 
     async _loadEditorContext(id = null) {
-        const [vendors, items, settings, gstCodes, deliveryLocations] = await Promise.all([
+        const [vendors, items, settings, gstCodes] = await Promise.all([
             API.get('/vendors?active_only=true'),
             API.get('/items?active_only=true'),
-            API.get('/settings/public'),
+            API.get('/settings'),
             API.get('/gst-codes'),
-            API.get('/purchase-orders/delivery-locations'),
         ]);
         App.gstCodes = gstCodes;
         PurchaseOrdersPage._vendors = vendors;
         PurchaseOrdersPage._items = items;
         PurchaseOrdersPage._settings = settings;
-        PurchaseOrdersPage._deliveryLocations = deliveryLocations;
 
         let po = {
             id: null,
@@ -84,7 +80,6 @@ const PurchaseOrdersPage = {
             lines: [],
         };
         if (id) po = await API.get(`/purchase-orders/${id}`);
-        if (!id && !po.ship_to && deliveryLocations.length) po.ship_to = deliveryLocations[0].value;
         if (!po.lines || po.lines.length === 0) po.lines = [{ item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }];
         PurchaseOrdersPage.lineCount = po.lines.length;
         PurchaseOrdersPage._detailState = po;
@@ -99,60 +94,6 @@ const PurchaseOrdersPage = {
         })), PurchaseOrdersPage._settings);
     },
 
-    itemOptionLabel(item) {
-        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
-    },
-
-    itemSearchValues(item) {
-        const values = [];
-        if (item?.code) values.push(String(item.code));
-        if (item?.name) values.push(String(item.name));
-        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
-        return [...new Set(values)];
-    },
-
-    itemMatchesFilter(item, query) {
-        const needle = String(query || '').trim().toLowerCase();
-        if (!needle) return true;
-        return PurchaseOrdersPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
-    },
-
-    _itemsForVendor(vendorId, selectedItemId = null) {
-        return (PurchaseOrdersPage._items || []).filter(item => {
-            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
-            if (!vendorId) return true;
-            return String(item.vendor_id || '') === String(vendorId);
-        });
-    },
-
-    _filteredItemsForLine(vendorId, query, selectedItemId = null) {
-        return PurchaseOrdersPage._itemsForVendor(vendorId, selectedItemId).filter(item => {
-            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
-            return PurchaseOrdersPage.itemMatchesFilter(item, query);
-        });
-    },
-
-    itemOptionsHtml(items, selectedItemId = null) {
-        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${PurchaseOrdersPage.itemOptionLabel(i)}</option>`).join('');
-    },
-
-    _snapshotLinesFromDom() {
-        const rows = $$('#po-lines tr');
-        if (!rows.length) return PurchaseOrdersPage._detailState?.lines || [];
-        return rows.map((row, index) => {
-            const gst = readGstLinePayload(row);
-            return {
-                item_id: row.querySelector('.line-item')?.value ? parseInt(row.querySelector('.line-item').value) : null,
-                description: row.querySelector('.line-desc')?.value || '',
-                quantity: row.querySelector('.line-qty')?.value || 1,
-                rate: row.querySelector('.line-rate')?.value || 0,
-                gst_code: gst.gst_code,
-                gst_rate: gst.gst_rate,
-                line_order: index,
-            };
-        });
-    },
-
     renderDetailScreen() {
         const po = PurchaseOrdersPage._detailState;
         const canManagePurchasing = App.hasPermission ? App.hasPermission('purchasing.manage') : true;
@@ -161,12 +102,6 @@ const PurchaseOrdersPage = {
         }
         const totals = PurchaseOrdersPage._totals(po.lines || []);
         const vendorOpts = PurchaseOrdersPage._vendors.map(v => `<option value="${v.id}" ${po.vendor_id==v.id?'selected':''}>${escapeHtml(v.name)}</option>`).join('');
-        const deliveryLocations = PurchaseOrdersPage._deliveryLocations || [];
-        const selectedLocation = deliveryLocations.some(location => location.value === po.ship_to) ? po.ship_to : '';
-        const deliveryOptions = deliveryLocations.map(location =>
-            `<option value="${escapeHtml(location.value)}" ${selectedLocation === location.value ? 'selected' : ''}>${escapeHtml(location.label)}</option>`
-        ).join('');
-        const hasLegacyShipTo = !!po.ship_to && !selectedLocation;
         return `
             <div class="page-header">
                 <div>
@@ -181,7 +116,7 @@ const PurchaseOrdersPage = {
                 <div class="settings-section">
                     <div class="form-grid">
                         <div class="form-group"><label>Vendor *</label>
-                            <select name="vendor_id" required onchange="PurchaseOrdersPage.vendorChanged(this.value)" ${canManagePurchasing ? '' : 'disabled'}><option value="">Select...</option>${vendorOpts}</select></div>
+                            <select name="vendor_id" required ${canManagePurchasing ? '' : 'disabled'}><option value="">Select...</option>${vendorOpts}</select></div>
                         <div class="form-group"><label>Date Raised *</label>
                             <input name="date" type="date" required value="${po.date || ''}" ${canManagePurchasing ? '' : 'disabled'}></div>
                         <div class="form-group"><label>Delivery Date</label>
@@ -195,12 +130,7 @@ const PurchaseOrdersPage = {
                 <div class="settings-section">
                     <div class="form-grid">
                         <div class="form-group full-width"><label>Delivery Address</label>
-                            <select name="ship_to" ${canManagePurchasing ? '' : 'disabled'} ${deliveryLocations.length ? 'required' : ''}>
-                                <option value="">${deliveryLocations.length ? 'Select approved delivery location...' : 'No approved delivery locations configured'}</option>
-                                ${deliveryOptions}
-                            </select>
-                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Admins control this list in Company Settings so purchase orders only ship to approved company locations.</div>
-                            ${hasLegacyShipTo ? `<div style="font-size:10px; color:var(--warning-700, #9a6700); margin-top:6px;">Saved PO delivery address: ${escapeHtml(po.ship_to)}</div>` : ''}</div>
+                            <textarea name="ship_to" rows="3" ${canManagePurchasing ? '' : 'disabled'}>${escapeHtml(po.ship_to || '')}</textarea></div>
                     </div>
                 </div>
                 <div class="settings-section">
@@ -208,7 +138,7 @@ const PurchaseOrdersPage = {
                     <table class="line-items-table">
                         <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th><th></th></tr></thead>
                         <tbody id="po-lines">
-                            ${(po.lines || []).map((l, i) => PurchaseOrdersPage.lineHtml(i, l, PurchaseOrdersPage._itemsForVendor(po.vendor_id, l.item_id), canManagePurchasing, po.vendor_id)).join('')}
+                            ${(po.lines || []).map((l, i) => PurchaseOrdersPage.lineHtml(i, l, PurchaseOrdersPage._items, canManagePurchasing)).join('')}
                         </tbody>
                     </table>
                     ${canManagePurchasing ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="PurchaseOrdersPage.addLine()">+ Add Line</button>' : ''}
@@ -230,18 +160,20 @@ const PurchaseOrdersPage = {
                 </div>
                 ${canManagePurchasing ? `<div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="App.navigate('#/purchase-orders')">Cancel</button>
-                    ${po.id ? '' : `<button type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
-                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.openPdf(${po.id}, '${escapeHtml(po.po_number || '')}')` : `PurchaseOrdersPage.submitWithAction(event, null, 'pdf')`}">${po.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
-                    <button type="button" class="btn btn-secondary" onclick="${po.id ? `PurchaseOrdersPage.emailPurchaseOrder(${po.id})` : `PurchaseOrdersPage.submitWithAction(event, null, 'email')`}">${po.id ? 'Email PO' : 'Create & Email'}</button>
-                    <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create'}</button>
+                    ${po.id
+                        ? `<button type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.emailPurchaseOrder(${po.id})">Email PO</button>
+                           <button type="button" class="btn btn-secondary" onclick="PurchaseOrdersPage.openPdf(${po.id})">Print / PDF</button>`
+                        : `<button type="button" class="btn btn-secondary" disabled title="Save the purchase order first">Email PO</button>
+                           <button type="button" class="btn btn-secondary" disabled title="Save the purchase order first">Print / PDF</button>`}
+                    <button type="submit" class="btn btn-primary">${po.id ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
                 </div>` : ''}
             </form>`;
     },
 
-    lineHtml(idx, line, items, canManage = true, vendorId = null) {
-        const opts = PurchaseOrdersPage.itemOptionsHtml(items, line.item_id);
+    lineHtml(idx, line, items, canManage = true) {
+        const opts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
         return `<tr data-poline="${idx}">
-            <td><select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" onkeydown="PurchaseOrdersPage.handleItemKeydown(${idx}, event)" onblur="PurchaseOrdersPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select></td>
+            <td><select class="line-item" onchange="PurchaseOrdersPage.itemSel(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${opts}</select></td>
             <td><input class="line-desc" value="${escapeHtml(line.description || '')}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}></td>
             <td><select class="line-gst" onchange="PurchaseOrdersPage.updateTotals()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
@@ -253,8 +185,7 @@ const PurchaseOrdersPage = {
 
     addLine() {
         const idx = PurchaseOrdersPage.lineCount++;
-        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
-        $('#po-lines').insertAdjacentHTML('beforeend', PurchaseOrdersPage.lineHtml(idx, {}, PurchaseOrdersPage._itemsForVendor(vendorId), true, vendorId));
+        $('#po-lines').insertAdjacentHTML('beforeend', PurchaseOrdersPage.lineHtml(idx, {}, PurchaseOrdersPage._items, true));
         PurchaseOrdersPage.updateTotals();
     },
 
@@ -271,66 +202,6 @@ const PurchaseOrdersPage = {
             row.querySelector('.line-desc').value = item.description || item.name;
             row.querySelector('.line-rate').value = item.cost || item.rate;
         }
-        PurchaseOrdersPage.updateTotals();
-    },
-
-    applyItemFilter(idx, query) {
-        const row = $(`[data-poline="${idx}"]`);
-        if (!row) return;
-        const itemSelect = row.querySelector('.line-item');
-        if (!itemSelect) return;
-        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
-        const currentValue = itemSelect.value;
-        const filtered = PurchaseOrdersPage._filteredItemsForLine(vendorId, query, currentValue);
-        row.dataset.itemFilterQuery = query;
-        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(filtered, currentValue)}`;
-        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
-            itemSelect.value = '';
-        }
-    },
-
-    handleItemKeydown(idx, event) {
-        if (event.metaKey || event.ctrlKey || event.altKey) return;
-        const row = $(`[data-poline="${idx}"]`);
-        if (!row) return;
-        const currentQuery = row.dataset.itemFilterQuery || '';
-        if (event.key === 'Escape') {
-            PurchaseOrdersPage.resetItemFilter(idx);
-            event.preventDefault();
-            return;
-        }
-        if (event.key === 'Backspace') {
-            PurchaseOrdersPage.applyItemFilter(idx, currentQuery.slice(0, -1));
-            event.preventDefault();
-            return;
-        }
-        if (event.key.length === 1) {
-            PurchaseOrdersPage.applyItemFilter(idx, currentQuery + event.key);
-            event.preventDefault();
-        }
-    },
-
-    resetItemFilter(idx) {
-        const row = $(`[data-poline="${idx}"]`);
-        if (!row) return;
-        row.dataset.itemFilterQuery = '';
-        const itemSelect = row.querySelector('.line-item');
-        if (!itemSelect) return;
-        const currentValue = itemSelect.value;
-        const vendorId = PurchaseOrdersPage._detailState?.vendor_id || null;
-        itemSelect.innerHTML = `<option value="">--</option>${PurchaseOrdersPage.itemOptionsHtml(PurchaseOrdersPage._itemsForVendor(vendorId, currentValue), currentValue)}`;
-        if (currentValue) itemSelect.value = currentValue;
-    },
-
-    async vendorChanged(value) {
-        if (!PurchaseOrdersPage._detailState) return;
-        PurchaseOrdersPage._detailState.lines = PurchaseOrdersPage._snapshotLinesFromDom();
-        PurchaseOrdersPage._detailState.vendor_id = value ? parseInt(value) : '';
-        const tbody = $('#po-lines');
-        if (!tbody) return;
-        tbody.innerHTML = (PurchaseOrdersPage._detailState.lines || []).map((line, idx) =>
-            PurchaseOrdersPage.lineHtml(idx, line, PurchaseOrdersPage._itemsForVendor(PurchaseOrdersPage._detailState.vendor_id, line.item_id), true, PurchaseOrdersPage._detailState.vendor_id)
-        ).join('');
         PurchaseOrdersPage.updateTotals();
     },
 
@@ -364,24 +235,17 @@ const PurchaseOrdersPage = {
         });
     },
 
-    openPdf(id, poNumber) {
+    openPdf(id) {
+        const po = PurchaseOrdersPage._detailState && PurchaseOrdersPage._detailState.id === id
+            ? PurchaseOrdersPage._detailState
+            : null;
+        const poNumber = po?.po_number || `purchase-order-${id}`;
         API.open(`/purchase-orders/${id}/pdf`, `purchase-order-${poNumber}.pdf`);
     },
 
-    async submitWithAction(e, id, action) {
-        if (e && typeof e.preventDefault === 'function') e.preventDefault();
-        const form = e?.target?.form || e?.target?.closest?.('form');
-        if (!form) return;
-        await PurchaseOrdersPage.save({ preventDefault() {}, target: form }, id, action);
-    },
-
-    async save(e, id, afterAction = null) {
+    async save(e, id) {
         e.preventDefault();
         const form = e.target;
-        if (PurchaseOrdersPage._deliveryLocations.length && !form.ship_to.value) {
-            toast('Select an approved delivery location', 'error');
-            return;
-        }
         const lines = [];
         $$('#po-lines tr').forEach((row, i) => {
             const gst = readGstLinePayload(row);
@@ -405,33 +269,8 @@ const PurchaseOrdersPage = {
             lines,
         };
         try {
-            let savedPo;
-            if (id) {
-                savedPo = await API.put(`/purchase-orders/${id}`, data);
-                toast('PO updated');
-            } else {
-                savedPo = await API.post('/purchase-orders', data);
-                toast('PO created');
-            }
-
-            if (afterAction === 'pdf' && savedPo?.id) {
-                PurchaseOrdersPage._detailState = savedPo;
-                App.navigate('#/purchase-orders/detail');
-                PurchaseOrdersPage.openPdf(savedPo.id, savedPo.po_number || '');
-                return;
-            }
-            if (afterAction === 'email' && savedPo?.id) {
-                PurchaseOrdersPage._detailState = savedPo;
-                App.navigate('#/purchase-orders/detail');
-                await PurchaseOrdersPage.emailPurchaseOrder(savedPo.id);
-                return;
-            }
-            if (afterAction === 'add-new') {
-                await PurchaseOrdersPage._loadEditorContext(null);
-                App.navigate('#/purchase-orders/detail');
-                return;
-            }
-
+            if (id) { await API.put(`/purchase-orders/${id}`, data); toast('PO updated'); }
+            else { await API.post('/purchase-orders', data); toast('PO created'); }
             PurchaseOrdersPage._detailState = null;
             App.navigate('#/purchase-orders');
         } catch (err) { toast(err.message, 'error'); }
