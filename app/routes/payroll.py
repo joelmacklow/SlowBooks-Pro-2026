@@ -10,10 +10,10 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.database import get_db
+from app.database import get_db, get_master_db
 from app.models.payroll import Employee, PayRun, PayRunStatus, PayStub
 from app.schemas.email import DocumentEmailRequest
-from app.schemas.payroll import PayRunCreate, PayRunResponse, PayStubResponse
+from app.schemas.payroll import PayRunCreate, PayRunResponse, PayStubResponse, SelfPayslipSummaryResponse
 from app.services.pdf_service import generate_payroll_payslip_pdf
 from app.services.payday_filing import generate_employment_information_csv
 from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
@@ -29,6 +29,7 @@ from app.services.accounting import (
 )
 from app.services.auth import require_permissions
 from app.services.closing_date import check_closing_date
+from app.services.employee_portal import resolve_employee_link
 from app.services.nz_payroll import calculate_payroll_stub, round_money
 from app.services.rate_limit import enforce_rate_limit
 from app.services.payroll_filing_audit import (
@@ -106,6 +107,11 @@ def _active_employee_for_payday(employee: Employee, pay_date) -> bool:
     if employee.end_date and employee.end_date < pay_date:
         return False
     return True
+
+
+def _self_linked_employee_id(master_db: Session, db: Session, auth) -> int:
+    link = resolve_employee_link(master_db, db, auth)
+    return link.employee.id
 
 
 @router.get("", response_model=list[PayRunResponse])
@@ -298,6 +304,68 @@ def process_pay_run(
     db.commit()
     db.refresh(pay_run)
     return _pay_run_response(pay_run)
+
+
+@router.get("/self/payslips", response_model=list[SelfPayslipSummaryResponse])
+def list_self_payslips(
+    db: Session = Depends(get_db),
+    master_db: Session = Depends(get_master_db),
+    auth=Depends(require_permissions("payroll.self.payslips.view")),
+):
+    employee_id = _self_linked_employee_id(master_db, db, auth)
+    stubs = (
+        db.query(PayStub)
+        .join(PayRun, PayRun.id == PayStub.pay_run_id)
+        .filter(
+            PayStub.employee_id == employee_id,
+            PayRun.status == PayRunStatus.PROCESSED,
+        )
+        .order_by(PayRun.pay_date.desc(), PayRun.id.desc(), PayStub.id.desc())
+        .all()
+    )
+    return [
+        SelfPayslipSummaryResponse(
+            pay_run_id=stub.pay_run_id,
+            pay_stub_id=stub.id,
+            period_start=stub.pay_run.period_start,
+            period_end=stub.pay_run.period_end,
+            pay_date=stub.pay_run.pay_date,
+            hours=float(stub.hours or 0),
+            gross_pay=float(stub.gross_pay or 0),
+            net_pay=float(stub.net_pay or 0),
+        )
+        for stub in stubs
+    ]
+
+
+@router.get("/self/payslips/{run_id}/pdf")
+def self_payroll_payslip_pdf(
+    run_id: int,
+    db: Session = Depends(get_db),
+    master_db: Session = Depends(get_master_db),
+    auth=Depends(require_permissions("payroll.self.payslips.view")),
+):
+    employee_id = _self_linked_employee_id(master_db, db, auth)
+    pay_run = db.query(PayRun).filter(PayRun.id == run_id).first()
+    if not pay_run:
+        raise HTTPException(status_code=404, detail="Pay run not found")
+    if pay_run.status != PayRunStatus.PROCESSED:
+        raise HTTPException(status_code=400, detail="Payslips are only available for processed pay runs")
+
+    stub = (
+        db.query(PayStub)
+        .filter(PayStub.pay_run_id == run_id, PayStub.employee_id == employee_id)
+        .first()
+    )
+    if not stub or not stub.employee:
+        raise HTTPException(status_code=404, detail="Employee payslip not found for this pay run")
+
+    pdf_bytes = generate_payroll_payslip_pdf(pay_run, stub, stub.employee, get_settings(db))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename=PaySlip_{run_id}_{employee_id}.pdf"},
+    )
 
 
 @router.get("/{run_id}/payslips/{employee_id}/pdf")

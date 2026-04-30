@@ -1,3 +1,5 @@
+import csv
+from io import StringIO
 from datetime import UTC, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -165,6 +167,72 @@ def _get_timesheet(db: Session, timesheet_id: int) -> Timesheet:
     if not timesheet:
         raise ValueError("Timesheet not found")
     return timesheet
+
+
+def list_timesheets_for_employee(
+    db: Session,
+    *,
+    employee_id: int,
+    status: TimesheetStatus | str | None = None,
+    period_start=None,
+    period_end=None,
+) -> list[Timesheet]:
+    q = db.query(Timesheet).filter(Timesheet.employee_id == employee_id)
+    parsed_status = _coerce_status(status) if status is not None else None
+    if parsed_status is not None:
+        q = q.filter(Timesheet.status == parsed_status)
+    if period_start is not None:
+        q = q.filter(Timesheet.period_start >= period_start)
+    if period_end is not None:
+        q = q.filter(Timesheet.period_end <= period_end)
+    return q.order_by(Timesheet.period_start.desc(), Timesheet.id.desc()).all()
+
+
+def get_timesheet_for_employee(db: Session, *, timesheet_id: int, employee_id: int) -> Timesheet:
+    timesheet = (
+        db.query(Timesheet)
+        .filter(Timesheet.id == timesheet_id, Timesheet.employee_id == employee_id)
+        .first()
+    )
+    if not timesheet:
+        raise ValueError("Timesheet not found")
+    return timesheet
+
+
+def export_timesheet_csv(timesheet: Timesheet) -> str:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "timesheet_id",
+        "period_start",
+        "period_end",
+        "status",
+        "work_date",
+        "entry_mode",
+        "duration_hours",
+        "start_time",
+        "end_time",
+        "break_minutes",
+    ])
+
+    sorted_lines = sorted(
+        list(timesheet.lines or []),
+        key=lambda line: (line.work_date, getattr(line, "id", 0) or 0),
+    )
+    for line in sorted_lines:
+        writer.writerow([
+            timesheet.id,
+            timesheet.period_start.isoformat(),
+            timesheet.period_end.isoformat(),
+            _status_value(timesheet.status),
+            line.work_date.isoformat() if line.work_date else "",
+            _status_value(line.entry_mode),
+            str(line.duration_hours) if line.duration_hours is not None else "",
+            line.start_time.isoformat() if line.start_time else "",
+            line.end_time.isoformat() if line.end_time else "",
+            str(line.break_minutes) if line.break_minutes is not None else "",
+        ])
+    return output.getvalue()
 
 
 def create_timesheet(

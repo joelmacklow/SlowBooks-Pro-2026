@@ -45,6 +45,14 @@ class TimesheetCreateRequest(BaseModel):
     lines: list[TimesheetLineUpsert]
 
 
+class TimesheetSelfCreateRequest(BaseModel):
+    period_start: date
+    period_end: date
+    lines: list[TimesheetLineUpsert]
+
+    model_config = {"extra": "forbid"}
+
+
 class TimesheetUpdateRequest(BaseModel):
     lines: list[TimesheetLineUpsert]
 
