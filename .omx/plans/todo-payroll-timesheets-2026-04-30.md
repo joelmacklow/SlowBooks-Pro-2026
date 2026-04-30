@@ -21,7 +21,7 @@
 - [ ] Revisit remaining open decisions before implementation as needed: overnight shifts, salary exceptions, project metadata shape, invite flow.
 
 ## Slice 1 — Employee identity linkage and RBAC foundation
-- [ ] Add/extend plan and test spec if employee identity design changes.
+- [x] Add/extend plan and test spec if employee identity design changes: `.omx/plans/prd-payroll-employee-identity-rbac-2026-04-30.md` and `.omx/plans/test-spec-payroll-employee-identity-rbac-2026-04-30.md`.
 - [ ] Add tests for employee-user link creation, inactive links, company scope isolation, stale employee IDs, and duplicate active link prevention.
 - [ ] Add tests for employee role permissions and forbidden payroll/admin access.
 - [ ] Implement master auth-side employee-user link model/service/schema with `company_scope` and company-local `employee_id`.
