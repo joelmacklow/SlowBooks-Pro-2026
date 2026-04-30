@@ -25,7 +25,9 @@ body {
     margin-bottom: 18px;
 }
 .company-panel {
-    max-width: 60%;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 58%;
 }
 .company-name {
     font-size: 16pt;
@@ -40,12 +42,23 @@ body {
     margin: 0 0 6px 0;
     object-fit: contain;
 }
+.header-logo {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+.header-logo img {
+    display: block;
+    max-width: 2.8cm;
+    max-height: 1.6cm;
+    object-fit: contain;
+}
 .company-meta {
     font-size: 9pt;
     color: var(--muted);
     line-height: 1.55;
 }
 .doc-panel {
+    flex: 0 0 auto;
     min-width: 5cm;
     text-align: right;
 }
