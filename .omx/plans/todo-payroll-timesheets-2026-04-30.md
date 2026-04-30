@@ -35,18 +35,19 @@
 
 ## Slice 2 — Timesheet core model/service
 - [x] Create slice plan and test spec: `.omx/plans/prd-payroll-timesheet-core-model-service-2026-04-30.md` and `.omx/plans/test-spec-payroll-timesheet-core-model-service-2026-04-30.md`.
-- [ ] Add tests for draft creation, duplicate prevention, lifecycle transitions, totals, invalid ranges, and audit events.
-- [ ] Implement `Timesheet`, `TimesheetLine`, and `TimesheetAuditEvent` models.
-- [ ] Add schemas for timesheet detail/list/upsert/status actions.
-- [ ] Implement service functions for create/update/submit/approve/reject/lock.
-- [ ] Implement total-hour calculation for duration mode.
-- [ ] Implement total-hour calculation for start/end/break mode.
-- [ ] Define decimal rounding and validation rules.
-- [ ] Run targeted service/model tests and `git diff --check`.
-- [ ] Security review: tamper resistance, audit integrity, payroll PII fields.
-- [ ] Lore commit and push branch.
+- [x] Add tests for draft creation, duplicate prevention, lifecycle transitions, totals, invalid ranges, and audit events.
+- [x] Implement `Timesheet`, `TimesheetLine`, and `TimesheetAuditEvent` models.
+- [x] Add schemas for timesheet detail/list/upsert/status actions.
+- [x] Implement service functions for create/update/submit/approve/reject/lock.
+- [x] Implement total-hour calculation for duration mode.
+- [x] Implement total-hour calculation for start/end/break mode.
+- [x] Define decimal rounding and validation rules.
+- [x] Run targeted service/model tests and `git diff --check`.
+- [x] Security review: tamper resistance, audit integrity, payroll PII fields.
+- [x] Lore commit and push branch.
 
 ## Slice 3 — Employee self-service API
+- [x] Add/extend slice plan and test spec: `.omx/plans/prd-payroll-employee-self-service-api-2026-04-30.md` and `.omx/plans/test-spec-payroll-employee-self-service-api-2026-04-30.md`.
 - [ ] Add route tests for own timesheet list/detail/create/update/submit/export.
 - [ ] Add negative tests for spoofed `employee_id`, cross-employee ID access, unauthenticated access, and locked edits.
 - [ ] Add tests for own payslip list/PDF access and cross-employee payslip denial.
