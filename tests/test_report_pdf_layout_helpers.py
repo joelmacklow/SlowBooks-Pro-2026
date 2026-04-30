@@ -30,7 +30,7 @@ class ReportPdfLayoutHelperTests(unittest.TestCase):
         }
 
         tables = reports_route._report_tables_income_by_customer(report, {"locale": "en-NZ", "currency": "NZD"})
-        self.assertEqual(tables[0]["style"], "width: 92%;")
+        self.assertEqual(tables[0]["style"], "width: 88%;")
 
     def test_general_ledger_tables_use_narrowed_pdf_width(self):
         from app.routes import reports as reports_route
@@ -56,7 +56,7 @@ class ReportPdfLayoutHelperTests(unittest.TestCase):
         }
 
         tables = reports_route._report_tables_general_ledger(report, {"locale": "en-NZ", "currency": "NZD"})
-        self.assertEqual(tables[0]["style"], "width: 92%;")
+        self.assertEqual(tables[0]["style"], "width: 88%;")
 
 
 if __name__ == "__main__":

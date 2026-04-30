@@ -380,7 +380,7 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         )
         tables.append({
             "title": label_map[key],
-            "style": "width: 92%;",
+            "style": "width: 88%;",
             "columns": [
                 {"label": "Date", "width": "16%"},
                 {"label": "Description", "width": "46%"},
@@ -392,7 +392,7 @@ def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
         })
     tables.append({
         "title": "Cash Summary",
-        "style": "width: 92%;",
+        "style": "width: 88%;",
         "columns": [
             {"label": "Measure", "width": "16%"},
             {"label": "", "width": "46%"},
@@ -434,6 +434,7 @@ def _report_tables_aging(report: dict, company: dict, party_label: str) -> list[
         )
     )
     return [{
+        "style": "width: 88%;",
         "columns": [
             {"label": party_label, "width": "26%"},
             {"label": "Current", "align": "right"},
@@ -470,7 +471,7 @@ def _report_tables_income_by_customer(report: dict, company: dict) -> list[dict]
         )
     )
     return [{
-        "style": "width: 92%;",
+        "style": "width: 88%;",
         "columns": [
             {"label": "Customer", "width": "32%"},
             {"label": "Invoices", "align": "right", "width": "12%"},
@@ -506,7 +507,7 @@ def _report_tables_general_ledger(report: dict, company: dict) -> list[dict]:
         )
         tables.append({
             "title": f'{account["account_number"] or ""} - {account["account_name"]}'.strip(" -"),
-            "style": "width: 92%;",
+            "style": "width: 88%;",
             "columns": [
                 {"label": "Date", "width": "16%"},
                 {"label": "Description", "width": "36%"},
