@@ -139,6 +139,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
             self.reports_route.balance_sheet_pdf,
             self.reports_route.trial_balance_pdf,
             self.reports_route.cash_flow_pdf,
+            self.reports_route.financial_statements_pack,
             self.reports_route.ar_aging_pdf,
             self.reports_route.ap_aging_pdf,
             self.reports_route.gst_return_pdf,
@@ -166,6 +167,9 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 cash_flow_pdf_auth = self._auth_dependency(self.reports_route.cash_flow_pdf)(
+                    db=db, authorization=f"Bearer {self.owner_token}"
+                )
+                pack_auth = self._auth_dependency(self.reports_route.financial_statements_pack)(
                     db=db, authorization=f"Bearer {self.owner_token}"
                 )
                 ar_pdf_auth = self._auth_dependency(self.reports_route.ar_aging_pdf)(
@@ -223,6 +227,12 @@ class ReportAuthHardeningTests(unittest.TestCase):
                     end_date=date(2026, 4, 30),
                     db=db,
                     auth=cash_flow_pdf_auth,
+                )
+                pack_response = self.reports_route.financial_statements_pack(
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 4, 30),
+                    db=db,
+                    auth=pack_auth,
                 )
                 ar_pdf = self.reports_route.ar_aging_pdf(
                     as_of_date=date(2026, 4, 30),
@@ -295,6 +305,7 @@ class ReportAuthHardeningTests(unittest.TestCase):
         self.assertEqual(balance_sheet_pdf.media_type, "application/pdf")
         self.assertEqual(trial_balance_pdf.media_type, "application/pdf")
         self.assertEqual(cash_flow_pdf.media_type, "application/pdf")
+        self.assertEqual(pack_response.media_type, "application/zip")
         self.assertEqual(ar_pdf.media_type, "application/pdf")
         self.assertEqual(ap_pdf.media_type, "application/pdf")
         self.assertEqual(gst_pdf.media_type, "application/pdf")

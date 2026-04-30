@@ -7,7 +7,10 @@
 # General Ledger was CReportEngine::RunGLDetail() at 0x00211400.
 # ============================================================================
 
+import json
+import zipfile
 from datetime import date, timedelta
+from io import BytesIO
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -108,6 +111,51 @@ def _report_pdf_response(pdf_bytes: bytes, filename: str) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+def _zip_response(zip_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _financial_statements_pack_manifest(
+    *,
+    start_date: date,
+    end_date: date,
+    included_documents: list[dict],
+    missing_documents: list[str],
+) -> dict:
+    return {
+        "generated_on": date.today().isoformat(),
+        "pack_type": "financial_statements_pack",
+        "status": "partial",
+        "period": {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        "included_documents": included_documents,
+        "missing_document_categories": missing_documents,
+        "notes": [
+            "This pack bundles the statements the application already produces.",
+            "Missing document categories remain outstanding follow-up work for GAAP/compliance completeness.",
+            "Fixed asset reconciliation is currently included as a JSON export because a print-ready PDF renderer does not yet exist.",
+        ],
+    }
+
+
+def _financial_year_start_for_date(company_settings: dict, as_of_date: date) -> date:
+    start_value = str(company_settings.get("financial_year_start") or "").strip()
+    if not start_value:
+        return date(as_of_date.year, 1, 1)
+
+    month, day = [int(part) for part in start_value.split("-")]
+    candidate = date(as_of_date.year, month, day)
+    if as_of_date < candidate:
+        candidate = date(as_of_date.year - 1, month, day)
+    return candidate
 
 
 def _company_settings(db: Session) -> dict:
@@ -1327,6 +1375,174 @@ def general_ledger_pdf(
         landscape=True,
     )
     return _report_pdf_response(pdf_bytes, f'GeneralLedger_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/financial-statements-pack")
+def financial_statements_pack(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = _financial_year_start_for_date(company, end_date)
+    included_documents: list[dict] = []
+    zip_entries: list[tuple[str, bytes]] = []
+
+    def add_pdf(path: str, label: str, filename: str, pdf_bytes: bytes):
+        zip_entries.append((path, pdf_bytes))
+        included_documents.append({
+            "label": label,
+            "path": path,
+            "filename": filename,
+            "media_type": "application/pdf",
+        })
+
+    profit_loss_report = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    profit_loss_pdf_bytes = generate_report_pdf(
+        title="Profit & Loss",
+        company_settings=company,
+        subtitle=f'{format_date(profit_loss_report["start_date"], company)} - {format_date(profit_loss_report["end_date"], company)}',
+        tables=_report_tables_profit_loss(profit_loss_report, company),
+    )
+    add_pdf(
+        "statements/ProfitLoss_%s_%s.pdf" % (profit_loss_report["start_date"], profit_loss_report["end_date"]),
+        "Profit & Loss",
+        f'ProfitLoss_{profit_loss_report["start_date"]}_{profit_loss_report["end_date"]}.pdf',
+        profit_loss_pdf_bytes,
+    )
+
+    balance_sheet_report = balance_sheet(as_of_date=end_date, db=db, auth=auth)
+    balance_sheet_pdf_bytes = generate_report_pdf(
+        title="Balance Sheet",
+        company_settings=company,
+        subtitle=f'As of {format_date(balance_sheet_report["as_of_date"], company)}',
+        tables=_report_tables_balance_sheet(balance_sheet_report, company),
+    )
+    add_pdf(
+        "statements/BalanceSheet_%s.pdf" % balance_sheet_report["as_of_date"],
+        "Balance Sheet",
+        f'BalanceSheet_{balance_sheet_report["as_of_date"]}.pdf',
+        balance_sheet_pdf_bytes,
+    )
+
+    trial_balance_report = trial_balance(as_of_date=end_date, db=db, auth=auth)
+    trial_balance_pdf_bytes = generate_report_pdf(
+        title="Trial Balance",
+        company_settings=company,
+        subtitle=f'As of {format_date(trial_balance_report["as_of_date"], company)}',
+        tables=_report_tables_trial_balance(trial_balance_report, company),
+    )
+    add_pdf(
+        "statements/TrialBalance_%s.pdf" % trial_balance_report["as_of_date"],
+        "Trial Balance",
+        f'TrialBalance_{trial_balance_report["as_of_date"]}.pdf',
+        trial_balance_pdf_bytes,
+    )
+
+    cash_flow_data = cash_flow_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    cash_flow_pdf_bytes = generate_report_pdf(
+        title="Cash Flow",
+        company_settings=company,
+        subtitle=f'{format_date(cash_flow_data["start_date"], company)} - {format_date(cash_flow_data["end_date"], company)}',
+        tables=_report_tables_cash_flow(cash_flow_data, company),
+    )
+    add_pdf(
+        "statements/CashFlow_%s_%s.pdf" % (cash_flow_data["start_date"], cash_flow_data["end_date"]),
+        "Cash Flow",
+        f'CashFlow_{cash_flow_data["start_date"]}_{cash_flow_data["end_date"]}.pdf',
+        cash_flow_pdf_bytes,
+    )
+
+    general_ledger_data = general_ledger(start_date=start_date, end_date=end_date, account_id=None, db=db, auth=auth)
+    general_ledger_pdf_bytes = generate_report_pdf(
+        title="General Ledger",
+        company_settings=company,
+        subtitle=f'{format_date(general_ledger_data["start_date"], company)} - {format_date(general_ledger_data["end_date"], company)}',
+        tables=_report_tables_general_ledger(general_ledger_data, company),
+        landscape=True,
+    )
+    add_pdf(
+        "ledger/GeneralLedger_%s_%s.pdf" % (general_ledger_data["start_date"], general_ledger_data["end_date"]),
+        "General Ledger",
+        f'GeneralLedger_{general_ledger_data["start_date"]}_{general_ledger_data["end_date"]}.pdf',
+        general_ledger_pdf_bytes,
+    )
+
+    ar_aging_data = ar_aging(as_of_date=end_date, db=db, auth=auth)
+    ar_aging_pdf_bytes = generate_report_pdf(
+        title="Accounts Receivable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(ar_aging_data["as_of_date"], company)}',
+        tables=_report_tables_aging(ar_aging_data, company, "Customer"),
+        landscape=True,
+    )
+    add_pdf(
+        "aging/ARAging_%s.pdf" % ar_aging_data["as_of_date"],
+        "Accounts Receivable Aging",
+        f'ARAging_{ar_aging_data["as_of_date"]}.pdf',
+        ar_aging_pdf_bytes,
+    )
+
+    ap_aging_data = ap_aging(as_of_date=end_date, db=db, auth=auth)
+    ap_aging_pdf_bytes = generate_report_pdf(
+        title="Accounts Payable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(ap_aging_data["as_of_date"], company)}',
+        tables=_report_tables_aging(ap_aging_data, company, "Vendor"),
+        landscape=True,
+    )
+    add_pdf(
+        "aging/APAging_%s.pdf" % ap_aging_data["as_of_date"],
+        "Accounts Payable Aging",
+        f'APAging_{ap_aging_data["as_of_date"]}.pdf',
+        ap_aging_pdf_bytes,
+    )
+
+    gst_return_data = gst_return_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    gst_return_pdf_bytes = generate_gst101a_pdf(gst_return_data, company)
+    add_pdf(
+        "gst/GST101A_%s_%s.pdf" % (gst_return_data["start_date"], gst_return_data["end_date"]),
+        "GST101A Return",
+        f'GST101A_{gst_return_data["start_date"]}_{gst_return_data["end_date"]}.pdf',
+        gst_return_pdf_bytes,
+    )
+
+    fixed_asset_reconciliation_data = fixed_assets_reconciliation_report(as_of_date=end_date, db=db, auth=auth)
+    fixed_asset_bytes = json.dumps(fixed_asset_reconciliation_data, indent=2, sort_keys=True).encode("utf-8")
+    zip_entries.append((f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json', fixed_asset_bytes))
+    included_documents.append({
+        "label": "Fixed Asset Reconciliation",
+        "path": f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json',
+        "filename": f'FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json',
+        "media_type": "application/json",
+    })
+
+    manifest = _financial_statements_pack_manifest(
+        start_date=start_date,
+        end_date=end_date,
+        included_documents=included_documents,
+        missing_documents=[
+            "statement_of_changes_in_equity",
+            "accounting_policies",
+            "notes_to_financial_statements",
+            "directors_approval_or_signature_page",
+            "auditor_report",
+            "tax_reconciliation_to_taxable_income",
+            "tax_fixed_asset_schedule",
+            "ir10_or_equivalent_summary",
+        ],
+    )
+    zip_entries.append(("manifest.json", json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")))
+
+    with BytesIO() as buffer:
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path, payload in zip_entries:
+                archive.writestr(path, payload)
+        return _zip_response(buffer.getvalue(), f'FinancialStatementsPack_{start_date}_{end_date}.zip')
 
 
 @router.get("/income-by-customer")

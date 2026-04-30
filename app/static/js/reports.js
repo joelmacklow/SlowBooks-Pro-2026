@@ -27,6 +27,10 @@ const ReportsPage = {
                     <div class="card-header">Cash Flow</div>
                     <p style="font-size:13px; color:var(--gray-500);">Operating, investing, and financing cash movements</p>
                 </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.financialStatementsPack()">
+                    <div class="card-header">Financial Statements Pack</div>
+                    <p style="font-size:13px; color:var(--gray-500);">Download a zipped audit bundle for the current financial year to date</p>
+                </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
                     <div class="card-header">A/R Aging</div>
                     <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
@@ -646,6 +650,12 @@ const ReportsPage = {
 
     async cashFlow() {
         return ReportsPage.openReport("cash-flow");
+    },
+
+    async financialStatementsPack() {
+        const start = ReportsPage._isoDate(ReportsPage._financialYearStartForDate(new Date()));
+        const end = todayISO();
+        return API.download(`/reports/financial-statements-pack?start_date=${start}&end_date=${end}`, `FinancialStatementsPack_${start}_${end}.zip`);
     },
 
     renderCashFlowContent(data) {
