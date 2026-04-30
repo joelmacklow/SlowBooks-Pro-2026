@@ -436,6 +436,14 @@ const ReportsPage = {
                     const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
                     return API.get(`/reports/fixed-assets-reconciliation?as_of_date=${asOfDate}`);
                 },
+                pdfPath: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `/reports/fixed-assets-reconciliation/pdf?as_of_date=${asOfDate}`;
+                },
+                pdfFilename: (state) => {
+                    const asOfDate = ReportsPage.getAsOfDate(state.period, state.custom_end);
+                    return `FixedAssetReconciliation_${asOfDate}.pdf`;
+                },
                 renderContent: (data) => ReportsPage.renderFixedAssetsReconciliationContent(data),
             },
         };

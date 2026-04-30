@@ -125,7 +125,7 @@ class FinancialStatementsPackTests(unittest.TestCase):
             "aging/ARAging_2026-04-30.pdf",
             "aging/APAging_2026-04-30.pdf",
             "gst/GST101A_2026-04-01_2026-04-30.pdf",
-            "fixed-assets/FixedAssetReconciliation_2026-04-30.json",
+            "fixed-assets/FixedAssetReconciliation_2026-04-30.pdf",
         }
         self.assertSetEqual(names, expected_names)
 
@@ -141,17 +141,11 @@ class FinancialStatementsPackTests(unittest.TestCase):
         included_paths = {entry["path"] for entry in manifest["included_documents"]}
         self.assertSetEqual(included_paths, expected_names - {"manifest.json"})
         fixed_asset_entry = next(entry for entry in manifest["included_documents"] if entry["label"] == "Fixed Asset Reconciliation")
-        self.assertEqual(fixed_asset_entry["media_type"], "application/json")
+        self.assertEqual(fixed_asset_entry["media_type"], "application/pdf")
 
         self.assertEqual(archive.read("statements/ProfitLoss_2026-04-01_2026-04-30.pdf"), b"%PDF-Profit & Loss")
         self.assertEqual(archive.read("gst/GST101A_2026-04-01_2026-04-30.pdf"), b"%PDF-GST101A")
-        self.assertEqual(json.loads(archive.read("fixed-assets/FixedAssetReconciliation_2026-04-30.json")), {
-            "as_of_date": "2026-04-30",
-            "assets": [],
-            "total_accumulated_depreciation": 0,
-            "total_book_value": 0,
-            "total_cost": 0,
-        })
+        self.assertEqual(archive.read("fixed-assets/FixedAssetReconciliation_2026-04-30.pdf"), b"%PDF-Fixed Asset Reconciliation")
 
 
 if __name__ == "__main__":

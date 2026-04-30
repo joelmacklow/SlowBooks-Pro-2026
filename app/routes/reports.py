@@ -141,7 +141,7 @@ def _financial_statements_pack_manifest(
         "notes": [
             "This pack bundles the statements the application already produces.",
             "Missing document categories remain outstanding follow-up work for GAAP/compliance completeness.",
-            "Fixed asset reconciliation is currently included as a JSON export because a print-ready PDF renderer does not yet exist.",
+            "Fixed asset reconciliation is included as a PDF so the pack stays consistent with the other exported reports.",
         ],
     }
 
@@ -524,6 +524,44 @@ def _report_tables_general_ledger(report: dict, company: dict) -> list[dict]:
     }]
 
 
+def _report_tables_fixed_assets_reconciliation(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["asset_number"] or ""),
+            _pdf_cell(entry["asset_name"] or ""),
+            _pdf_cell(entry["asset_type"] or ""),
+            _pdf_cell(format_date(entry["purchase_date"], company)),
+            _pdf_cell(format_currency(entry["purchase_price"], company), align="right"),
+            _pdf_cell(format_currency(entry["accumulated_depreciation"], company), align="right"),
+            _pdf_cell(format_currency(entry["book_value"], company), align="right"),
+        )
+        for entry in report["assets"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=4),
+            _pdf_cell(format_currency(report["total_cost"], company), align="right"),
+            _pdf_cell(format_currency(report["total_accumulated_depreciation"], company), align="right"),
+            _pdf_cell(format_currency(report["total_book_value"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "style": "width: 92%;",
+        "columns": [
+            {"label": "No.", "width": "10%"},
+            {"label": "Asset", "width": "26%"},
+            {"label": "Type", "width": "18%"},
+            {"label": "Purchase Date", "width": "14%"},
+            {"label": "Cost", "align": "right", "width": "10%"},
+            {"label": "Accum. Dep.", "align": "right", "width": "11%"},
+            {"label": "Book Value", "align": "right", "width": "11%"},
+        ],
+        "rows": rows,
+        "empty_message": "No fixed assets for this date.",
+    }]
+
+
 def _draft_return_confirmation_state(start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> dict:
     state = build_return_confirmation_state(None)
     state["due_date"] = gst_due_date(end_date).isoformat()
@@ -777,6 +815,23 @@ def fixed_assets_reconciliation_report(
     auth=Depends(require_permissions("accounts.manage")),
 ):
     return build_fixed_asset_reconciliation(db, as_of_date or date.today())
+
+
+@router.get("/fixed-assets-reconciliation/pdf")
+def fixed_assets_reconciliation_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = fixed_assets_reconciliation_report(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Fixed Asset Reconciliation",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_fixed_assets_reconciliation(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'FixedAssetReconciliation_{report["as_of_date"]}.pdf')
 
 
 @router.get("/trial-balance")
@@ -1512,13 +1567,18 @@ def financial_statements_pack(
     )
 
     fixed_asset_reconciliation_data = fixed_assets_reconciliation_report(as_of_date=end_date, db=db, auth=auth)
-    fixed_asset_bytes = json.dumps(fixed_asset_reconciliation_data, indent=2, sort_keys=True).encode("utf-8")
-    zip_entries.append((f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json', fixed_asset_bytes))
+    fixed_asset_pdf_bytes = generate_report_pdf(
+        title="Fixed Asset Reconciliation",
+        company_settings=company,
+        subtitle=f'As of {format_date(fixed_asset_reconciliation_data["as_of_date"], company)}',
+        tables=_report_tables_fixed_assets_reconciliation(fixed_asset_reconciliation_data, company),
+    )
+    zip_entries.append((f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf', fixed_asset_pdf_bytes))
     included_documents.append({
         "label": "Fixed Asset Reconciliation",
-        "path": f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json',
-        "filename": f'FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.json',
-        "media_type": "application/json",
+        "path": f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf',
+        "filename": f'FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf',
+        "media_type": "application/pdf",
     })
 
     manifest = _financial_statements_pack_manifest(
