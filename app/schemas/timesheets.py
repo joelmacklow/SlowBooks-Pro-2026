@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 SUPPORTED_TIMESHEET_ENTRY_MODES = {"duration", "start_end"}
@@ -61,6 +61,19 @@ class TimesheetStatusActionRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class TimesheetCorrectionRequest(BaseModel):
+    lines: list[TimesheetLineUpsert]
+    reason: str
+
+    model_config = {"extra": "forbid"}
+
+
+class TimesheetBulkApproveRequest(BaseModel):
+    timesheet_ids: list[int]
+
+    model_config = {"extra": "forbid"}
+
+
 class TimesheetLineResponse(BaseModel):
     id: int
     work_date: date
@@ -113,5 +126,18 @@ class TimesheetListResponse(BaseModel):
 
 
 class TimesheetDetailResponse(TimesheetListResponse):
-    lines: list[TimesheetLineResponse] = []
-    audit_events: list[TimesheetAuditEventResponse] = []
+    lines: list[TimesheetLineResponse] = Field(default_factory=list)
+    audit_events: list[TimesheetAuditEventResponse] = Field(default_factory=list)
+
+
+class TimesheetReadinessResponse(BaseModel):
+    period_start: date
+    period_end: date
+    pay_run_id: Optional[int] = None
+    draft: list[TimesheetListResponse] = Field(default_factory=list)
+    submitted: list[TimesheetListResponse] = Field(default_factory=list)
+    approved: list[TimesheetListResponse] = Field(default_factory=list)
+    rejected: list[TimesheetListResponse] = Field(default_factory=list)
+    locked: list[TimesheetListResponse] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}

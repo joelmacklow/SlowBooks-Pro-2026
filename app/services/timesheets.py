@@ -188,6 +188,23 @@ def list_timesheets_for_employee(
     return q.order_by(Timesheet.period_start.desc(), Timesheet.id.desc()).all()
 
 
+def list_timesheets_for_period(
+    db: Session,
+    *,
+    period_start,
+    period_end,
+    status: TimesheetStatus | str | None = None,
+) -> list[Timesheet]:
+    q = db.query(Timesheet).filter(
+        Timesheet.period_start == period_start,
+        Timesheet.period_end == period_end,
+    )
+    parsed_status = _coerce_status(status) if status is not None else None
+    if parsed_status is not None:
+        q = q.filter(Timesheet.status == parsed_status)
+    return q.order_by(Timesheet.employee_id.asc(), Timesheet.id.asc()).all()
+
+
 def get_timesheet_for_employee(db: Session, *, timesheet_id: int, employee_id: int) -> Timesheet:
     timesheet = (
         db.query(Timesheet)
@@ -197,6 +214,23 @@ def get_timesheet_for_employee(db: Session, *, timesheet_id: int, employee_id: i
     if not timesheet:
         raise ValueError("Timesheet not found")
     return timesheet
+
+
+def get_timesheet_audit_events(db: Session, *, timesheet_id: int) -> list[TimesheetAuditEvent]:
+    _get_timesheet(db, timesheet_id)
+    return (
+        db.query(TimesheetAuditEvent)
+        .filter(TimesheetAuditEvent.timesheet_id == timesheet_id)
+        .order_by(TimesheetAuditEvent.id.asc())
+        .all()
+    )
+
+
+def group_timesheets_by_status(timesheets: list[Timesheet]) -> dict[str, list[Timesheet]]:
+    buckets: dict[str, list[Timesheet]] = {status.value: [] for status in TimesheetStatus}
+    for timesheet in timesheets:
+        buckets.setdefault(_status_value(timesheet.status), []).append(timesheet)
+    return buckets
 
 
 def export_timesheet_csv(timesheet: Timesheet) -> str:
@@ -235,6 +269,54 @@ def export_timesheet_csv(timesheet: Timesheet) -> str:
     return output.getvalue()
 
 
+def export_timesheets_csv(timesheets: list[Timesheet]) -> str:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "timesheet_id",
+        "employee_id",
+        "period_start",
+        "period_end",
+        "status",
+        "work_date",
+        "entry_mode",
+        "duration_hours",
+        "start_time",
+        "end_time",
+        "break_minutes",
+    ])
+
+    sorted_timesheets = sorted(
+        list(timesheets or []),
+        key=lambda timesheet: (
+            timesheet.period_start,
+            timesheet.period_end,
+            timesheet.employee_id,
+            timesheet.id,
+        ),
+    )
+    for timesheet in sorted_timesheets:
+        sorted_lines = sorted(
+            list(timesheet.lines or []),
+            key=lambda line: (line.work_date, getattr(line, "id", 0) or 0),
+        )
+        for line in sorted_lines:
+            writer.writerow([
+                timesheet.id,
+                timesheet.employee_id,
+                timesheet.period_start.isoformat(),
+                timesheet.period_end.isoformat(),
+                _status_value(timesheet.status),
+                line.work_date.isoformat() if line.work_date else "",
+                _status_value(line.entry_mode),
+                str(line.duration_hours) if line.duration_hours is not None else "",
+                line.start_time.isoformat() if line.start_time else "",
+                line.end_time.isoformat() if line.end_time else "",
+                str(line.break_minutes) if line.break_minutes is not None else "",
+            ])
+    return output.getvalue()
+
+
 def create_timesheet(
     db: Session,
     *,
@@ -270,6 +352,40 @@ def create_timesheet(
         actor_user_id=actor_user_id,
         status_from=None,
         status_to=TimesheetStatus.DRAFT,
+    )
+    db.commit()
+    db.refresh(timesheet)
+    return timesheet
+
+
+def correct_timesheet(
+    db: Session,
+    *,
+    timesheet_id: int,
+    lines: list[TimesheetLineUpsert],
+    reason: str,
+    actor_user_id: int | None = None,
+) -> Timesheet:
+    timesheet = _get_timesheet(db, timesheet_id)
+    if _status_value(timesheet.status) != TimesheetStatus.SUBMITTED.value:
+        raise ValueError("Only submitted timesheets can be corrected")
+
+    clean_reason = str(reason or "").strip()
+    if not clean_reason:
+        raise ValueError("A correction reason is required")
+
+    built_lines, total_hours = _build_line_models(lines, timesheet.period_start, timesheet.period_end)
+    timesheet.lines = built_lines
+    timesheet.total_hours = total_hours
+
+    _add_audit_event(
+        db,
+        timesheet=timesheet,
+        action="correct",
+        actor_user_id=actor_user_id,
+        status_from=TimesheetStatus.SUBMITTED,
+        status_to=TimesheetStatus.SUBMITTED,
+        reason=clean_reason,
     )
     db.commit()
     db.refresh(timesheet)
@@ -351,6 +467,50 @@ def approve_timesheet(db: Session, *, timesheet_id: int, actor_user_id: int | No
     db.commit()
     db.refresh(timesheet)
     return timesheet
+
+
+def bulk_approve_timesheets(
+    db: Session,
+    *,
+    timesheet_ids: list[int],
+    actor_user_id: int | None = None,
+) -> list[Timesheet]:
+    unique_ids = list(dict.fromkeys(int(timesheet_id) for timesheet_id in timesheet_ids))
+    if not unique_ids:
+        raise ValueError("At least one timesheet id is required")
+
+    timesheets = (
+        db.query(Timesheet)
+        .filter(Timesheet.id.in_(unique_ids))
+        .order_by(Timesheet.id.asc())
+        .all()
+    )
+    timesheet_map = {timesheet.id: timesheet for timesheet in timesheets}
+    if len(timesheet_map) != len(unique_ids):
+        raise ValueError("One or more timesheets were not found")
+
+    for timesheet_id in unique_ids:
+        if _status_value(timesheet_map[timesheet_id].status) != TimesheetStatus.SUBMITTED.value:
+            raise ValueError("Only submitted timesheets can be approved")
+
+    for timesheet_id in unique_ids:
+        timesheet = timesheet_map[timesheet_id]
+        status_from = timesheet.status
+        timesheet.status = TimesheetStatus.APPROVED
+        timesheet.approved_at = _utcnow()
+        _add_audit_event(
+            db,
+            timesheet=timesheet,
+            action="approve",
+            actor_user_id=actor_user_id,
+            status_from=status_from,
+            status_to=TimesheetStatus.APPROVED,
+        )
+
+    db.commit()
+    for timesheet in timesheets:
+        db.refresh(timesheet)
+    return [timesheet_map[timesheet_id] for timesheet_id in unique_ids]
 
 
 def reject_timesheet(
