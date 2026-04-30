@@ -35,9 +35,9 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 ### Invoicing & Payments (Accounts Receivable)
 - **Invoices** — Create, edit, duplicate, void, mark as sent, email as PDF. Auto-numbering, auto due-date from terms, dynamic line items with running totals. Print/PDF generation via WeasyPrint
 - **Estimates** — Full estimate workflow with convert-to-invoice (deep-copies all fields and line items)
-- **Payments** — Record payments with allocation across multiple invoices. Auto-updates invoice balances and status (draft/sent/partial/paid)
+- **Payments** — Record cash receipts or known remittances with allocation across multiple invoices. Auto-updates invoice balances and status (draft/sent/partial/paid) while steering EFT/EFTPOS receipts toward bank-feed matching
 - **Recurring Invoices** — Schedule automatic invoice generation (weekly/monthly/quarterly/yearly) with manual "Generate Now" or cron script
-- **Batch Payments** — Apply payments to multiple invoices across multiple customers in a single transaction
+- **Bulk Receipt Allocation** — Apply one remittance across multiple invoices/customers when bank-feed matching is not the best fit
 - **Credit Memos** — Issue credits against customers, apply to invoices to reduce balance due. Proper reversing journal entries
 - **Quick Entry Mode** — Batch invoice entry for paper invoice backlog. Save & Next (Ctrl+Enter) with running log
 
@@ -77,11 +77,13 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 - **Customer Statements** — PDF statement with invoice/payment history and running balance
 
 ### Dashboard
-- Company Snapshot with Total Receivables, Overdue Invoices, Active Customers, Total Payables
-- **AR Aging Bar Chart** — Color-coded stacked bar (Current/30/60/90+ days)
-- **Monthly Revenue Trend** — Bar chart showing last 12 months of invoiced revenue
-- Recent invoices and payments tables
-- Bank balances at a glance
+- Xero-inspired **Business Overview / Company Snapshot** widget layout inside the existing QB-style shell
+- **Bank Accounts** — Current balances plus reconciliation prompts for unreconciled items
+- **Invoices Owed to You** — Outstanding receivables, awaiting-payment count, overdue count, and overdue value
+- **Net Profit or Loss** — Year-to-date income vs expenses summary with prior-period comparison
+- **Cash In and Out** — Grouped 6-month cash movement bars with net difference summary
+- **Chart of Accounts Watchlist** — This-month and YTD view of key income/expense accounts
+- Role-aware operational fallback when financial dashboard permissions are hidden
 
 ### Communication & Export
 - **Document Email** — Send invoices, statements, estimates, credit notes, payslips, and purchase orders as PDF attachments via SMTP
@@ -143,11 +145,22 @@ The codebase is annotated with "decompilation" comments referencing `QBW32.EXE` 
 
 ```bash
 cp .env.example .env
+# edit .env before first run:
+# - set POSTGRES_PASSWORD to a long random secret
+# - set BOOTSTRAP_ADMIN_TOKEN to a long random secret for remote first-admin setup
+# - leave APP_DEBUG=false unless you explicitly need debug/reload
+# - set CORS_ALLOW_ORIGINS explicitly if browsers will access the API from another trusted origin
+# - set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM_EMAIL in .env for outbound email
 docker compose up --build
 ```
 
 This starts:
 - `postgres:18`
+- Postgres is not published to the host by default; expose it only deliberately if you need local DB tooling access.
+- `POSTGRES_SSLMODE=disable` is the default for the bundled Docker network; use a TLS mode such as `require` for external or untrusted database networks.
+- `BOOTSTRAP_ADMIN_TOKEN` is read from `.env` and is not generated or printed in container logs.
+- `CORS_ALLOW_ORIGINS` defaults to loopback browser origins only; set it explicitly for real deployments that serve the UI/API across other trusted origins.
+- SMTP connection settings are environment-owned so app users cannot redirect outbound mail from the Settings UI.
 - the Slowbooks app on **http://localhost:3001**
 
 Default compose behavior:
@@ -202,8 +215,8 @@ cd SlowBooks-Pro-2026
 pip install -r requirements.txt
 
 # Create database
-sudo -u postgres psql -c "CREATE USER bookkeeper WITH PASSWORD 'bookkeeper'"
-sudo -u postgres psql -c "CREATE DATABASE bookkeeper OWNER bookkeeper"
+sudo -u postgres psql -c "CREATE USER slowbooks WITH PASSWORD '<your-random-secret>'"
+sudo -u postgres psql -c "CREATE DATABASE slowbooks OWNER slowbooks"
 
 # Copy and edit config
 cp .env.example .env
@@ -398,7 +411,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 132 routes across 28 route
 |----------|---------|-------------|
 | `/api/recurring` | GET, POST, PUT, DELETE | Recurring invoice templates |
 | `/api/recurring/generate` | POST | Generate due recurring invoices |
-| `/api/batch-payments` | POST | Batch payment application |
+| `/api/batch-payments` | POST | Bulk receipt allocation |
 
 ### Payroll
 | Endpoint | Methods | Description |

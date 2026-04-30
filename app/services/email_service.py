@@ -14,8 +14,16 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, pass_context
 from sqlalchemy.orm import Session
 
+from app.config import (
+    SMTP_FROM_EMAIL,
+    SMTP_FROM_NAME,
+    SMTP_HOST,
+    SMTP_PASSWORD,
+    SMTP_PORT,
+    SMTP_USE_TLS,
+    SMTP_USER,
+)
 from app.models.email_log import EmailLog
-from app.models.settings import Settings
 from app.services.formatting import format_currency, format_date
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
@@ -36,13 +44,19 @@ _jinja_env.filters["currency"] = _format_currency
 _jinja_env.filters["fdate"] = _format_date
 
 
-def _get_smtp_settings(db: Session) -> dict:
-    """Load SMTP settings from the settings table."""
-    keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_password",
-            "smtp_from_email", "smtp_from_name", "smtp_use_tls"]
-    rows = db.query(Settings).filter(Settings.key.in_(keys)).all()
-    settings = {r.key: r.value for r in rows}
-    return settings
+PUBLIC_EMAIL_FAILURE_DETAIL = "Email delivery failed; check server logs or SMTP configuration."
+
+
+def _get_smtp_settings(db: Session | None = None) -> dict:
+    """Load SMTP settings from environment-owned configuration."""
+    return {
+        "smtp_host": SMTP_HOST,
+        "smtp_port": str(SMTP_PORT),
+        "smtp_user": SMTP_USER,
+        "smtp_from_email": SMTP_FROM_EMAIL,
+        "smtp_from_name": SMTP_FROM_NAME,
+        "smtp_use_tls": "true" if SMTP_USE_TLS else "false",
+    }
 
 
 def _log_email(
@@ -83,7 +97,7 @@ def _send_email_impl(
     host = smtp.get("smtp_host", "")
     port = int(smtp.get("smtp_port", "587"))
     user = smtp.get("smtp_user", "")
-    password = smtp.get("smtp_password", "")
+    password = SMTP_PASSWORD
     from_email = smtp.get("smtp_from_email", user)
     from_name = smtp.get("smtp_from_name", "Slowbooks Pro")
     use_tls = smtp.get("smtp_use_tls", "true").lower() == "true"
@@ -108,6 +122,19 @@ def _send_email_impl(
 
     if not host or not from_email:
         error = "SMTP not configured"
+        _log_email(
+            db,
+            entity_type=entity_type or "",
+            entity_id=entity_id or 0,
+            recipient=to_email,
+            subject=subject,
+            status="failed",
+            error_message=error,
+        )
+        return error
+
+    if user and not password:
+        error = "SMTP password must be provided via the SMTP_PASSWORD environment variable"
         _log_email(
             db,
             entity_type=entity_type or "",
@@ -203,7 +230,7 @@ def send_email_or_raise(db: Session, to_email: str, subject: str, html_body: str
         entity_id=entity_id,
     )
     if error:
-        raise ValueError(error)
+        raise ValueError(PUBLIC_EMAIL_FAILURE_DETAIL)
 
 
 def render_invoice_email(invoice, company_settings: dict) -> str:

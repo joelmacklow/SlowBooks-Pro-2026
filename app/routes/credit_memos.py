@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.credit_memos import CreditMemo, CreditMemoLine, CreditMemoStatus, CreditApplication
@@ -17,29 +18,35 @@ from app.models.contacts import Customer
 from app.models.items import Item
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.credit_memos import (
-    CreditMemoCreate, CreditMemoResponse, CreditApplicationCreate, CreditMemoUpdate,
+    CreditApplicationCreate, CreditApplicationResponse, CreditMemoCreate, CreditMemoResponse, CreditMemoUpdate,
 )
 from app.services.accounting import (
     create_journal_entry, reverse_journal_entry, get_ar_account_id,
     get_default_income_account_id, get_gst_account_id,
 )
 from app.services.closing_date import check_closing_date
-from app.services.email_service import render_document_email, send_document_email
+from app.services.document_sequences import allocate_document_number
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
 from app.services.pdf_service import generate_credit_memo_pdf
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/credit-memos", tags=["credit_memos"])
 
 
 def _next_cm_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(CreditMemo.memo_number)).scalar()
-    if last and last.replace("CM-", "").isdigit():
-        num = int(last.replace("CM-", "")) + 1
-        return f"CM-{num:04d}"
-    return "CM-0001"
+    return allocate_document_number(
+        db,
+        model=CreditMemo,
+        field_name="memo_number",
+        prefix_key="credit_memo_prefix",
+        next_key="credit_memo_next_number",
+        default_prefix="CM-",
+        default_next_number="0001",
+    )
 
 
 def _post_credit_memo_journal(db: Session, cm: CreditMemo, customer: Customer, lines, gst_totals):
@@ -101,6 +108,22 @@ def _credit_memo_has_applications(cm: CreditMemo) -> bool:
     return Decimal(str(cm.amount_applied or 0)) > 0 or bool(cm.applications)
 
 
+def _credit_memo_response(cm: CreditMemo) -> CreditMemoResponse:
+    resp = CreditMemoResponse.model_validate(cm)
+    if cm.customer:
+        resp.customer_name = cm.customer.name
+    resp.applications = [
+        CreditApplicationResponse(
+            id=application.id,
+            invoice_id=application.invoice_id,
+            invoice_number=application.invoice.invoice_number if application.invoice else None,
+            amount=application.amount,
+        )
+        for application in cm.applications
+    ]
+    return resp
+
+
 @router.get("", response_model=list[CreditMemoResponse])
 def list_credit_memos(customer_id: int = None, status: str = None, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.view"))):
     q = db.query(CreditMemo)
@@ -111,10 +134,7 @@ def list_credit_memos(customer_id: int = None, status: str = None, db: Session =
     memos = q.order_by(CreditMemo.date.desc()).all()
     results = []
     for m in memos:
-        resp = CreditMemoResponse.model_validate(m)
-        if m.customer:
-            resp.customer_name = m.customer.name
-        results.append(resp)
+        results.append(_credit_memo_response(m))
     return results
 
 
@@ -123,10 +143,7 @@ def get_credit_memo(cm_id: int, db: Session = Depends(get_db), auth=Depends(requ
     cm = db.query(CreditMemo).filter(CreditMemo.id == cm_id).first()
     if not cm:
         raise HTTPException(status_code=404, detail="Credit memo not found")
-    resp = CreditMemoResponse.model_validate(cm)
-    if cm.customer:
-        resp.customer_name = cm.customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.post("", response_model=CreditMemoResponse, status_code=201)
@@ -168,9 +185,7 @@ def create_credit_memo(data: CreditMemoCreate, db: Session = Depends(get_db), au
 
     db.commit()
     db.refresh(cm)
-    resp = CreditMemoResponse.model_validate(cm)
-    resp.customer_name = customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.put("/{cm_id}", response_model=CreditMemoResponse)
@@ -235,10 +250,7 @@ def update_credit_memo(cm_id: int, data: CreditMemoUpdate, db: Session = Depends
 
     db.commit()
     db.refresh(cm)
-    resp = CreditMemoResponse.model_validate(cm)
-    if cm.customer:
-        resp.customer_name = cm.customer.name
-    return resp
+    return _credit_memo_response(cm)
 
 
 @router.get("/{cm_id}/pdf")
@@ -256,7 +268,14 @@ def credit_memo_pdf(cm_id: int, db: Session = Depends(get_db), auth=Depends(requ
 
 
 @router.post("/{cm_id}/email")
-def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     cm = db.query(CreditMemo).filter(CreditMemo.id == cm_id).first()
     if not cm:
         raise HTTPException(status_code=404, detail="Credit memo not found")
@@ -285,8 +304,8 @@ def email_credit_memo(cm_id: int, data: DocumentEmailRequest, db: Session = Depe
             entity_id=cm.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{cm_id}/apply")

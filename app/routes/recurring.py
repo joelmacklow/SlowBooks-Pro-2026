@@ -1,3 +1,5 @@
+from datetime import date
+
 # ============================================================================
 # Recurring Invoices — CRUD + manual generate
 # Feature 2: Schedule automatic invoice generation
@@ -10,7 +12,7 @@ from app.database import get_db
 from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
 from app.models.contacts import Customer
 from app.schemas.recurring import RecurringCreate, RecurringUpdate, RecurringResponse
-from app.services.recurring_service import generate_due_invoices
+from app.services.recurring_service import calculate_next_due, generate_due_invoices
 from app.services.gst_lines import resolve_line_gst
 from app.services.auth import require_permissions
 
@@ -80,8 +82,20 @@ def update_recurring(rec_id: int, data: RecurringUpdate, db: Session = Depends(g
     if not rec:
         raise HTTPException(status_code=404, detail="Recurring invoice not found")
 
-    for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
+    updates = data.model_dump(exclude_unset=True, exclude={"lines"})
+    if "customer_id" in updates:
+        customer = db.query(Customer).filter(Customer.id == updates["customer_id"]).first()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+    schedule_changed = any(field in updates for field in ("start_date", "frequency"))
+    for key, val in updates.items():
         setattr(rec, key, val)
+
+    if schedule_changed:
+        rec.next_due = calculate_next_due(rec.start_date, rec.frequency, as_of=date.today())
+        if rec.end_date and rec.next_due > rec.end_date:
+            rec.is_active = False
 
     if data.lines is not None:
         db.query(RecurringInvoiceLine).filter(RecurringInvoiceLine.recurring_invoice_id == rec_id).delete()

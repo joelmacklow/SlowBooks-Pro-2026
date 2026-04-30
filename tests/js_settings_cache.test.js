@@ -6,6 +6,7 @@ const settingsCode = fs.readFileSync('app/static/js/settings.js', 'utf8');
 const code = `${settingsCode}\nthis.SettingsPage = SettingsPage;`;
 const updatedSettings = { locale: 'en-NZ', currency: 'NZD', company_name: 'SlowBooks NZ' };
 const posts = [];
+const toasts = [];
 const context = {
     App: { settings: { locale: 'en-US', currency: 'USD' } },
     API: {
@@ -25,7 +26,7 @@ const context = {
         }
     },
     Object,
-    toast: () => {},
+    toast: (message) => { toasts.push(message); },
     escapeHtml: (value) => value || '',
     setTimeout,
 };
@@ -38,7 +39,10 @@ vm.runInContext(code, context);
     const sampleHtml = await context.SettingsPage.render();
     assert.ok(sampleHtml.includes('Employment Information and employee filing exports'));
     assert.ok(!sampleHtml.includes('payday filing'));
+    assert.ok(sampleHtml.includes('Approved PO Delivery Locations'));
     assert.ok(sampleHtml.includes('Load NZ Demo Data'));
+    assert.ok(sampleHtml.includes('ANZ bank account'));
+    assert.ok(sampleHtml.includes('sample customer/vendor banking transactions'));
     assert.ok(sampleHtml.includes('Load Xero Sample Default Chart'));
     assert.ok(sampleHtml.includes('Load MAS Chart of Accounts'));
 
@@ -50,6 +54,7 @@ vm.runInContext(code, context);
     assert.deepStrictEqual(context.App.settings, updatedSettings);
 
     await context.SettingsPage.loadDemoData();
+    assert.ok(toasts.includes('NZ demo data loaded, including the ANZ bank account'));
     await context.SettingsPage.loadChartTemplate('xero');
     await context.SettingsPage.loadChartTemplate('mas');
     assert.deepStrictEqual(posts, ['/settings/load-demo-data', '/settings/load-chart-template/xero', '/settings/load-chart-template/mas']);

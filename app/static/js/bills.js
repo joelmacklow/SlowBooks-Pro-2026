@@ -40,6 +40,7 @@ const BillsPage = {
                     <td class="amount">${formatCurrency(b.total)}</td>
                     <td class="amount">${formatCurrency(b.balance_due)}</td>
                     <td class="actions">
+                        ${b.po_id ? `<button class="btn btn-sm btn-secondary" onclick="BillsPage.openPurchaseOrder(${b.po_id})">Purchase Order</button>` : ''}
                         <button class="btn btn-sm btn-secondary" onclick="BillsPage.view(${b.id})">View</button>
                         ${canManagePurchasing && b.status !== 'void' && b.status !== 'paid' ? `<button class="btn btn-sm btn-danger" onclick="BillsPage.void(${b.id})">Void</button>` : ''}
                     </td>
@@ -61,7 +62,7 @@ const BillsPage = {
         const bill = await API.get(`/bills/${id}`);
         let linesHtml = bill.lines.map(l =>
             `<tr><td>${escapeHtml(l.description || '')}</td><td class="amount">${l.quantity}</td>
-             <td class="amount">${formatCurrency(l.rate)}</td><td class="amount">${formatCurrency(l.amount)}</td></tr>`
+             <td>${escapeHtml(l.gst_code || '')}</td><td class="amount">${formatCurrency(l.rate)}</td><td class="amount">${formatCurrency(l.amount)}</td></tr>`
         ).join('');
 
         openModal(`Bill ${bill.bill_number}`, `
@@ -69,14 +70,17 @@ const BillsPage = {
                 <strong>Vendor:</strong> ${escapeHtml(bill.vendor_name || '')}<br>
                 <strong>Date:</strong> ${formatDate(bill.date)}<br>
                 <strong>Due:</strong> ${formatDate(bill.due_date)}<br>
-                <strong>Status:</strong> ${statusBadge(bill.status)}
+                <strong>Status:</strong> ${statusBadge(bill.status)}<br>
+                ${bill.po_id ? `<strong>Purchase Order:</strong> <button type="button" class="btn btn-sm btn-secondary" onclick="BillsPage.openPurchaseOrder(${bill.po_id})">Open PO</button>` : ''}
             </div>
             <div class="table-container"><table>
-                <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Amount</th></tr></thead>
+                <thead><tr><th>Description</th><th class="amount">Qty</th><th>GST</th><th class="amount">Rate</th><th class="amount">Amount</th></tr></thead>
                 <tbody>${linesHtml}</tbody>
             </table></div>
             <div class="invoice-totals">
-                <div class="total-row grand-total"><span class="label">Total</span><span class="value">${formatCurrency(bill.total)}</span></div>
+                <div class="total-row"><span class="label">Subtotal</span><span class="value">${formatCurrency(bill.subtotal)}</span></div>
+                <div class="total-row"><span class="label">GST</span><span class="value">${formatCurrency(bill.tax_amount)}</span></div>
+                <div class="total-row grand-total"><span class="label">Grand Total</span><span class="value">${formatCurrency(bill.total)}</span></div>
                 <div class="total-row"><span class="label">Paid</span><span class="value">${formatCurrency(bill.amount_paid)}</span></div>
                 <div class="total-row grand-total"><span class="label">Balance</span><span class="value">${formatCurrency(bill.balance_due)}</span></div>
             </div>
@@ -85,8 +89,38 @@ const BillsPage = {
             </div>`);
     },
 
+    async openPurchaseOrder(poId) {
+        if (!poId) return;
+        if (typeof closeModal === 'function') closeModal();
+        if (typeof PurchaseOrdersPage !== 'undefined' && typeof PurchaseOrdersPage._loadEditorContext === 'function') {
+            await PurchaseOrdersPage._loadEditorContext(poId);
+            App.navigate('#/purchase-orders/detail');
+            return;
+        }
+        if (typeof PurchaseOrdersPage !== 'undefined' && typeof PurchaseOrdersPage.open === 'function') {
+            await PurchaseOrdersPage.open(poId);
+            return;
+        }
+        App.navigate('#/purchase-orders');
+    },
+
     _items: [],
+    _filteredItems: [],
     lineCount: 0,
+    _defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    _paymentTermLabels(settings = {}) {
+        const raw = String(settings.payment_terms_config || '').trim();
+        if (!raw) return BillsPage._defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : BillsPage._defaultPaymentTerms();
+    },
 
     async showForm() {
         const [vendors, items, accounts, gstCodes] = await Promise.all([
@@ -95,26 +129,32 @@ const BillsPage = {
             API.get('/accounts?account_type=expense'),
             API.get('/gst-codes'),
         ]);
+        let settings = {};
+        try {
+            settings = await API.get('/settings/public');
+        } catch (_err) {}
         App.gstCodes = gstCodes;
         BillsPage._items = items;
+        BillsPage._filteredItems = items;
         BillsPage.lineCount = 1;
 
         const vendorOpts = vendors.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
-        const itemOpts = items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = BillsPage.itemOptionsHtml();
+        const termOptions = BillsPage._paymentTermLabels(settings).map(t =>
+            `<option ${t===(settings.default_terms || 'Net 30')?'selected':''}>${t}</option>`).join('');
 
         openModal('Enter Bill', `
             <form onsubmit="BillsPage.save(event)">
                 <div class="form-grid">
                     <div class="form-group"><label>Vendor *</label>
-                        <select name="vendor_id" required><option value="">Select...</option>${vendorOpts}</select></div>
+                        <select name="vendor_id" required onchange="BillsPage.vendorSelected(this.value)"><option value="">Select...</option>${vendorOpts}</select></div>
                     <div class="form-group"><label>Bill Number *</label>
                         <input name="bill_number" required></div>
                     <div class="form-group"><label>Date *</label>
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${t==='Net 30'?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                 </div>
                 <h3 style="margin:12px 0 8px;font-size:14px;">Line Items</h3>
@@ -122,37 +162,102 @@ const BillsPage = {
                     <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th></tr></thead>
                     <tbody id="bill-lines">
                         <tr data-billline="0">
-                            <td><select class="line-item"><option value="">--</option>${itemOpts}</select></td>
+                            <td><select class="line-item" onchange="BillsPage.itemSelected(0)"><option value="">--</option>${itemOpts}</select></td>
                             <td><input class="line-desc"></td>
-                            <td><input class="line-qty" type="number" step="0.01" value="1"></td>
-                            <td><select class="line-gst">${gstOptionsHtml('GST15')}</select></td>
-                            <td><input class="line-rate" type="number" step="0.01" value="0"></td>
-                            <td class="col-amount">$0.00</td>
+                            <td><input class="line-qty" type="number" step="0.01" value="1" oninput="BillsPage.recalc()"></td>
+                            <td><select class="line-gst" onchange="BillsPage.recalc()">${gstOptionsHtml('GST15')}</select></td>
+                            <td><input class="line-rate" type="number" step="0.01" value="0" oninput="BillsPage.recalc()"></td>
+                            <td class="col-amount line-amount">$0.00</td>
                         </tr>
                     </tbody>
                 </table>
                 <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="BillsPage.addLine()">+ Add Line</button>
-                <div class="form-group" style="margin-top:12px;"><label>Notes</label>
-                    <textarea name="notes"></textarea></div>
+                <div class="settings-section" style="margin-top:12px;">
+                    <div style="display:grid; grid-template-columns: 1.4fr 0.8fr; gap:16px; align-items:start;">
+                        <div class="form-group"><label>Notes</label>
+                            <textarea name="notes"></textarea></div>
+                        <div>
+                            <div class="table-container"><table>
+                                <tbody>
+                                    <tr><td><strong>Subtotal</strong></td><td class="amount" id="bill-subtotal">${formatCurrency(0)}</td></tr>
+                                    <tr><td><strong>GST</strong></td><td class="amount" id="bill-tax">${formatCurrency(0)}</td></tr>
+                                    <tr><td><strong>Grand Total</strong></td><td class="amount" id="bill-total">${formatCurrency(0)}</td></tr>
+                                </tbody>
+                            </table></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Bill</button>
                 </div>
             </form>`);
+        BillsPage.recalc();
+    },
+
+    itemOptionsHtml(selectedId = null) {
+        return (BillsPage._filteredItems || []).map(i => (
+            `<option value="${i.id}" ${selectedId == i.id ? 'selected' : ''}>${escapeHtml(i.name)}</option>`
+        )).join('');
+    },
+
+    vendorSelected(vendorId) {
+        const numericVendorId = vendorId ? parseInt(vendorId, 10) : null;
+        BillsPage._filteredItems = numericVendorId
+            ? (BillsPage._items || []).filter(item => item.vendor_id === numericVendorId)
+            : (BillsPage._items || []);
+        $$('#bill-lines tr').forEach((row) => {
+            const itemSelect = row.querySelector('.line-item');
+            if (!itemSelect) return;
+            const currentValue = itemSelect.value;
+            itemSelect.innerHTML = `<option value="">--</option>${BillsPage.itemOptionsHtml(currentValue)}`;
+            if (!(BillsPage._filteredItems || []).some(item => String(item.id) === String(currentValue))) {
+                itemSelect.value = '';
+                if (row.querySelector('.line-desc')) row.querySelector('.line-desc').value = '';
+                if (row.querySelector('.line-rate')) row.querySelector('.line-rate').value = 0;
+            }
+        });
+        BillsPage.recalc();
     },
 
     addLine() {
         const idx = BillsPage.lineCount++;
-        const itemOpts = BillsPage._items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const itemOpts = BillsPage.itemOptionsHtml();
         $('#bill-lines').insertAdjacentHTML('beforeend', `
             <tr data-billline="${idx}">
-                <td><select class="line-item"><option value="">--</option>${itemOpts}</select></td>
+                <td><select class="line-item" onchange="BillsPage.itemSelected(${idx})"><option value="">--</option>${itemOpts}</select></td>
                 <td><input class="line-desc"></td>
-                <td><input class="line-qty" type="number" step="0.01" value="1"></td>
-                <td><select class="line-gst">${gstOptionsHtml('GST15')}</select></td>
-                <td><input class="line-rate" type="number" step="0.01" value="0"></td>
-                <td class="col-amount">$0.00</td>
+                <td><input class="line-qty" type="number" step="0.01" value="1" oninput="BillsPage.recalc()"></td>
+                <td><select class="line-gst" onchange="BillsPage.recalc()">${gstOptionsHtml('GST15')}</select></td>
+                <td><input class="line-rate" type="number" step="0.01" value="0" oninput="BillsPage.recalc()"></td>
+                <td class="col-amount line-amount">$0.00</td>
             </tr>`);
+        BillsPage.recalc();
+    },
+
+    itemSelected(idx) {
+        const row = $(`[data-billline="${idx}"]`);
+        const itemId = row?.querySelector('.line-item')?.value;
+        const item = BillsPage._items.find(i => i.id == itemId);
+        if (item && row) {
+            row.querySelector('.line-desc').value = item.description || item.name;
+            row.querySelector('.line-rate').value = item.rate || 0;
+            BillsPage.recalc();
+        }
+    },
+
+    recalc() {
+        const lines = [];
+        $$('#bill-lines tr').forEach((row) => {
+            const payload = readGstLinePayload(row);
+            lines.push(payload);
+            const amountCell = row.querySelector('.line-amount');
+            if (amountCell) amountCell.textContent = formatCurrency(payload.quantity * payload.rate);
+        });
+        const totals = calculateGstTotals(lines);
+        if ($('#bill-subtotal')) $('#bill-subtotal').textContent = formatCurrency(totals.subtotal);
+        if ($('#bill-tax')) $('#bill-tax').textContent = formatCurrency(totals.tax_amount);
+        if ($('#bill-total')) $('#bill-total').textContent = formatCurrency(totals.total);
     },
 
     async save(e) {
@@ -228,10 +333,10 @@ const BillsPage = {
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Method</label>
                         <select name="method">
-                            <option value="check">Check</option><option value="ach">ACH</option>
-                            <option value="cash">Cash</option><option value="credit_card">Credit Card</option>
+                            <option value="EFT">EFT</option><option value="Cash">Cash</option>
+                            <option value="Credit">Credit</option>
                         </select></div>
-                    <div class="form-group"><label>Check #</label>
+                    <div class="form-group"><label>Reference</label>
                         <input name="check_number"></div>
                 </div>
                 <div class="table-container" style="margin-top:12px;"><table>

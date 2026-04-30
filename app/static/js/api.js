@@ -6,9 +6,23 @@
  * reverse — 47 different message types, all packed structs with no padding.
  */
 const API = {
-    authHeaders() {
-        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks-auth-token') : null;
-        return token ? { Authorization: `Bearer ${token}` } : {};
+    shouldPromptForClosingDatePassword(status, detail, headers = {}) {
+        return (
+            status === 403
+            && !headers['X-Closing-Date-Password']
+            && typeof detail === 'string'
+            && detail.includes('company admin lock date')
+            && detail.includes('override password')
+        );
+    },
+
+    authHeaders(path = '') {
+        const headers = {};
+        const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
+        if (selectedCompany && !path.startsWith('/auth/') && !path.startsWith('/companies')) {
+            headers['X-Company-Database'] = selectedCompany;
+        }
+        return headers;
     },
 
     async _parseError(res) {
@@ -19,7 +33,8 @@ const API = {
     async raw(method, path, { body = null, headers = {} } = {}) {
         const opts = {
             method,
-            headers: { ...this.authHeaders(), ...headers },
+            credentials: 'same-origin',
+            headers: { ...this.authHeaders(path), ...headers },
         };
         if (body !== null) {
             if (typeof FormData !== 'undefined' && body instanceof FormData) {
@@ -32,6 +47,15 @@ const API = {
         const res = await fetch(`/api${path}`, opts);
         if (!res.ok) {
             const detail = await this._parseError(res);
+            if (this.shouldPromptForClosingDatePassword(res.status, detail, opts.headers) && typeof App !== 'undefined' && typeof App.promptClosingDatePassword === 'function') {
+                const overridePassword = await App.promptClosingDatePassword(detail);
+                if (overridePassword) {
+                    return this.raw(method, path, {
+                        body,
+                        headers: { ...headers, 'X-Closing-Date-Password': overridePassword },
+                    });
+                }
+            }
             if (res.status === 401 && typeof App !== 'undefined' && typeof App.handleUnauthorized === 'function') {
                 App.handleUnauthorized(path, detail || 'Authentication required');
             }
@@ -71,13 +95,22 @@ const API = {
     },
     async open(path, fallbackName = 'document.bin') {
         const res = await this.raw('GET', path);
+        const disposition = res.headers.get('Content-Disposition');
+        let filename = fallbackName;
+        if (disposition) {
+            const match = disposition.match(/filename="?([^\"]+)"?/);
+            if (match) filename = match[1];
+        }
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+        const objectSource = typeof File !== 'undefined'
+            ? new File([blob], filename, { type: blob.type || 'application/octet-stream' })
+            : blob;
+        const url = URL.createObjectURL(objectSource);
         const opened = typeof window !== 'undefined' && typeof window.open === 'function' ? window.open(url, '_blank') : null;
         if (!opened) {
             const link = document.createElement('a');
             link.href = url;
-            link.download = fallbackName;
+            link.download = filename;
             link.click();
         }
         setTimeout(() => URL.revokeObjectURL(url), 60_000);

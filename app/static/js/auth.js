@@ -20,6 +20,22 @@ const AuthPage = {
         return (permissionKeys || []).map((permission) => escapeHtml(AuthPage.formatPermissionLabel(permission))).join(', ');
     },
 
+    bootstrapTokenFromLocation() {
+        if (typeof location === 'undefined') return '';
+        const hash = String(location.hash || '');
+        const query = hash.includes('?')
+            ? hash.split('?').slice(1).join('?')
+            : String(location.search || '').replace(/^\?/, '');
+        if (!query) return '';
+        for (const part of query.split('&')) {
+            const [rawKey, rawValue = ''] = part.split('=');
+            if (decodeURIComponent(rawKey || '') === 'bootstrap_token') {
+                return decodeURIComponent(rawValue.replace(/\+/g, ' '));
+            }
+        }
+        return '';
+    },
+
     async render() {
         const state = App.authState && Object.prototype.hasOwnProperty.call(App.authState, 'authenticated')
             ? App.authState
@@ -62,19 +78,21 @@ const AuthPage = {
     },
 
     renderBootstrapForm() {
+        const bootstrapToken = AuthPage.bootstrapTokenFromLocation();
         return `
             <div class="page-header">
                 <h2>Create First Admin</h2>
             </div>
             <div class="settings-section" style="max-width:480px; margin:0 auto;">
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                    No users exist yet. Create the first admin to activate protected payroll and admin features.
+                    No users exist yet. Create the first admin to activate protected payroll and admin features. If you opened a bootstrap setup URL from the terminal or container logs, the token will be prefilled below.
                 </div>
                 <form onsubmit="AuthPage.bootstrapAdmin(event)">
                     <div class="form-grid">
                         <div class="form-group full-width"><label>Full Name</label><input name="full_name" required></div>
                         <div class="form-group full-width"><label>Email</label><input name="email" type="email" required></div>
                         <div class="form-group full-width"><label>Password</label><input name="password" type="password" minlength="8" required></div>
+                        <div class="form-group full-width"><label>Bootstrap Token</label><input name="bootstrap_token" type="text" autocomplete="off" placeholder="Required for remote setup; check the terminal or container logs" value="${escapeHtml(bootstrapToken)}"></div>
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Create First Admin</button>
@@ -91,7 +109,6 @@ const AuthPage = {
                 email: form.get('email'),
                 password: form.get('password'),
             });
-            localStorage.setItem('slowbooks-auth-token', response.token);
             App.setAuthState({ authenticated: true, bootstrap_required: false, user: response.user });
             await App.loadSettings();
             if (typeof App.syncAuthUI === 'function') App.syncAuthUI();
@@ -105,13 +122,17 @@ const AuthPage = {
     async bootstrapAdmin(e) {
         e.preventDefault();
         const form = new FormData(e.target);
+        const bootstrapToken = String(form.get('bootstrap_token') || AuthPage.bootstrapTokenFromLocation() || '').trim();
         try {
-            const response = await API.post('/auth/bootstrap-admin', {
-                full_name: form.get('full_name'),
-                email: form.get('email'),
-                password: form.get('password'),
+            const responseRaw = await API.raw('POST', '/auth/bootstrap-admin', {
+                body: {
+                    full_name: form.get('full_name'),
+                    email: form.get('email'),
+                    password: form.get('password'),
+                },
+                headers: bootstrapToken ? { 'X-Bootstrap-Token': bootstrapToken } : {},
             });
-            localStorage.setItem('slowbooks-auth-token', response.token);
+            const response = await responseRaw.json();
             App.setAuthState({ authenticated: true, bootstrap_required: false, user: response.user });
             await App.loadSettings();
             if (typeof App.syncAuthUI === 'function') App.syncAuthUI();
@@ -128,7 +149,6 @@ const AuthPage = {
         } catch (_err) {
             // Ignore logout transport failures; local session should still clear.
         }
-        localStorage.removeItem('slowbooks-auth-token');
         App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
         App.settings = {};
         if (typeof App.syncAuthUI === 'function') App.syncAuthUI();
@@ -175,7 +195,8 @@ const AuthPage = {
                                 </td>
                                 <td>${escapeHtml(user.membership.role_key)}</td>
                                 <td style="font-size:10px; color:var(--text-muted);">
-                                    ${AuthPage.renderPermissionSummary(user.membership.allow_permissions.concat(user.membership.deny_permissions)) || 'None'}
+                                    ${AuthPage.renderPermissionSummary(user.membership.allow_permissions.concat(user.membership.deny_permissions)) || 'None'}<br>
+                                    <span style="color:var(--text-light);">Companies: ${escapeHtml((user.company_memberships || []).map((membership) => membership.company_scope).join(', ') || user.membership.company_scope)}</span>
                                 </td>
                                 <td>${user.is_active && user.membership.is_active ? 'Active' : 'Inactive'}</td>
                                 <td class="actions"><button class="btn btn-sm btn-secondary" onclick="AuthPage.showUserForm(${index})">Edit</button></td>
@@ -187,9 +208,10 @@ const AuthPage = {
 
     showUserForm(index = null) {
         const user = index === null ? null : AuthPage._usersCache[index];
-        const meta = AuthPage._metaCache || { roles: [], permissions: [] };
+        const meta = AuthPage._metaCache || { roles: [], permissions: [], company_scopes: [] };
         const allow = new Set(user?.membership?.allow_permissions || []);
         const deny = new Set(user?.membership?.deny_permissions || []);
+        const companyScopes = new Set((user?.company_memberships || []).map((membership) => membership.company_scope));
         openModal(user ? `Edit ${user.full_name}` : 'New User', `
             <form onsubmit="AuthPage.saveUser(event, ${index === null ? 'null' : index})">
                 <div class="form-grid">
@@ -207,6 +229,10 @@ const AuthPage = {
                 <div class="settings-section">
                     <h3>Deny Overrides</h3>
                     <div class="card-grid">${meta.permissions.map(permission => `<label class="card" style="cursor:pointer;"><input type="checkbox" name="deny_permissions" value="${permission.key}" ${deny.has(permission.key) ? 'checked' : ''}> <strong>${escapeHtml(AuthPage.formatPermissionLabel(permission.key))}</strong><div style="font-size:10px; color:var(--text-muted); margin-top:4px;">${escapeHtml(permission.description)}</div></label>`).join('')}</div>
+                </div>
+                <div class="settings-section">
+                    <h3>Company Access</h3>
+                    <div class="card-grid">${(meta.company_scopes || []).map(scope => `<label class="card" style="cursor:pointer;"><input type="checkbox" name="company_scopes" value="${scope.key}" ${(!user && scope.key === '__current__') || companyScopes.has(scope.key) ? 'checked' : ''}> <strong>${escapeHtml(scope.label)}</strong><div style="font-size:10px; color:var(--text-muted); margin-top:4px;">${escapeHtml(scope.database_name)}${scope.is_default ? ' — Default company' : ''}</div></label>`).join('')}</div>
                 </div>
                 <div class="form-grid">
                     <div class="form-group"><label><input type="checkbox" name="is_active" ${user ? (user.is_active ? 'checked' : '') : 'checked'}> User Active</label></div>
@@ -228,6 +254,7 @@ const AuthPage = {
             role_key: form.role_key.value,
             allow_permissions: collect('allow_permissions'),
             deny_permissions: collect('deny_permissions'),
+            company_scopes: collect('company_scopes'),
             is_active: !!form.is_active.checked,
             membership_active: !!form.membership_active.checked,
         };

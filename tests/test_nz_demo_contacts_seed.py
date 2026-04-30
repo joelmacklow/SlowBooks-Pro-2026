@@ -22,6 +22,7 @@ class NzDemoContactsSeedTests(unittest.TestCase):
             Payment, PaymentAllocation, Estimate, EstimateLine, Transaction,
             TransactionLine, Settings, GstCode, BankAccount, Reconciliation,
             BankTransaction, Company, PayRun, PayStub, Employee,
+            CreditMemo, CreditMemoLine, CreditApplication, Bill, BillLine, BillPayment, BillPaymentAllocation,
         )
 
         engine = create_engine("sqlite:///:memory:")

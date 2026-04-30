@@ -8,6 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.services.auth import require_permissions
@@ -19,6 +20,8 @@ from app.services.csv_export import (
     export_vendors,
 )
 from app.services.csv_import import import_customers, import_items, import_vendors
+from app.services.rate_limit import enforce_rate_limit
+from app.services.upload_limits import IMPORT_FILE_MAX_BYTES, enforce_upload_size
 
 router = APIRouter(prefix="/api/csv", tags=["csv"])
 
@@ -28,7 +31,12 @@ CSV_IMPORT_ERROR = "CSV import failed"
 
 async def _read_csv_upload(file: UploadFile) -> str:
     try:
-        return (await file.read()).decode("utf-8-sig")
+        content = enforce_upload_size(
+            await file.read(),
+            max_bytes=IMPORT_FILE_MAX_BYTES,
+            detail="CSV file is too large",
+        )
+        return content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail=CSV_DECODE_ERROR) from exc
 
@@ -115,7 +123,15 @@ async def csv_import_customers(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("import_export.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="import:csv",
+        limit=10,
+        window_seconds=60,
+        detail="Too many CSV import requests. Please wait and try again.",
+    )
     return await _run_csv_import(import_customers, file, db)
 
 
@@ -124,7 +140,15 @@ async def csv_import_vendors(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("import_export.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="import:csv",
+        limit=10,
+        window_seconds=60,
+        detail="Too many CSV import requests. Please wait and try again.",
+    )
     return await _run_csv_import(import_vendors, file, db)
 
 
@@ -133,5 +157,13 @@ async def csv_import_items(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     auth=Depends(require_permissions("import_export.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="import:csv",
+        limit=10,
+        window_seconds=60,
+        detail="Too many CSV import requests. Please wait and try again.",
+    )
     return await _run_csv_import(import_items, file, db)

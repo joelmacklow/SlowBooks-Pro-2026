@@ -3,6 +3,7 @@ import importlib
 import os
 import sys
 import unittest
+from datetime import date
 from io import BytesIO
 from unittest import mock
 
@@ -66,6 +67,51 @@ class ExceptionExposureHardeningTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.detail, 'CSV file must be UTF-8 encoded')
+
+    def test_restore_route_hides_internal_restore_errors(self):
+        from app.routes.backups import RestoreRequest, restore
+
+        with self.Session() as db, mock.patch('app.routes.backups.restore_backup', return_value={
+            'success': False,
+            'status_code': 500,
+            'error': 'pg_restore failed password=supersecret',
+            'public_error': 'Restore failed',
+        }):
+            with self.assertRaises(HTTPException) as ctx:
+                restore(RestoreRequest(filename='slowbooks_20260415_010101.sql'), db=db, auth={'user_id': 1})
+
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertEqual(ctx.exception.detail, 'Restore failed')
+
+    def test_batch_overdue_statements_hides_internal_email_errors(self):
+        from app.routes import reports as reports_route
+        from app.models.contacts import Customer
+        from app.models.invoices import Invoice, InvoiceStatus
+
+        with self.Session() as db:
+            customer = Customer(name='Aroha Ltd', email='aroha@example.com')
+            db.add(customer)
+            db.flush()
+            db.add(Invoice(
+                invoice_number='INV-1001',
+                customer_id=customer.id,
+                status=InvoiceStatus.SENT,
+                date=date(2026, 4, 1),
+                due_date=date(2026, 4, 15),
+                total=100,
+                balance_due=100,
+            ))
+            db.commit()
+            request = reports_route.BatchOverdueStatementRequest(
+                as_of_date=date(2026, 4, 30),
+                recipients=[reports_route.OverdueStatementRecipient(customer_id=customer.id, recipient='aroha@example.com')],
+            )
+            with mock.patch.object(reports_route, 'generate_statement_pdf', return_value=b'%PDF-statement'), \
+                 mock.patch.object(reports_route, 'send_document_email', side_effect=RuntimeError('smtp password=supersecret')):
+                payload = reports_route.send_overdue_statements(request, db=db, auth={'user_id': 1}, request=None)
+
+        self.assertEqual(payload['failed_count'], 1)
+        self.assertEqual(payload['results'][0]['detail'], 'Email delivery failed')
 
 
 if __name__ == '__main__':

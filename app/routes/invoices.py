@@ -11,15 +11,18 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
+from app.models.invoice_reminders import InvoiceReminderAudit
 from app.models.items import Item
 from app.models.contacts import Customer
+from app.models.credit_memos import CreditApplication
 from app.schemas.email import DocumentEmailRequest
-from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceUpdate, InvoiceResponse
+from app.schemas.invoices import InvoiceCreate, InvoiceCreditApplicationResponse, InvoiceLineCreate, InvoiceUpdate, InvoiceResponse
 from app.services.pdf_service import generate_invoice_pdf
 from app.services.accounting import (
     create_journal_entry, reverse_journal_entry, get_ar_account_id,
@@ -27,20 +30,58 @@ from app.services.accounting import (
 )
 from app.routes.settings import _get_all as get_settings
 from app.services.closing_date import check_closing_date
-from app.services.email_service import render_invoice_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_invoice_email, send_document_email
+from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
-from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
+from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
+from app.services.payment_terms import resolve_due_date_for_terms
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
 def _next_invoice_number(db: Session) -> str:
     """Reconstructed from CInvoice::GetNextRefNumber() @ 0x0015C9F0"""
-    last = db.query(sqlfunc.max(Invoice.invoice_number)).scalar()
-    if last and last.isdigit():
-        return str(int(last) + 1).zfill(len(last))
-    return "1001"
+    return allocate_document_number(
+        db,
+        model=Invoice,
+        field_name="invoice_number",
+        prefix_key="invoice_prefix",
+        next_key="invoice_next_number",
+        default_prefix="",
+        default_next_number="1001",
+    )
+
+
+
+
+def _invoice_response(
+    inv: Invoice,
+    *,
+    reminder_counts: dict[int, int] | None = None,
+) -> InvoiceResponse:
+    resp = InvoiceResponse.model_validate(inv)
+    if inv.customer:
+        resp.customer_name = inv.customer.name
+        resp.invoice_reminders_enabled = inv.customer.invoice_reminders_enabled
+    reminder_count = int((reminder_counts or {}).get(inv.id, 0))
+    resp.reminder_count = reminder_count
+    if resp.invoice_reminders_enabled is False:
+        resp.reminder_summary = "Turned off"
+    elif reminder_count > 0:
+        resp.reminder_summary = f"{reminder_count} sent"
+    else:
+        resp.reminder_summary = ""
+    resp.applied_credits = [
+        InvoiceCreditApplicationResponse(
+            credit_memo_id=application.credit_memo_id,
+            credit_memo_number=application.credit_memo.memo_number if application.credit_memo else None,
+            amount=application.amount,
+        )
+        for application in inv.credit_applications
+    ]
+    return resp
 
 
 def _post_invoice_journal(db: Session, invoice: Invoice, customer: Customer, lines, gst_totals):
@@ -99,18 +140,27 @@ def _post_invoice_journal(db: Session, invoice: Invoice, customer: Customer, lin
 
 @router.get("", response_model=list[InvoiceResponse])
 def list_invoices(status: str = None, customer_id: int = None, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.view"))):
-    q = db.query(Invoice)
+    q = db.query(Invoice).options(joinedload(Invoice.customer))
     if status:
         q = q.filter(Invoice.status == status)
     if customer_id:
         q = q.filter(Invoice.customer_id == customer_id)
     invoices = q.order_by(Invoice.date.desc()).all()
+    reminder_counts = {}
+    if invoices:
+        reminder_counts = {
+            int(invoice_id): int(count or 0)
+            for invoice_id, count in (
+                db.query(InvoiceReminderAudit.invoice_id, sqlfunc.count(InvoiceReminderAudit.id))
+                .filter(InvoiceReminderAudit.invoice_id.in_([inv.id for inv in invoices]))
+                .filter(InvoiceReminderAudit.status == "sent")
+                .group_by(InvoiceReminderAudit.invoice_id)
+                .all()
+            )
+        }
     results = []
     for inv in invoices:
-        resp = InvoiceResponse.model_validate(inv)
-        if inv.customer:
-            resp.customer_name = inv.customer.name
-        results.append(resp)
+        results.append(_invoice_response(inv, reminder_counts=reminder_counts))
     return results
 
 
@@ -119,10 +169,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(req
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    resp = InvoiceResponse.model_validate(inv)
-    if inv.customer:
-        resp.customer_name = inv.customer.name
-    return resp
+    return _invoice_response(inv)
 
 
 @router.post("", response_model=InvoiceResponse, status_code=201)
@@ -137,11 +184,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), auth=Depe
     # Parse terms for due date
     due_date = data.due_date
     if not due_date and data.terms:
-        try:
-            days = int(data.terms.lower().replace("net ", ""))
-            due_date = data.date + timedelta(days=days)
-        except ValueError:
-            due_date = data.date + timedelta(days=30)
+        due_date = resolve_due_date_for_terms(data.date, data.terms, get_settings(db).get("payment_terms_config"))
 
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
     gst_totals = calculate_document_gst(
@@ -198,9 +241,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), auth=Depe
 
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    resp.customer_name = customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceResponse)
@@ -210,6 +251,8 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Cannot edit voided invoice")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=400, detail="Cannot edit paid invoice")
     old_transaction_id = invoice.transaction_id
     old_date = invoice.date
     update_values = data.model_dump(exclude_unset=True, exclude={"lines"})
@@ -226,37 +269,47 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     for key, val in update_values.items():
         setattr(invoice, key, val)
 
-    if data.lines is not None:
+    tax_rate_changed = "tax_rate" in update_values
+    financial_change = data.lines is not None or tax_rate_changed
+
+    if financial_change:
         # Replace lines
-        db.query(InvoiceLine).filter(InvoiceLine.invoice_id == invoice_id).delete()
-        gst_inputs = resolve_gst_line_inputs(db, data.lines)
+        if data.lines is not None:
+            db.query(InvoiceLine).filter(InvoiceLine.invoice_id == invoice_id).delete()
+            gst_inputs = resolve_gst_line_inputs(db, data.lines)
+        else:
+            gst_inputs = stored_gst_line_inputs(db, invoice.lines)
         gst_totals = calculate_document_gst(
             gst_inputs,
             prices_include_gst=prices_include_gst(db),
             gst_context="sales",
         )
-        for i, line_data in enumerate(data.lines):
-            gst_code, gst_rate = resolve_line_gst(db, line_data)
-            line_total = gst_totals.lines[i]
-            line = InvoiceLine(
-                invoice_id=invoice_id,
-                item_id=line_data.item_id,
-                description=line_data.description,
-                quantity=line_data.quantity,
-                rate=line_data.rate,
-                amount=line_total.net_amount,
-                gst_code=gst_code,
-                gst_rate=gst_rate,
-                class_name=line_data.class_name,
-                line_order=line_data.line_order or i,
-            )
-            db.add(line)
+        if data.lines is not None:
+            for i, line_data in enumerate(data.lines):
+                gst_code, gst_rate = resolve_line_gst(db, line_data)
+                line_total = gst_totals.lines[i]
+                line = InvoiceLine(
+                    invoice_id=invoice_id,
+                    item_id=line_data.item_id,
+                    description=line_data.description,
+                    quantity=line_data.quantity,
+                    rate=line_data.rate,
+                    amount=line_total.net_amount,
+                    gst_code=gst_code,
+                    gst_rate=gst_rate,
+                    class_name=line_data.class_name,
+                    line_order=line_data.line_order or i,
+                )
+                db.add(line)
+            posting_lines = data.lines
+        else:
+            posting_lines = list(invoice.lines)
 
         invoice.subtotal = gst_totals.subtotal
         invoice.tax_rate = gst_totals.effective_tax_rate
         invoice.tax_amount = gst_totals.tax_amount
         invoice.total = gst_totals.total
-        invoice.balance_due = gst_totals.total - invoice.amount_paid
+        invoice.balance_due = max(gst_totals.total - invoice.amount_paid, Decimal("0.00"))
 
         if old_transaction_id:
             reverse_journal_entry(
@@ -269,14 +322,11 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
                 reference=invoice.invoice_number,
             )
         posting_customer = db.query(Customer).filter(Customer.id == invoice.customer_id).first()
-        _post_invoice_journal(db, invoice, posting_customer, data.lines, gst_totals)
+        _post_invoice_journal(db, invoice, posting_customer, posting_lines, gst_totals)
 
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.get("/{invoice_id}/pdf")
@@ -302,6 +352,8 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(re
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Invoice already voided")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=400, detail="Cannot void paid invoice")
     check_closing_date(db, invoice.date)
 
     # Create reversing journal entry if original had one
@@ -320,10 +372,7 @@ def void_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depends(re
     invoice.balance_due = Decimal("0")
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.post("/{invoice_id}/send", response_model=InvoiceResponse)
@@ -337,15 +386,19 @@ def mark_invoice_sent(invoice_id: int, db: Session = Depends(get_db), auth=Depen
     invoice.status = InvoiceStatus.SENT
     db.commit()
     db.refresh(invoice)
-    resp = InvoiceResponse.model_validate(invoice)
-    if invoice.customer:
-        resp.customer_name = invoice.customer.name
-    return resp
+    return _invoice_response(invoice)
 
 
 @router.post("/{invoice_id}/email")
-def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
     """Email invoice as PDF attachment — Feature 8"""
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -364,8 +417,8 @@ def email_invoice(invoice_id: int, data: DocumentEmailRequest, db: Session = Dep
             entity_id=inv.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{invoice_id}/duplicate", response_model=InvoiceResponse, status_code=201)
@@ -377,14 +430,7 @@ def duplicate_invoice(invoice_id: int, db: Session = Depends(get_db), auth=Depen
 
     today = date.today()
 
-    # Parse terms for due date
-    due_date = today + timedelta(days=30)
-    if original.terms:
-        try:
-            days = int(original.terms.lower().replace("net ", ""))
-            due_date = today + timedelta(days=days)
-        except ValueError:
-            pass
+    due_date = resolve_due_date_for_terms(today, original.terms, get_settings(db).get("payment_terms_config"))
 
     return create_invoice(InvoiceCreate(
         customer_id=original.customer_id,

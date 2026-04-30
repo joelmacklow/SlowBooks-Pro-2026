@@ -23,7 +23,7 @@ class Payment(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     date = Column(Date, nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
-    method = Column(String(50), nullable=True)  # check, cash, credit_card, etc.
+    method = Column(String(50), nullable=True)  # EFT, Cash, Credit, legacy imported values, etc.
     check_number = Column(String(50), nullable=True)
     reference = Column(String(100), nullable=True)
     deposit_to_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)

@@ -58,7 +58,14 @@ class RbacRolloutModuleTests(unittest.TestCase):
                 'banking.view',
                 'import_export.view',
             ],
-            deny_permissions=[],
+            deny_permissions=[
+                'contacts.manage',
+                'sales.manage',
+                'purchasing.manage',
+                'banking.manage',
+                'import_export.manage',
+                'dashboard.financials.view',
+            ],
         ), db=db, auth=owner_auth)
         return login(LoginRequest(email='viewer@example.com', password='viewersecret'), db=db)
 
@@ -77,6 +84,7 @@ class RbacRolloutModuleTests(unittest.TestCase):
 
         permission_keys = {entry.key for entry in meta.permissions}
         self.assertTrue({
+            'dashboard.financials.view',
             'contacts.view', 'contacts.manage',
             'items.view', 'items.manage',
             'sales.view', 'sales.manage',
@@ -85,6 +93,7 @@ class RbacRolloutModuleTests(unittest.TestCase):
             'import_export.view', 'import_export.manage',
         }.issubset(permission_keys))
         operations_admin = next(role for role in meta.roles if role.key == 'operations_admin')
+        self.assertIn('dashboard.financials.view', operations_admin.permissions)
         self.assertIn('sales.manage', operations_admin.permissions)
         self.assertIn('banking.manage', operations_admin.permissions)
         self.assertIn('import_export.manage', operations_admin.permissions)
@@ -165,8 +174,8 @@ class RbacRolloutModuleTests(unittest.TestCase):
             result = asyncio.run(csv_routes.csv_import_customers(file=upload, db=db, auth=require_permissions('import_export.manage')(db=db, authorization=f'Bearer {owner.token}')))
             self.assertEqual(result['created'], 1)
 
-    def test_dashboard_search_and_gst_routes_require_auth_but_no_extra_business_permission(self):
-        from app.routes.dashboard import get_dashboard
+    def test_dashboard_hides_financials_for_staff_and_charts_require_dashboard_financial_permission(self):
+        from app.routes.dashboard import get_dashboard, get_dashboard_charts
         from app.routes.gst import list_gst_codes
         from app.routes.search import unified_search
         from app.services.auth import get_auth_context, require_permissions
@@ -180,14 +189,38 @@ class RbacRolloutModuleTests(unittest.TestCase):
             self.assertEqual(unauth_ctx.exception.status_code, 401)
 
             viewer_auth = get_auth_context(db=db, authorization=f'Bearer {viewer.token}', required=True)
-            self.assertIsInstance(get_dashboard(db=db, auth=viewer_auth), dict)
+            viewer_dashboard = get_dashboard(db=db, auth=viewer_auth)
+            self.assertIsInstance(viewer_dashboard, dict)
+            self.assertFalse(viewer_dashboard['financial_overview_available'])
+            self.assertEqual(viewer_dashboard['customer_count'], 0)
+            self.assertNotIn('total_receivables', viewer_dashboard)
+            self.assertNotIn('total_payables', viewer_dashboard)
+            self.assertNotIn('bank_balances', viewer_dashboard)
+            self.assertNotIn('recent_invoices', viewer_dashboard)
+            self.assertNotIn('recent_payments', viewer_dashboard)
             self.assertIsInstance(unified_search(q='Al', db=db, auth=viewer_auth), dict)
             self.assertIsInstance(list_gst_codes(db=db, auth=viewer_auth), list)
 
             with self.assertRaises(HTTPException) as viewer_manage_ctx:
                 require_permissions('sales.manage')(db=db, authorization=f'Bearer {viewer.token}')
             self.assertEqual(viewer_manage_ctx.exception.status_code, 403)
-            self.assertIsInstance(get_dashboard(db=db, auth=get_auth_context(db=db, authorization=f'Bearer {owner.token}', required=True)), dict)
+
+            with self.assertRaises(HTTPException) as viewer_dashboard_ctx:
+                require_permissions('dashboard.financials.view')(db=db, authorization=f'Bearer {viewer.token}')
+            self.assertEqual(viewer_dashboard_ctx.exception.status_code, 403)
+
+            owner_auth = get_auth_context(db=db, authorization=f'Bearer {owner.token}', required=True)
+            owner_dashboard = get_dashboard(db=db, auth=owner_auth)
+            self.assertTrue(owner_dashboard['financial_overview_available'])
+            self.assertIn('total_receivables', owner_dashboard)
+            self.assertIn('total_payables', owner_dashboard)
+            self.assertIn('bank_balances', owner_dashboard)
+            self.assertIn('recent_invoices', owner_dashboard)
+            self.assertIn('recent_payments', owner_dashboard)
+
+            owner_dashboard_charts_auth = require_permissions('dashboard.financials.view')(db=db, authorization=f'Bearer {owner.token}')
+            owner_charts = get_dashboard_charts(db=db, auth=owner_dashboard_charts_auth)
+            self.assertIn('monthly_revenue', owner_charts)
 
 
 if __name__ == '__main__':

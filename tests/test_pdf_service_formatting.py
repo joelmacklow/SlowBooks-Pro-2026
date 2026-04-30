@@ -1,9 +1,13 @@
 import sys
 import types
 import unittest
+import base64
+import tempfile
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 weasyprint_stub = types.ModuleType("weasyprint")
@@ -16,7 +20,7 @@ from app.services import pdf_service
 class CapturingHTML:
     rendered = []
 
-    def __init__(self, string):
+    def __init__(self, string, **_kwargs):
         self.string = string
         self.__class__.rendered.append(string)
 
@@ -28,7 +32,25 @@ class PdfServiceFormattingTests(unittest.TestCase):
     def setUp(self):
         CapturingHTML.rendered = []
         pdf_service.HTML = CapturingHTML
-        self.company = {"locale": "en-NZ", "currency": "NZD", "company_name": "SlowBooks NZ"}
+        self._uploads_tmp = tempfile.TemporaryDirectory()
+        self._uploads_path = Path(self._uploads_tmp.name)
+        self._logo_file = self._uploads_path / "company_logo.png"
+        self._logo_file.write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/kWQAAAAASUVORK5CYII="
+        ))
+        self._uploads_patch = mock.patch("app.services.pdf_service.UPLOADS_DIR", self._uploads_path)
+        self._uploads_patch.start()
+        self.company = {
+            "locale": "en-NZ",
+            "currency": "NZD",
+            "company_name": "SlowBooks NZ",
+            "company_logo_path": "/static/uploads/company_logo.png",
+            "gst_number": "123-456-789",
+        }
+
+    def tearDown(self):
+        self._uploads_patch.stop()
+        self._uploads_tmp.cleanup()
 
     def test_invoice_pdf_uses_rendered_company_settings(self):
         invoice = SimpleNamespace(
@@ -37,12 +59,18 @@ class PdfServiceFormattingTests(unittest.TestCase):
             due_date=date(2026, 4, 20),
             terms="Net 7",
             po_number=None,
-            customer_name="Aroha Ltd",
-            bill_address1="",
+            customer_name="",
+            customer=SimpleNamespace(
+                name="Aroha Ltd",
+                company="Aroha Holdings",
+                email="aroha@example.com",
+                phone="021 123 4567",
+            ),
+            bill_address1="10 Lambton Quay",
             bill_address2="",
-            bill_city="",
-            bill_state="",
-            bill_zip="",
+            bill_city="Wellington",
+            bill_state="Wellington",
+            bill_zip="6011",
             ship_address1="",
             lines=[SimpleNamespace(description="Consulting", quantity=1, rate=Decimal("1234.5"), amount=Decimal("1234.5"))],
             subtotal=Decimal("1234.5"),
@@ -54,11 +82,59 @@ class PdfServiceFormattingTests(unittest.TestCase):
             notes=None,
         )
 
-        pdf_service.generate_invoice_pdf(invoice, self.company)
+        company = dict(self.company)
+        pdf_service.generate_invoice_pdf(invoice, company)
 
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn('class="company-logo"', rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertNotIn('<div class="company-name">SlowBooks NZ</div>', rendered)
+        self.assertIn('GST Number', rendered)
+        self.assertIn('123-456-789', rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertNotIn("Due 20 Apr 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn("Payment Advice", rendered)
+        self.assertIn("Aroha Ltd", rendered)
+        self.assertIn("Aroha Holdings", rendered)
+        self.assertIn("aroha@example.com", rendered)
+        self.assertIn("021 123 4567", rendered)
+        self.assertIn("Wellington Wellington 6011", rendered)
+        self.assertIn('class="no-wrap"', rendered)
+        self.assertIn('payment-advice-table', rendered)
+
+    def test_report_pdf_prefers_database_logo_data_uri(self):
+        report_company = dict(self.company)
+        report_company["company_logo_path"] = "/static/uploads/missing-logo.png"
+        report_company["company_logo_data_uri"] = "data:image/png;base64,Zm9v"
+
+        pdf_service.generate_report_pdf(
+            title="Trial Balance",
+            company_settings=report_company,
+            subtitle="As of 30 Apr 2026",
+            tables=[{
+                "columns": [{"label": "Account"}, {"label": "Debit", "align": "right"}],
+                "rows": [{
+                    "cells": [{"text": "Business Bank"}, {"text": "$92.00", "align": "right"}],
+                }],
+            }],
+            landscape=False,
+        )
+
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("data:image/png;base64,Zm9v", rendered)
+        self.assertNotIn("missing-logo.png", rendered)
+        self.assertIn('class="header-logo"', rendered)
 
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(
@@ -82,9 +158,15 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_estimate_pdf(estimate, self.company)
 
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("13 May 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("13 May 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertIn("ESTIMATE", rendered)
+        self.assertIn("Quote Summary", rendered)
 
     def test_statement_pdf_uses_rendered_company_settings(self):
         customer = SimpleNamespace(
@@ -117,12 +199,18 @@ class PdfServiceFormattingTests(unittest.TestCase):
             customer, invoices, payments, self.company, as_of_date=date(2026, 4, 30)
         )
 
-        self.assertIn("30 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,234.50", CapturingHTML.rendered[-1])
-        self.assertIn("$234.50", CapturingHTML.rendered[-1])
-        self.assertIn("$1,000.00", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("30 Apr 2026", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertIn("$1,234.50", rendered)
+        self.assertIn("$234.50", rendered)
+        self.assertIn("$1,000.00", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertIn("Balance Summary", rendered)
+        self.assertIn("Payment Advice", rendered)
 
     def test_payroll_payslip_pdf_uses_nz_payroll_labels_and_company_settings(self):
         pay_run = SimpleNamespace(
@@ -152,12 +240,16 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_payroll_payslip_pdf(pay_run, stub, employee, self.company)
 
-        self.assertIn("Payslip", CapturingHTML.rendered[-1])
-        self.assertIn("Aroha Ngata", CapturingHTML.rendered[-1])
-        self.assertIn("15 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("PAYE", CapturingHTML.rendered[-1])
-        self.assertIn("ACC Earners' Levy", CapturingHTML.rendered[-1])
-        self.assertIn("$2,241.72", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Payslip", rendered)
+        self.assertIn("Aroha Ngata", rendered)
+        self.assertIn("15 Apr 2026", rendered)
+        self.assertIn("PAYE", rendered)
+        self.assertIn("ACC Earners' Levy", rendered)
+        self.assertIn("$2,241.72", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
 
     def test_credit_memo_pdf_uses_rendered_company_settings(self):
         credit_memo = SimpleNamespace(
@@ -173,9 +265,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_credit_memo_pdf(credit_memo, self.company)
 
-        self.assertIn("Credit Note", CapturingHTML.rendered[-1])
-        self.assertIn("13 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,419.68", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("CREDIT NOTE", rendered)
+        self.assertIn("13 Apr 2026", rendered)
+        self.assertIn("$1,419.68", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertIn("Credit Summary", rendered)
 
     def test_purchase_order_pdf_uses_rendered_company_settings(self):
         purchase_order = SimpleNamespace(
@@ -193,9 +290,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
 
         pdf_service.generate_purchase_order_pdf(purchase_order, self.company)
 
-        self.assertIn("Purchase Order", CapturingHTML.rendered[-1])
-        self.assertIn("20 Apr 2026", CapturingHTML.rendered[-1])
-        self.assertIn("$1,419.68", CapturingHTML.rendered[-1])
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("Purchase Order", rendered)
+        self.assertIn("20 Apr 2026", rendered)
+        self.assertIn("$1,419.68", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertIn("Delivery Details", rendered)
 
     def test_invoice_pdf_escapes_untrusted_html_fields(self):
         invoice = SimpleNamespace(
@@ -231,6 +333,56 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertNotIn("<img src=x onerror=alert(1)>", CapturingHTML.rendered[-1])
         self.assertNotIn("<svg onload=alert(1)>", CapturingHTML.rendered[-1])
         self.assertNotIn("<b>Net 7</b>", CapturingHTML.rendered[-1])
+
+    def test_report_pdf_uses_a4_page_size_with_1_5cm_margins(self):
+        pdf_service.generate_report_pdf(
+            title="Trial Balance",
+            company_settings=self.company,
+            subtitle="As of 30 Apr 2026",
+            tables=[{
+                "columns": [{"label": "Account"}, {"label": "Debit", "align": "right"}],
+                "rows": [{
+                    "cells": [{"text": "Business Bank"}, {"text": "$92.00", "align": "right"}],
+                }],
+            }],
+            landscape=False,
+        )
+
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
+        self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
+        self.assertIn("@bottom-left { content: element(report-footer); }", rendered)
+        self.assertIn("@bottom-right {", rendered)
+        self.assertIn("content: \"Page \" counter(page) \" of \" counter(pages);", rendered)
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("font-size: 7.5pt;", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
+        self.assertIn("Trial Balance", rendered)
+
+    def test_pdf_service_resolves_legacy_upload_logo_paths(self):
+        legacy_logo = Path("/app/uploads/company_logo.png")
+        with mock.patch("app.services.pdf_service.Path.exists", autospec=True) as mock_exists, \
+             mock.patch("app.services.pdf_service.UPLOADS_DIR", Path("/tmp/slowbooks/uploads")), \
+             mock.patch("app.services.pdf_service.LEGACY_UPLOADS_DIR", Path("/app/uploads")):
+            mock_exists.side_effect = lambda path_obj: str(path_obj) == str(legacy_logo)
+            resolved = pdf_service._resolve_static_asset_uri("/static/uploads/company_logo.png")
+
+        self.assertEqual(resolved, legacy_logo.as_uri())
+
+    def test_pdf_font_assets_are_vendored_locally(self):
+        font_dir = Path("app/static/fonts/inter")
+        self.assertTrue((font_dir / "Inter-Regular.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Italic.woff2").exists())
+        self.assertTrue((font_dir / "Inter-SemiBold.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Bold.woff2").exists())
+        self.assertTrue((font_dir / "LICENSE.txt").exists())
 
 
 if __name__ == "__main__":

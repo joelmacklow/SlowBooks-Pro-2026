@@ -125,7 +125,7 @@ class GstReturnsOverviewTests(unittest.TestCase):
                 settlement_date=date(2026, 5, 7),
             )
 
-            overview = gst_returns_overview(as_of_date=date(2026, 10, 10), db=db)
+            overview = gst_returns_overview(as_of_date=date(2026, 10, 10), db=db, auth={'user_id': 1})
 
         self.assertEqual(len(overview["open_periods"]), 2)
         self.assertEqual(overview["open_periods"][0]["period_label"], "1 Apr 2026 - 30 Sep 2026")
@@ -164,6 +164,7 @@ class GstReturnsOverviewTests(unittest.TestCase):
                 page=2,
                 page_size=1,
                 db=db,
+                auth={'user_id': 1},
             )
 
         self.assertEqual(response["page"], 2)
@@ -187,7 +188,7 @@ class GstReturnsOverviewTests(unittest.TestCase):
                 box13_adjustments=Decimal("2.00"),
             )
 
-            overview = gst_returns_overview(as_of_date=date(2026, 10, 10), db=db)
+            overview = gst_returns_overview(as_of_date=date(2026, 10, 10), db=db, auth={'user_id': 1})
 
         self.assertEqual(len(overview["open_periods"]), 1)
         self.assertEqual(overview["open_periods"][0]["period_label"], "1 Oct 2026 - 31 Mar 2027")

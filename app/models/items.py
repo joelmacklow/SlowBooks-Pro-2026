@@ -26,11 +26,13 @@ class Item(Base):
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), nullable=True)
     name = Column(String(200), nullable=False)
     item_type = Column(Enum(ItemType), nullable=False)
     description = Column(Text, nullable=True)
     rate = Column(Numeric(12, 2), default=0)
     cost = Column(Numeric(12, 2), default=0)
+    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
     income_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     is_taxable = Column(Boolean, default=True)
@@ -41,3 +43,4 @@ class Item(Base):
 
     income_account = relationship("Account", foreign_keys=[income_account_id])
     expense_account = relationship("Account", foreign_keys=[expense_account_id])
+    vendor = relationship("Vendor", foreign_keys=[vendor_id])

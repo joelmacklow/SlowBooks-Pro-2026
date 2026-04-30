@@ -35,32 +35,6 @@
     </div>
 
     <div id="app">
-        <!-- Toolbar (CQBMenuBar + CQBToolBar) -->
-        <div id="topbar">
-            <div class="topbar-brand">Slowbooks Pro <span>2026</span></div>
-            <div class="tb-sep"></div>
-            <button class="tb-btn" onclick="App.navigate('#/')">Home</button>
-            <button class="tb-btn" onclick="CustomersPage.showForm()">New Customer</button>
-            <button class="tb-btn" onclick="InvoicesPage.showForm()">Create Invoice</button>
-            <button class="tb-btn" onclick="PaymentsPage.showForm()">Receive Payment</button>
-            <button class="tb-btn" onclick="App.navigate('#/quick-entry')">Quick Entry</button>
-            <div class="tb-sep"></div>
-            <button class="tb-btn" onclick="App.navigate('#/reports')">Reports</button>
-            <div class="tb-sep"></div>
-            <input type="text" id="global-search" class="tb-search" placeholder="Search customers, invoices..."
-                   oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape'){this.value='';App.globalSearch('');}">
-            <div id="search-results" class="search-dropdown hidden"></div>
-            <div class="topbar-right">
-                <span id="auth-user" class="status-section" style="margin-right:8px; font-size:10px; color:var(--text-muted);">Not signed in</span>
-                <button class="tb-btn" id="auth-login" onclick="App.navigate('#/login')">Sign In</button>
-                <button class="tb-btn" id="auth-logout" onclick="AuthPage.logout()" style="display:none;">Log Out</button>
-                <button class="tb-btn" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle Dark Mode">&#9788;</button>
-                <div class="topbar-clock" id="topbar-clock"></div>
-                <button class="tb-btn" onclick="App.showAbout()">About</button>
-            </div>
-        </div>
-
-        <!-- Main area: sidebar + content -->
         <div id="main-area">
             <nav id="sidebar">
                 <div class="sidebar-header">
@@ -71,92 +45,152 @@
                     <li><a href="#/" class="nav-link active" data-page="dashboard">
                         <span class="nav-icon">&#9632;</span> Dashboard</a></li>
 
-                    <li class="nav-section">Customers & Sales</li>
-                    <li><a href="#/customers" class="nav-link" data-page="customers">
-                        <span class="nav-icon">&#9679;</span> Customers</a></li>
-                    <li><a href="#/invoices" class="nav-link" data-page="invoices">
-                        <span class="nav-icon">&#9830;</span> Invoices</a></li>
-                    <li><a href="#/estimates" class="nav-link" data-page="estimates">
-                        <span class="nav-icon">&#9826;</span> Estimates</a></li>
-                    <li><a href="#/payments" class="nav-link" data-page="payments">
-                        <span class="nav-icon">&#9733;</span> Payments</a></li>
-                    <li><a href="#/recurring" class="nav-link" data-page="recurring">
-                        <span class="nav-icon">&#8634;</span> Recurring Invoices</a></li>
-                    <li><a href="#/credit-memos" class="nav-link" data-page="credit-memos">
-                        <span class="nav-icon">&#8722;</span> Credit Memos</a></li>
-                    <li><a href="#/batch-payments" class="nav-link" data-page="batch-payments">
-                        <span class="nav-icon">&#10003;</span> Batch Payments</a></li>
+                    <li class="nav-group is-open" data-section="sales">
+                        <button type="button" class="nav-section-toggle" data-section="sales">Customers &amp; Sales</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/customers" class="nav-link" data-page="customers">
+                                <span class="nav-icon">&#9679;</span> Customers</a></li>
+                            <li><a href="#/invoices" class="nav-link" data-page="invoices">
+                                <span class="nav-icon">&#9830;</span> Invoices</a></li>
+                            <li><a href="#/estimates" class="nav-link" data-page="estimates">
+                                <span class="nav-icon">&#9826;</span> Estimates</a></li>
+                            <li><a href="#/payments" class="nav-link" data-page="payments">
+                                <span class="nav-icon">&#9733;</span> Customer Receipts</a></li>
+                            <li><a href="#/recurring" class="nav-link" data-page="recurring">
+                                <span class="nav-icon">&#8634;</span> Recurring Invoices</a></li>
+                            <li><a href="#/credit-memos" class="nav-link" data-page="credit-memos">
+                                <span class="nav-icon">&#8722;</span> Credit Memos</a></li>
+                            <li><a href="#/batch-payments" class="nav-link" data-page="batch-payments">
+                                <span class="nav-icon">&#10003;</span> Bulk Receipt Allocation</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">Vendors & Payables</li>
-                    <li><a href="#/vendors" class="nav-link" data-page="vendors">
-                        <span class="nav-icon">&#9670;</span> Vendors</a></li>
-                    <li><a href="#/purchase-orders" class="nav-link" data-page="purchase-orders">
-                        <span class="nav-icon">&#9997;</span> Purchase Orders</a></li>
-                    <li><a href="#/bills" class="nav-link" data-page="bills">
-                        <span class="nav-icon">&#9830;</span> Bills</a></li>
+                    <li class="nav-group" data-section="purchasing">
+                        <button type="button" class="nav-section-toggle" data-section="purchasing">Vendors &amp; Payables</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/vendors" class="nav-link" data-page="vendors">
+                                <span class="nav-icon">&#9670;</span> Vendors</a></li>
+                            <li><a href="#/purchase-orders" class="nav-link" data-page="purchase-orders">
+                                <span class="nav-icon">&#9997;</span> Purchase Orders</a></li>
+                            <li><a href="#/bills" class="nav-link" data-page="bills">
+                                <span class="nav-icon">&#9830;</span> Bills</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">Manage</li>
-                    <li><a href="#/items" class="nav-link" data-page="items">
-                        <span class="nav-icon">&#9642;</span> Items & Services</a></li>
-                    <li><a href="#/employees" class="nav-link" data-page="employees">
-                        <span class="nav-icon">&#9786;</span> Employees</a></li>
-                    <li><a href="#/payroll" class="nav-link" data-page="payroll">
-                        <span class="nav-icon">&#9733;</span> Payroll</a></li>
+                    <li class="nav-group" data-section="manage">
+                        <button type="button" class="nav-section-toggle" data-section="manage">Manage</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/items" class="nav-link" data-page="items">
+                                <span class="nav-icon">&#9642;</span> Items &amp; Services</a></li>
+                            <li><a href="#/fixed-assets" class="nav-link" data-page="fixed-assets">
+                                <span class="nav-icon">&#9724;</span> Fixed Assets</a></li>
+                            <li><a href="#/employees" class="nav-link" data-page="employees">
+                                <span class="nav-icon">&#9786;</span> Employees</a></li>
+                            <li><a href="#/payroll" class="nav-link" data-page="payroll">
+                                <span class="nav-icon">&#9733;</span> Payroll</a></li>
+                            <li><a href="#/my-timesheets" class="nav-link" data-page="my-timesheets">
+                                <span class="nav-icon">&#9998;</span> My Timesheets</a></li>
+                            <li><a href="#/my-payslips" class="nav-link" data-page="my-payslips">
+                                <span class="nav-icon">&#128196;</span> My Payslips</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">Banking</li>
-                    <li><a href="#/banking" class="nav-link" data-page="banking">
-                        <span class="nav-icon">&#9638;</span> Bank Accounts</a></li>
-                    <li><a href="#/deposits" class="nav-link" data-page="deposits">
-                        <span class="nav-icon">&#9660;</span> Make Deposits</a></li>
-                    <li><a href="#/check-register" class="nav-link" data-page="check-register">
-                        <span class="nav-icon">&#9745;</span> Check Register</a></li>
-                    <li><a href="#/cc-charges" class="nav-link" data-page="cc-charges">
-                        <span class="nav-icon">&#9830;</span> Credit Card Charges</a></li>
+                    <li class="nav-group" data-section="banking">
+                        <button type="button" class="nav-section-toggle" data-section="banking">Banking</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/banking" class="nav-link" data-page="banking">
+                                <span class="nav-icon">&#9638;</span> Bank Accounts</a></li>
+                            <li><a href="#/deposits" class="nav-link" data-page="deposits">
+                                <span class="nav-icon">&#9660;</span> Cash Deposits</a></li>
+                            <li><a href="#/check-register" class="nav-link" data-page="check-register">
+                                <span class="nav-icon">&#9745;</span> Bank Register</a></li>
+                            <li><a href="#/cc-charges" class="nav-link" data-page="cc-charges">
+                                <span class="nav-icon">&#9830;</span> Credit Card Charges</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">Accounting</li>
-                    <li><a href="#/accounts" class="nav-link" data-page="accounts">
-                        <span class="nav-icon">&#9776;</span> Chart of Accounts</a></li>
-                    <li><a href="#/journal" class="nav-link" data-page="journal">
-                        <span class="nav-icon">&#9998;</span> Journal Entries</a></li>
-                    <li><a href="#/reports" class="nav-link" data-page="reports">
-                        <span class="nav-icon">&#9783;</span> Reports</a></li>
+                    <li class="nav-group" data-section="accounting">
+                        <button type="button" class="nav-section-toggle" data-section="accounting">Accounting</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/accounts" class="nav-link" data-page="accounts">
+                                <span class="nav-icon">&#9776;</span> Chart of Accounts</a></li>
+                            <li><a href="#/journal" class="nav-link" data-page="journal">
+                                <span class="nav-icon">&#9998;</span> Journal Entries</a></li>
+                            <li><a href="#/opening-balances" class="nav-link" data-page="opening-balances">
+                                <span class="nav-icon">&#9878;</span> Opening Balances</a></li>
+                            <li><a href="#/reports" class="nav-link" data-page="reports">
+                                <span class="nav-icon">&#9783;</span> Reports</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">Interop</li>
-                    <li><a href="#/iif" class="nav-link" data-page="iif">
-                        <span class="nav-icon">&#8644;</span> QuickBooks Interop</a></li>
-                    <li><a href="#/xero-import" class="nav-link" data-page="xero-import">
-                        <span class="nav-icon">&#8645;</span> Xero Import</a></li>
-                    <li><a href="#/csv" class="nav-link" data-page="csv">
-                        <span class="nav-icon">&#8644;</span> CSV Import/Export</a></li>
+                    <li class="nav-group" data-section="interop">
+                        <button type="button" class="nav-section-toggle" data-section="interop">Interop</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/iif" class="nav-link" data-page="iif">
+                                <span class="nav-icon">&#8644;</span> QuickBooks Interop</a></li>
+                            <li><a href="#/xero-import" class="nav-link" data-page="xero-import">
+                                <span class="nav-icon">&#8645;</span> Xero Import</a></li>
+                            <li><a href="#/csv" class="nav-link" data-page="csv">
+                                <span class="nav-icon">&#8644;</span> CSV Import/Export</a></li>
+                        </ul>
+                    </li>
 
-                    <li class="nav-section">System</li>
-                    <li><a href="#/settings" class="nav-link" data-page="settings">
-                        <span class="nav-icon">&#9881;</span> Settings</a></li>
-                    <li><a href="#/audit" class="nav-link" data-page="audit">
-                        <span class="nav-icon">&#9783;</span> Audit Log</a></li>
-                    <li><a href="#/companies" class="nav-link" data-page="companies">
-                        <span class="nav-icon">&#9632;</span> Companies</a></li>
-                    <li><a href="#/users-access" class="nav-link" data-page="users-access">
-                        <span class="nav-icon">&#9786;</span> Users &amp; Access</a></li>
+                    <li class="nav-group" data-section="system">
+                        <button type="button" class="nav-section-toggle" data-section="system">System</button>
+                        <ul class="nav-group-links">
+                            <li><a href="#/settings" class="nav-link" data-page="settings">
+                                <span class="nav-icon">&#9881;</span> Settings</a></li>
+                            <li><a href="#/audit" class="nav-link" data-page="audit">
+                                <span class="nav-icon">&#9783;</span> Audit Log</a></li>
+                            <li><a href="#/companies" class="nav-link" data-page="companies">
+                                <span class="nav-icon">&#9632;</span> Companies</a></li>
+                            <li><a href="#/users-access" class="nav-link" data-page="users-access">
+                                <span class="nav-icon">&#9786;</span> Users &amp; Access</a></li>
+                        </ul>
+                    </li>
                 </ul>
                 <div class="sidebar-footer">
                     Build 12.0.3190-R<br>
                     &copy; 2026 Slowbooks
                 </div>
             </nav>
+            <div id="workspace-shell">
+                <!-- Toolbar (CQBMenuBar + CQBToolBar) -->
+                <div id="topbar">
+                    <button class="tb-btn" onclick="App.navigate('#/')">Home</button>
+                    <button class="tb-btn" onclick="CustomersPage.showForm()">New Customer</button>
+                    <button class="tb-btn" onclick="InvoicesPage.showForm()">Create Invoice</button>
+                    <button class="tb-btn" onclick="PaymentsPage.showForm()">Record Receipt</button>
+                    <button class="tb-btn" onclick="App.navigate('#/quick-entry')">Quick Entry</button>
+                    <div class="tb-sep"></div>
+                    <button class="tb-btn" onclick="App.navigate('#/reports')">Reports</button>
+                    <div class="tb-sep"></div>
+                    <input type="text" id="global-search" class="tb-search" placeholder="Search customers, invoices..."
+                           oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape'){this.value='';App.globalSearch('');}">
+                    <div id="search-results" class="search-dropdown hidden"></div>
+                    <div class="topbar-right">
+                        <span id="auth-user" class="status-section" style="margin-right:8px; font-size:10px; color:var(--text-muted);">Not signed in</span>
+                        <button class="tb-btn" id="auth-login" onclick="App.navigate('#/login')">Sign In</button>
+                        <button class="tb-btn" id="auth-logout" onclick="AuthPage.logout()" style="display:none;">Log Out</button>
+                        <button class="tb-btn" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle Dark Mode">&#9788;</button>
+                        <div class="topbar-clock" id="topbar-clock"></div>
+                        <button class="tb-btn" onclick="App.showAbout()">About</button>
+                    </div>
+                </div>
 
-            <main id="content">
-                <div id="page-content"></div>
-            </main>
-        </div>
+                <main id="content">
+                    <div id="page-content"></div>
+                </main>
 
-        <!-- Status bar (CQBStatusBar) -->
-        <div id="statusbar">
-            <span class="status-section" id="status-text">Ready</span>
-            <span class="status-sep"></span>
-            <span class="status-section" id="status-company">Company: bookkeeper.sbk</span>
-            <span class="status-sep"></span>
-            <span class="status-section status-right" id="status-date"></span>
+                <!-- Status bar (CQBStatusBar) -->
+                <div id="statusbar">
+                    <span class="status-section" id="status-text">Ready</span>
+                    <span class="status-sep"></span>
+                    <span class="status-section" id="status-company">Company: bookkeeper.sbk</span>
+                    <span class="status-sep"></span>
+                    <span class="status-section status-right" id="status-date"></span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -178,11 +212,13 @@
     <script src="/static/js/customers.js"></script>
     <script src="/static/js/vendors.js"></script>
     <script src="/static/js/items.js"></script>
+    <script src="/static/js/fixed_assets.js"></script>
     <script src="/static/js/invoices.js"></script>
     <script src="/static/js/estimates.js"></script>
     <script src="/static/js/payments.js"></script>
     <script src="/static/js/banking.js"></script>
     <script src="/static/js/journal.js"></script>
+    <script src="/static/js/opening_balances.js"></script>
     <script src="/static/js/deposits.js"></script>
     <script src="/static/js/check_register.js"></script>
     <script src="/static/js/cc_charges.js"></script>
@@ -205,6 +241,7 @@
     <script src="/static/js/companies.js"></script>
     <script src="/static/js/employees.js"></script>
     <script src="/static/js/payroll.js"></script>
+    <script src="/static/js/timesheets_self_service.js"></script>
     <!-- App must be last -->
     <script src="/static/js/app.js"></script>
 </body>

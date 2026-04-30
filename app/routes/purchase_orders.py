@@ -3,10 +3,13 @@
 # Feature 6: Non-posting vendor documents
 # ============================================================================
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine, POStatus
@@ -14,22 +17,107 @@ from app.models.contacts import Vendor
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.bills import BillCreate, BillLineCreate
 from app.schemas.purchase_orders import POCreate, POUpdate, POResponse
-from app.services.email_service import render_document_email, send_document_email
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
+from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.auth import require_permissions
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
 from app.services.pdf_service import generate_purchase_order_pdf
 from app.routes.settings import _get_all as get_settings
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/purchase-orders", tags=["purchase_orders"])
 
 
+def _join_address_lines(lines: list[str]) -> str:
+    return "\n".join(line.strip() for line in lines if line and line.strip())
+
+
+def _label_for_address(name: str | None, value: str) -> str:
+    parts = [part.strip() for part in value.splitlines() if part.strip()]
+    if name and name.strip():
+        return ", ".join([name.strip(), *parts])
+    return ", ".join(parts)
+
+
+def _approved_delivery_locations(settings: dict) -> list[dict[str, str]]:
+    locations: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    company_lines = [
+        settings.get("company_address1", ""),
+        settings.get("company_address2", ""),
+        " ".join(
+            part.strip()
+            for part in [
+                settings.get("company_city", ""),
+                settings.get("company_state", ""),
+                settings.get("company_zip", ""),
+            ]
+            if part and part.strip()
+        ),
+    ]
+    company_value = _join_address_lines(company_lines)
+    if company_value:
+        normalized = company_value.casefold()
+        seen.add(normalized)
+        locations.append({
+            "label": _label_for_address("Company Main Address", company_value),
+            "value": company_value,
+        })
+
+    raw_locations = (settings.get("purchase_order_delivery_locations") or "").strip()
+    if not raw_locations:
+        return locations
+
+    for block in re.split(r"(?:\r?\n){2,}", raw_locations):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if len(lines) == 1:
+            name = None
+            value = lines[0]
+        else:
+            name = lines[0]
+            value = _join_address_lines(lines[1:])
+        if not value:
+            continue
+        normalized = value.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        locations.append({
+            "label": _label_for_address(name, value),
+            "value": value,
+        })
+    return locations
+
+
+def _approved_delivery_location_values(db: Session) -> set[str]:
+    return {
+        location["value"]
+        for location in _approved_delivery_locations(get_settings(db))
+    }
+
+
+def _validate_ship_to(ship_to: str | None, db: Session) -> None:
+    if not ship_to:
+        return
+    approved_values = _approved_delivery_location_values(db)
+    if approved_values and ship_to not in approved_values:
+        raise HTTPException(status_code=400, detail="Ship-to address must be an approved delivery location")
+
+
 def _next_po_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(PurchaseOrder.po_number)).scalar()
-    if last and last.replace("PO-", "").isdigit():
-        num = int(last.replace("PO-", "")) + 1
-        return f"PO-{num:04d}"
-    return "PO-0001"
+    return allocate_document_number(
+        db,
+        model=PurchaseOrder,
+        field_name="po_number",
+        prefix_key="purchase_order_prefix",
+        next_key="purchase_order_next_number",
+        default_prefix="PO-",
+        default_next_number="0001",
+    )
 
 
 @router.get("", response_model=list[POResponse])
@@ -49,6 +137,11 @@ def list_pos(vendor_id: int = None, status: str = None, db: Session = Depends(ge
     return results
 
 
+@router.get("/delivery-locations")
+def list_delivery_locations(db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
+    return _approved_delivery_locations(get_settings(db))
+
+
 @router.get("/{po_id}", response_model=POResponse)
 def get_po(po_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
@@ -65,6 +158,7 @@ def create_po(data: POCreate, db: Session = Depends(get_db), auth=Depends(requir
     vendor = db.query(Vendor).filter(Vendor.id == data.vendor_id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    _validate_ship_to(data.ship_to, db)
 
     po_number = _next_po_number(db)
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
@@ -107,6 +201,8 @@ def update_po(po_id: int, data: POUpdate, db: Session = Depends(get_db), auth=De
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    if "ship_to" in data.model_fields_set:
+        _validate_ship_to(data.ship_to, db)
 
     for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
         if key == "status":
@@ -159,7 +255,14 @@ def purchase_order_pdf(po_id: int, db: Session = Depends(get_db), auth=Depends(r
 
 
 @router.post("/{po_id}/email")
-def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage"))):
+def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
@@ -186,8 +289,8 @@ def email_purchase_order(po_id: int, data: DocumentEmailRequest, db: Session = D
             entity_id=po.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{po_id}/convert-to-bill")
@@ -206,7 +309,7 @@ def convert_to_bill(po_id: int, db: Session = Depends(get_db), auth=Depends(requ
         vendor_id=po.vendor_id,
         po_id=po.id,
         date=po.date,
-        terms="Net 30",
+        terms=get_settings(db).get("default_terms", "Net 30"),
         tax_rate=po.tax_rate,
         notes=f"From {po.po_number}",
         lines=[

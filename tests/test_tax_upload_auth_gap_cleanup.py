@@ -99,7 +99,7 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
 
             owner_auth = require_permissions('settings.manage')(db=db, authorization=f'Bearer {owner.token}')
             upload = UploadFile(
-                file=BytesIO(b'png-data'),
+                file=BytesIO(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'),
                 filename='logo.png',
                 headers=Headers({'content-type': 'image/png'}),
             )
@@ -107,11 +107,13 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
                 result = asyncio.run(uploads_route.upload_logo(file=upload, db=db, auth=owner_auth))
                 saved = Path(tmpdir) / 'company_logo.png'
                 setting = db.query(Settings).filter(Settings.key == 'company_logo_path').one()
+                data_setting = db.query(Settings).filter(Settings.key == 'company_logo_data_uri').one()
                 self.assertEqual(result['path'], '/static/uploads/company_logo.png')
                 self.assertEqual(setting.value, '/static/uploads/company_logo.png')
+                self.assertTrue(data_setting.value.startswith('data:image/png;base64,'))
                 self.assertTrue(saved.exists())
 
-    def test_logo_upload_rejects_svg(self):
+    def test_logo_upload_rejects_svg_with_aligned_message(self):
         uploads_route = self._load_uploads_route()
 
         with self.Session() as db:
@@ -128,6 +130,7 @@ class TaxUploadAuthGapCleanupTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn('png', ctx.exception.detail.lower())
+        self.assertIn('gif', ctx.exception.detail.lower())
         self.assertNotIn('svg', ctx.exception.detail.lower())
 
 

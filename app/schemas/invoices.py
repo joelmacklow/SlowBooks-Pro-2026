@@ -67,6 +67,17 @@ class InvoiceUpdate(BaseModel):
     lines: Optional[list[InvoiceLineCreate]] = None
 
 
+
+class InvoiceCreditApplicationResponse(BaseModel):
+    credit_memo_id: int
+    credit_memo_number: Optional[str] = None
+    amount: Decimal
+    model_config = {"from_attributes": True}
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+
 class InvoiceResponse(BaseModel):
     id: int
     invoice_number: str
@@ -94,7 +105,11 @@ class InvoiceResponse(BaseModel):
     balance_due: Decimal
     notes: Optional[str]
     lines: list[InvoiceLineResponse] = []
+    applied_credits: list[InvoiceCreditApplicationResponse] = []
     customer_name: Optional[str] = None
+    invoice_reminders_enabled: Optional[bool] = None
+    reminder_count: int = 0
+    reminder_summary: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

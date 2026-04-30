@@ -2,6 +2,67 @@
  * Employees — NZ payroll setup
  */
 const EmployeesPage = {
+    _canManageEmployeeLinks() {
+        return typeof App.hasPermission === 'function' && App.hasPermission('users.manage');
+    },
+
+    _employeeLinkContext(id, links = [], users = []) {
+        const activeLinks = (links || []).filter((link) => link?.is_active);
+        const currentLink = activeLinks.find((link) => Number(link.employee?.id) === Number(id));
+        const activeLinkedUserIds = new Set(activeLinks.map((link) => Number(link.user?.id)).filter((value) => Number.isFinite(value) && value > 0));
+        const eligibleUsers = (users || [])
+            .filter((user) => user?.is_active && user?.membership?.is_active)
+            .filter((user) => !activeLinkedUserIds.has(Number(user.id)) || Number(user.id) === Number(currentLink?.user?.id))
+            .sort((a, b) => `${a.full_name || ''}`.localeCompare(`${b.full_name || ''}`));
+        return { currentLink, eligibleUsers };
+    },
+
+    _employeeLinkField({ id = null, linkContext = null, linkError = '' }) {
+        if (!EmployeesPage._canManageEmployeeLinks()) return '';
+
+        const selectedUserId = Number(linkContext?.currentLink?.user?.id || 0);
+        const options = (linkContext?.eligibleUsers || []).map((user) => `
+            <option value="${user.id}" ${Number(user.id) === selectedUserId ? 'selected' : ''}>
+                ${escapeHtml(user.full_name || user.email || `User #${user.id}`)}${user.email ? ` (${escapeHtml(user.email)})` : ''}
+            </option>
+        `).join('');
+
+        return `
+            <div class="settings-section" style="margin-top:12px;">
+                <h3>Self-Service Login Mapping</h3>
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+                    Map this employee to one login user for timesheet/payslip self-service ownership.
+                </div>
+                ${linkError ? `<div style="font-size:10px; color:#9d1f1f; margin-bottom:8px;">${escapeHtml(linkError)}</div>` : ''}
+                <div class="form-group full-width">
+                    <label>Linked User Login</label>
+                    <select name="portal_user_id">
+                        <option value="">No linked user</option>
+                        ${options}
+                    </select>
+                    <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                        ${id ? 'Change the linked login here instead of Users & Access.' : 'For new employees, select a login now to link immediately after save.'}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    async _syncEmployeePortalLink(employeeId, selectedUserIdRaw) {
+        const selectedUserId = Number(selectedUserIdRaw || 0);
+        const links = await API.get('/employee-portal/links');
+        const current = (links || []).find((link) => link?.is_active && Number(link.employee?.id) === Number(employeeId));
+
+        if (!selectedUserId) {
+            if (current?.id) await API.post(`/employee-portal/links/${current.id}/deactivate`, {});
+            return;
+        }
+
+        if (current && Number(current.user?.id) === selectedUserId) return;
+        if (current?.id) await API.post(`/employee-portal/links/${current.id}/deactivate`, {});
+        await API.post('/employee-portal/links', { user_id: selectedUserId, employee_id: employeeId });
+    },
+
     async render() {
         const canManageEmployees = !App.hasPermission || App.hasPermission('employees.manage');
         const canExportFiling = !App.hasPermission || App.hasPermission('employees.filing.export');
@@ -70,6 +131,20 @@ const EmployeesPage = {
         };
         if (id) emp = await API.get(`/employees/${id}`);
 
+        let linkContext = null;
+        let linkError = '';
+        if (EmployeesPage._canManageEmployeeLinks()) {
+            try {
+                const [links, users] = await Promise.all([
+                    API.get('/employee-portal/links'),
+                    API.get('/auth/users'),
+                ]);
+                linkContext = EmployeesPage._employeeLinkContext(id, links, users);
+            } catch (err) {
+                linkError = err.message || 'Unable to load user-link options';
+            }
+        }
+
         openModal(id ? 'Edit Employee' : 'Add Employee', `
             <form onsubmit="EmployeesPage.save(event, ${id})">
                 <div class="form-grid">
@@ -130,6 +205,7 @@ const EmployeesPage = {
                     <div class="form-group"><label>End Date</label>
                         <input name="end_date" type="date" value="${emp.end_date || ''}"></div>
                 </div>
+                ${EmployeesPage._employeeLinkField({ id, linkContext, linkError })}
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${id ? 'Update' : 'Add'} Employee</button>
@@ -140,6 +216,8 @@ const EmployeesPage = {
     async save(e, id) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
+        const portalUserId = data.portal_user_id;
+        delete data.portal_user_id;
         data.pay_rate = parseFloat(data.pay_rate) || 0;
         data.kiwisaver_enrolled = data.kiwisaver_enrolled === 'true';
         data.student_loan = data.student_loan === 'true';
@@ -147,8 +225,18 @@ const EmployeesPage = {
         if (!data.start_date) delete data.start_date;
         if (!data.end_date) delete data.end_date;
         try {
-            if (id) { await API.put(`/employees/${id}`, data); toast('Employee updated'); }
-            else { await API.post('/employees', data); toast('Employee added'); }
+            let savedEmployee = null;
+            if (id) {
+                savedEmployee = await API.put(`/employees/${id}`, data);
+            } else {
+                savedEmployee = await API.post('/employees', data);
+            }
+
+            if (EmployeesPage._canManageEmployeeLinks()) {
+                await EmployeesPage._syncEmployeePortalLink(savedEmployee.id, portalUserId);
+            }
+
+            toast(id ? 'Employee updated' : 'Employee added');
             closeModal();
             App.navigate('#/employees');
         } catch (err) { toast(err.message, 'error'); }

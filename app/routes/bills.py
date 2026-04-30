@@ -23,6 +23,8 @@ from app.services.closing_date import check_closing_date
 from app.services.auth import require_permissions
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst, stored_gst_line_inputs
+from app.services.payment_terms import resolve_due_date_for_terms
+from app.routes.settings import _get_all as get_settings
 
 router = APIRouter(prefix="/api/bills", tags=["bills"])
 
@@ -103,7 +105,7 @@ def _bill_has_payments(bill: Bill) -> bool:
 
 
 @router.get("", response_model=list[BillResponse])
-def list_bills(vendor_id: int = None, status: str = None, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
+def list_bills(vendor_id: int = None, status: str = None, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.bills.view"))):
     q = db.query(Bill)
     if vendor_id:
         q = q.filter(Bill.vendor_id == vendor_id)
@@ -120,7 +122,7 @@ def list_bills(vendor_id: int = None, status: str = None, db: Session = Depends(
 
 
 @router.get("/{bill_id}", response_model=BillResponse)
-def get_bill(bill_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.view"))):
+def get_bill(bill_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.bills.view"))):
     bill = db.query(Bill).filter(Bill.id == bill_id).first()
     if not bill:
         raise HTTPException(status_code=404, detail="Bill not found")
@@ -131,7 +133,7 @@ def get_bill(bill_id: int, db: Session = Depends(get_db), auth=Depends(require_p
 
 
 @router.post("", response_model=BillResponse, status_code=201)
-def create_bill(data: BillCreate, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage"))):
+def create_bill(data: BillCreate, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.bills.manage"))):
     check_closing_date(db, data.date)
 
     vendor = db.query(Vendor).filter(Vendor.id == data.vendor_id).first()
@@ -140,11 +142,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db), auth=Depends(re
 
     due_date = data.due_date
     if not due_date and data.terms:
-        try:
-            days = int(data.terms.lower().replace("net ", ""))
-            due_date = data.date + timedelta(days=days)
-        except ValueError:
-            due_date = data.date + timedelta(days=30)
+        due_date = resolve_due_date_for_terms(data.date, data.terms, get_settings(db).get("payment_terms_config"))
 
     gst_inputs = resolve_gst_line_inputs(db, data.lines)
     gst_totals = calculate_document_gst(
@@ -185,7 +183,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db), auth=Depends(re
 
 
 @router.put("/{bill_id}", response_model=BillResponse)
-def update_bill(bill_id: int, data: BillUpdate, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage"))):
+def update_bill(bill_id: int, data: BillUpdate, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.bills.manage"))):
     bill = db.query(Bill).filter(Bill.id == bill_id).first()
     if not bill:
         raise HTTPException(status_code=404, detail="Bill not found")
@@ -253,7 +251,7 @@ def update_bill(bill_id: int, data: BillUpdate, db: Session = Depends(get_db), a
 
 
 @router.post("/{bill_id}/void", response_model=BillResponse)
-def void_bill(bill_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.manage"))):
+def void_bill(bill_id: int, db: Session = Depends(get_db), auth=Depends(require_permissions("purchasing.bills.manage"))):
     bill = db.query(Bill).filter(Bill.id == bill_id).first()
     if not bill:
         raise HTTPException(status_code=404, detail="Bill not found")

@@ -9,23 +9,46 @@
 const App = {
     settings: {},
     authState: { authenticated: false, bootstrap_required: false, user: null },
+    _suppressNextHashChange: false,
+    _searchRequestId: 0,
+    _detailOrigins: {},
 
     routes: {
         '/login':         { page: 'login',           label: 'Sign In',            render: () => AuthPage.render() },
         '/':              { page: 'dashboard',       label: 'Dashboard',          authRequired: true, render: () => App.renderDashboard() },
         '/customers':     { page: 'customers',       label: 'Customer Center',    permission: 'contacts.view', render: () => CustomersPage.render() },
+        '/customers/detail': { page: 'customers',    label: 'Customer',           permission: 'contacts.view', render: () => CustomersPage.renderDetailScreen() },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      permission: 'contacts.view', render: () => VendorsPage.render() },
+        '/vendors/detail': { page: 'vendors',        label: 'Vendor',             permission: 'contacts.view', render: () => VendorsPage.renderDetailScreen() },
         '/items':         { page: 'items',           label: 'Item List',          permission: 'items.view', render: () => ItemsPage.render() },
+        '/fixed-assets':  { page: 'fixed-assets',    label: 'Fixed Assets',       permission: 'accounts.manage', render: () => FixedAssetsPage.render() },
+        '/fixed-assets/detail': { page: 'fixed-assets', label: 'Fixed Asset',     permission: 'accounts.manage', render: () => FixedAssetsPage.renderDetailScreen() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    permission: 'sales.view', render: () => InvoicesPage.render() },
+        '/invoices/detail': { page: 'invoices',      label: 'Invoice',            permission: 'sales.view', render: () => InvoicesPage.renderDetailScreen() },
         '/estimates':     { page: 'estimates',       label: 'Create Estimates',   permission: 'sales.view', render: () => EstimatesPage.render() },
-        '/payments':      { page: 'payments',        label: 'Receive Payments',   permission: 'sales.view', render: () => PaymentsPage.render() },
+        '/estimates/detail': { page: 'estimates',    label: 'Estimate',           permission: 'sales.view', render: () => EstimatesPage.renderDetailScreen() },
+        '/payments':      { page: 'payments',        label: 'Customer Receipts',  permission: 'sales.view', render: () => PaymentsPage.render() },
         '/banking':       { page: 'banking',         label: 'Bank Accounts',      permission: 'banking.view', render: () => BankingPage.render() },
-        '/deposits':      { page: 'deposits',        label: 'Make Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
-        '/check-register': { page: 'check-register', label: 'Check Register',     permission: 'banking.view', render: () => CheckRegisterPage.render() },
+        '/deposits':      { page: 'deposits',        label: 'Cash Deposits',      permission: 'banking.view', render: () => DepositsPage.render() },
+        '/check-register': { page: 'check-register', label: 'Bank Register',      permission: 'banking.view', render: () => CheckRegisterPage.render() },
         '/cc-charges':    { page: 'cc-charges',      label: 'Credit Card Charges', permission: 'banking.view', render: () => CCChargesPage.render() },
         '/journal':       { page: 'journal',         label: 'Journal Entries',    permission: 'accounts.manage', render: () => JournalPage.render() },
+        '/opening-balances': { page: 'opening-balances', label: 'Opening Balances', permission: 'accounts.manage', render: () => OpeningBalancesPage.render() },
         '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  permission: 'accounts.view', render: () => App.renderAccounts() },
         '/reports':       { page: 'reports',         label: 'Report Center',      permission: 'accounts.manage', render: () => ReportsPage.render() },
+        '/reports/profit-loss': { page: 'reports',   label: 'Profit & Loss',      permission: 'accounts.manage', render: () => ReportsPage.renderProfitLossScreen() },
+        '/reports/balance-sheet': { page: 'reports', label: 'Balance Sheet',      permission: 'accounts.manage', render: () => ReportsPage.renderBalanceSheetScreen() },
+        '/reports/trial-balance': { page: 'reports', label: 'Trial Balance',      permission: 'accounts.manage', render: () => ReportsPage.renderTrialBalanceScreen() },
+        '/reports/cash-flow': { page: 'reports',     label: 'Cash Flow',          permission: 'accounts.manage', render: () => ReportsPage.renderCashFlowScreen() },
+        '/reports/statement-of-changes-in-equity': { page: 'reports', label: 'Statement of Changes in Equity', permission: 'accounts.manage', render: () => ReportsPage.renderStatementOfChangesInEquityScreen() },
+        '/reports/ar-aging': { page: 'reports',      label: 'A/R Aging',          permission: 'accounts.manage', render: () => ReportsPage.renderArAgingScreen() },
+        '/reports/ap-aging': { page: 'reports',      label: 'A/P Aging',          permission: 'accounts.manage', render: () => ReportsPage.renderApAgingScreen() },
+        '/reports/general-ledger': { page: 'reports', label: 'General Ledger',    permission: 'accounts.manage', render: () => ReportsPage.renderGeneralLedgerScreen() },
+        '/reports/income-by-customer': { page: 'reports', label: 'Income by Customer', permission: 'accounts.manage', render: () => ReportsPage.renderIncomeByCustomerScreen() },
+        '/reports/fixed-assets-reconciliation': { page: 'reports', label: 'Fixed Asset Reconciliation', permission: 'accounts.manage', render: () => ReportsPage.renderFixedAssetsReconciliationScreen() },
+        '/reports/customer-statement': { page: 'reports', label: 'Customer Statement', permission: 'accounts.manage', render: () => ReportsPage.renderCustomerStatementScreen() },
+        '/reports/monthly-statements': { page: 'reports', label: 'Monthly Statements', permission: 'accounts.manage', render: () => ReportsPage.renderMonthlyStatementsScreen() },
+        '/reports/overdue-statements': { page: 'reports', label: 'Overdue Statements', permission: 'accounts.manage', render: () => ReportsPage.renderOverdueStatementsScreen() },
         '/reports/gst-return': { page: 'gst-return', label: 'GST Returns',       permission: 'accounts.manage', render: () => ReportsPage.renderGstReturnsScreen() },
         '/reports/gst-return/detail': { page: 'gst-return', label: 'GST Return', permission: 'accounts.manage', render: () => ReportsPage.renderGstReturnDetailScreen() },
         '/settings':      { page: 'settings',        label: 'Company Settings',   permission: 'settings.manage', render: () => SettingsPage.render() },
@@ -37,11 +60,13 @@ const App = {
         // Phase 2: Accounts Payable
         '/purchase-orders': { page: 'purchase-orders', label: 'Purchase Orders',  permission: 'purchasing.view', render: () => PurchaseOrdersPage.render() },
         '/purchase-orders/detail': { page: 'purchase-orders', label: 'Purchase Order', permission: 'purchasing.view', render: () => PurchaseOrdersPage.renderDetailScreen() },
-        '/bills':         { page: 'bills',           label: 'Bills',              permission: 'purchasing.view', render: () => BillsPage.render() },
+        '/bills':         { page: 'bills',           label: 'Bills',              permission: 'purchasing.bills.view', render: () => BillsPage.render() },
         '/credit-memos':  { page: 'credit-memos',    label: 'Credit Memos',       permission: 'sales.view', render: () => CreditMemosPage.render() },
+        '/credit-memos/detail': { page: 'credit-memos', label: 'Credit Memo',    permission: 'sales.view', render: () => CreditMemosPage.renderDetailScreen() },
         // Phase 3: Productivity
         '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', permission: 'sales.view', render: () => RecurringPage.render() },
-        '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     permission: 'sales.manage', render: () => BatchPaymentsPage.render() },
+        '/recurring/detail': { page: 'recurring',    label: 'Recurring Invoice',  permission: 'sales.view', render: () => RecurringPage.renderDetailScreen() },
+        '/batch-payments': { page: 'batch-payments', label: 'Bulk Receipt Allocation', permission: 'sales.batch_payments.view', render: () => BatchPaymentsPage.render() },
         // Phase 4: CSV Import/Export
         '/csv':           { page: 'csv',             label: 'CSV Import/Export',  permission: 'import_export.view', render: () => App.renderCSV() },
         // Phase 5: Advanced Integration
@@ -49,6 +74,8 @@ const App = {
         '/companies':     { page: 'companies',       label: 'Companies',          permission: 'companies.view', render: () => CompaniesPage.render() },
         '/employees':     { page: 'employees',       label: 'Employees',          permission: 'employees.view_private', render: () => EmployeesPage.render() },
         '/payroll':       { page: 'payroll',         label: 'Payroll',            permission: 'payroll.view', render: () => PayrollPage.render() },
+        '/my-timesheets': { page: 'my-timesheets',   label: 'My Timesheets',      permission: 'timesheets.self.view', render: () => TimesheetSelfServicePage.renderTimesheets() },
+        '/my-payslips':   { page: 'my-payslips',     label: 'My Payslips',        permission: 'payroll.self.payslips.view', render: () => TimesheetSelfServicePage.renderPayslips() },
         '/users-access':  { page: 'users-access',    label: 'Users & Access',     permission: 'users.manage', render: () => AuthPage.renderUserManagement() },
     },
 
@@ -58,6 +85,94 @@ const App = {
             bootstrap_required: !!state.bootstrap_required,
             user: state.user || null,
         };
+    },
+
+    defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    paymentTermLabels(settings = null) {
+        const source = settings || App.settings || {};
+        const raw = String(source.payment_terms_config || '').trim();
+        if (!raw) return App.defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : App.defaultPaymentTerms();
+    },
+
+    routePathFromHash(hash) {
+        const rawPath = (hash || '').replace('#', '') || '/';
+        return rawPath.split('?')[0] || '/';
+    },
+
+    setDetailOrigin(detailHash, originHash = null) {
+        if (!detailHash) return;
+        App._detailOrigins[detailHash] = originHash || null;
+    },
+
+    getDetailOrigin(detailHash) {
+        return App._detailOrigins[detailHash] || null;
+    },
+
+    labelForHash(hash, fallback = 'Previous') {
+        const route = App.routes[App.routePathFromHash(hash || '')];
+        return route?.label || fallback;
+    },
+
+    detailBackLabel(detailHash, fallbackHash, fallback = 'Previous') {
+        const targetHash = App.getDetailOrigin(detailHash) || fallbackHash;
+        const label = targetHash === fallbackHash ? fallback : App.labelForHash(targetHash, fallback);
+        return `Back to ${label}`;
+    },
+
+    navigateBackToDetailOrigin(detailHash, fallbackHash) {
+        App.navigate(App.getDetailOrigin(detailHash) || fallbackHash);
+    },
+
+    confirmAction({ title = 'Confirm', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel' } = {}) {
+        return new Promise((resolve) => {
+            openModal(title, `
+                <div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">${escapeHtml(message)}</div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal(); App._resolveConfirmAction(false)">` + cancelLabel + `</button>
+                    <button type="button" class="btn btn-primary" onclick="closeModal(); App._resolveConfirmAction(true)">` + confirmLabel + `</button>
+                </div>`);
+            App._resolveConfirmAction = (value) => {
+                resolve(value);
+                App._resolveConfirmAction = null;
+            };
+        });
+    },
+
+    promptClosingDatePassword(message = 'Enter the company override password to continue.') {
+        return new Promise((resolve) => {
+            openModal('Closed Period Override', `
+                <form onsubmit="App.submitClosingDatePasswordPrompt(event)">
+                    <div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">${escapeHtml(message)}</div>
+                    <div class="form-group">
+                        <label>Override Password</label>
+                        <input id="closing-date-password-input" type="password" autocomplete="current-password" autofocus>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal(); App._resolveClosingDatePasswordPrompt(null)">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Retry Action</button>
+                    </div>
+                </form>`);
+            App._resolveClosingDatePasswordPrompt = (value) => {
+                resolve(value);
+                App._resolveClosingDatePasswordPrompt = null;
+            };
+        });
+    },
+
+    submitClosingDatePasswordPrompt(e) {
+        e.preventDefault();
+        const value = $('#closing-date-password-input')?.value || '';
+        closeModal();
+        if (App._resolveClosingDatePasswordPrompt) App._resolveClosingDatePasswordPrompt(value || null);
     },
 
     hasPermission(permission) {
@@ -92,7 +207,6 @@ const App = {
 
     handleUnauthorized(path, _message) {
         if (path.startsWith('/auth/')) return;
-        localStorage.removeItem('slowbooks-auth-token');
         App.setAuthState({ authenticated: false, bootstrap_required: false, user: null });
         App.syncAuthUI();
         App.syncNavVisibility();
@@ -112,7 +226,12 @@ const App = {
     },
 
     async navigate(hash) {
-        const path = hash.replace('#', '') || '/';
+        const targetHash = hash || '#/';
+        if (typeof location !== 'undefined' && targetHash.startsWith('#') && (location.hash || '#/') !== targetHash) {
+            App._suppressNextHashChange = true;
+            location.hash = targetHash;
+        }
+        const path = App.routePathFromHash(targetHash);
         const route = App.routes[path];
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
         if (path === '/login' && App.authState.authenticated) {
@@ -135,6 +254,7 @@ const App = {
         $$('.nav-link').forEach(link => {
             link.classList.toggle('active', link.dataset.page === route.page);
         });
+        App.syncNavAccordion(route.page);
 
         // Status bar
         App.setStatus(`Loading ${route.label}...`);
@@ -156,6 +276,34 @@ const App = {
     setStatus(text) {
         const el = $('#status-text');
         if (el) el.textContent = text;
+    },
+
+    dismissSearchResults() {
+        App._searchRequestId += 1;
+        clearTimeout(App._searchTimeout);
+        const dd = $('#search-results');
+        if (dd) dd.classList.add('hidden');
+        const input = $('#global-search');
+        if (input) input.value = '';
+    },
+
+    toggleNavSection(section, forceOpen = null) {
+        $$('.nav-group').forEach(group => {
+            const isTarget = group.dataset.section === section;
+            const shouldOpen = isTarget && (forceOpen === null ? !group.classList.contains('is-open') : !!forceOpen);
+            group.classList.toggle('is-open', shouldOpen);
+        });
+    },
+
+    syncNavAccordion(activePage = null) {
+        const activeLink = activePage ? $(`.nav-link[data-page="${activePage}"]`) : $('.nav-link.active');
+        const activeGroup = activeLink?.closest?.('.nav-group');
+        if (activeGroup?.dataset?.section) {
+            App.toggleNavSection(activeGroup.dataset.section, true);
+        } else if (!$$('.nav-group.is-open').length) {
+            const firstGroup = $('.nav-group');
+            if (firstGroup?.dataset?.section) App.toggleNavSection(firstGroup.dataset.section, true);
+        }
     },
 
     updateClock() {
@@ -203,142 +351,261 @@ const App = {
         }
     },
 
-    async renderDashboard() {
-        const data = await API.get('/dashboard');
+    renderDashboardAction(label, hash, tone = 'secondary') {
+        if (!label || !hash) return '';
+        return `<button class="btn btn-${tone} snapshot-widget-action" onclick="App.navigate('${hash}')">${escapeHtml(label)}</button>`;
+    },
 
-        let recentInv = data.recent_invoices.map(inv =>
-            `<tr>
-                <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
-                <td>${formatDate(inv.date)}</td>
-                <td>${statusBadge(inv.status)}</td>
-                <td class="amount">${formatCurrency(inv.total)}</td>
-            </tr>`
-        ).join('') || '<tr><td colspan="4" style="color:var(--text-muted); font-size:11px;">No invoices yet &mdash; use Create Invoice to get started</td></tr>';
-
-        let recentPay = data.recent_payments.map(p =>
-            `<tr>
-                <td>${formatDate(p.date)}</td>
-                <td>${escapeHtml(p.method || '')}</td>
-                <td class="amount">${formatCurrency(p.amount)}</td>
-            </tr>`
-        ).join('') || '<tr><td colspan="3" style="color:var(--text-muted); font-size:11px;">No payments recorded yet</td></tr>';
-
-        let bankCards = data.bank_balances.map(ba =>
-            `<div class="card" style="cursor:pointer" onclick="App.navigate('#/banking')">
-                <div class="card-header">${escapeHtml(ba.name)}</div>
-                <div class="card-value">${formatCurrency(ba.balance)}</div>
-            </div>`
-        ).join('');
-
-        if (!bankCards) {
-            bankCards = `<div class="card">
-                <div class="card-header">No Bank Accounts</div>
-                <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
-                    Go to Banking to set up an account</div>
+    renderDashboardBankWidget(bankAccounts = []) {
+        const canOpenBanking = App.hasPermission('banking.view');
+        const body = bankAccounts.length
+            ? bankAccounts.map(account => `
+                <div class="snapshot-mini-card">
+                    <div class="snapshot-mini-card__top">
+                        <div>
+                            <div class="snapshot-mini-card__title">${escapeHtml(account.name)}</div>
+                            <div class="snapshot-mini-card__meta">${escapeHtml(account.bank_name || 'Bank account')}${account.last_four ? ` • ****${escapeHtml(account.last_four)}` : ''}</div>
+                        </div>
+                        <div class="snapshot-mini-card__value">${formatCurrency(account.balance || 0)}</div>
+                    </div>
+                    <div class="snapshot-mini-card__bottom">
+                        <span>${escapeHtml(account.status_label || 'Ready to reconcile')}</span>
+                        ${account.balance_difference !== null && account.balance_difference !== undefined ? `<span class="${account.balance_difference === 0 ? 'snapshot-trend snapshot-trend--up' : 'snapshot-trend snapshot-trend--down'}">Difference ${formatCurrency(account.balance_difference)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('')
+            : `<div class="snapshot-empty-state">
+                <strong>No bank accounts connected yet</strong>
+                <span>Go to Banking to set up an account for reconciliation and cash tracking.</span>
             </div>`;
-        }
-
-        // Feature 3: Dashboard Charts
-        let chartsHtml = '';
-        try {
-            const charts = await API.get('/dashboard/charts');
-            // AR Aging Bar Chart
-            const agingTotal = (charts.aging_current || 0) + (charts.aging_30 || 0) + (charts.aging_60 || 0) + (charts.aging_90 || 0);
-            if (agingTotal > 0) {
-                const pctCurrent = ((charts.aging_current / agingTotal) * 100).toFixed(1);
-                const pct30 = ((charts.aging_30 / agingTotal) * 100).toFixed(1);
-                const pct60 = ((charts.aging_60 / agingTotal) * 100).toFixed(1);
-                const pct90 = ((charts.aging_90 / agingTotal) * 100).toFixed(1);
-                chartsHtml += `
-                    <div class="dashboard-section">
-                        <h3>AR Aging</h3>
-                        <div class="chart-bar-container">
-                            <div class="chart-bar" style="display:flex; height:28px; border-radius:4px; overflow:hidden;">
-                                ${pctCurrent > 0 ? `<div style="width:${pctCurrent}%; background:var(--success);" title="Current: ${formatCurrency(charts.aging_current)}"></div>` : ''}
-                                ${pct30 > 0 ? `<div style="width:${pct30}%; background:var(--qb-gold);" title="1-30 days: ${formatCurrency(charts.aging_30)}"></div>` : ''}
-                                ${pct60 > 0 ? `<div style="width:${pct60}%; background:#f97316;" title="31-60 days: ${formatCurrency(charts.aging_60)}"></div>` : ''}
-                                ${pct90 > 0 ? `<div style="width:${pct90}%; background:var(--danger);" title="61+ days: ${formatCurrency(charts.aging_90)}"></div>` : ''}
-                            </div>
-                            <div class="chart-legend" style="display:flex; gap:12px; margin-top:6px; font-size:10px;">
-                                <span><span style="color:var(--success);">&#9632;</span> Current ${formatCurrency(charts.aging_current)}</span>
-                                <span><span style="color:var(--qb-gold);">&#9632;</span> 1-30 ${formatCurrency(charts.aging_30)}</span>
-                                <span><span style="color:#f97316;">&#9632;</span> 31-60 ${formatCurrency(charts.aging_60)}</span>
-                                <span><span style="color:var(--danger);">&#9632;</span> 61+ ${formatCurrency(charts.aging_90)}</span>
-                            </div>
-                        </div>
-                    </div>`;
-            }
-
-            // Monthly Revenue Trend
-            if (charts.monthly_revenue && charts.monthly_revenue.length > 0) {
-                const maxRev = Math.max(...charts.monthly_revenue.map(m => m.amount), 1);
-                const bars = charts.monthly_revenue.map(m => {
-                    const pct = Math.max((m.amount / maxRev) * 100, 2);
-                    return `<div class="chart-bar-col" style="flex:1; text-align:center;">
-                        <div style="height:100px; display:flex; align-items:flex-end; justify-content:center;">
-                            <div style="width:80%; background:var(--qb-blue); height:${pct}%; border-radius:2px 2px 0 0;"
-                                 title="${m.month}: ${formatCurrency(m.amount)}"></div>
-                        </div>
-                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">${m.month}</div>
-                    </div>`;
-                }).join('');
-                chartsHtml += `
-                    <div class="dashboard-section">
-                        <h3>Monthly Revenue (Last 12 Months)</h3>
-                        <div style="display:flex; gap:2px; align-items:flex-end;">${bars}</div>
-                    </div>`;
-            }
-        } catch (e) { /* charts endpoint not available yet — that's fine */ }
 
         return `
-            <div class="page-header">
-                <h2>Company Snapshot</h2>
-                <div style="font-size:10px; color:var(--text-muted);">
-                    Slowbooks Pro 2026 &mdash; Build 12.0.3190-R
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Bank accounts</h3>
+                        <p>Balances and reconciliation prompts</p>
+                    </div>
+                    ${canOpenBanking ? App.renderDashboardAction('Go to Banking', '#/banking') : ''}
                 </div>
-            </div>
+                <div class="snapshot-mini-card-grid">${body}</div>
+            </section>`;
+    },
 
-            <div class="card-grid">
-                <div class="card">
-                    <div class="card-header">Total Receivables</div>
-                    <div class="card-value">${formatCurrency(data.total_receivables)}</div>
+    renderDashboardInvoiceWidget(invoiceSummary = {}) {
+        const canOpenInvoices = App.hasPermission('sales.view');
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Invoices owed to you</h3>
+                        <p>Outstanding receivables and collections work</p>
+                    </div>
+                    ${canOpenInvoices ? App.renderDashboardAction('View invoices', invoiceSummary.cta_hash || '#/invoices') : ''}
                 </div>
-                <div class="card">
-                    <div class="card-header">Overdue Invoices</div>
-                    <div class="card-value" ${data.overdue_count > 0 ? 'style="color:var(--qb-red)"' : ''}>${data.overdue_count}</div>
+                <div class="snapshot-big-number">${formatCurrency(invoiceSummary.total_receivables || 0)}</div>
+                <div class="snapshot-metric-list">
+                    <div class="snapshot-metric-row"><span>Awaiting payment</span><strong>${invoiceSummary.awaiting_payment_count || 0}</strong></div>
+                    <div class="snapshot-metric-row"><span>Overdue invoices</span><strong>${invoiceSummary.overdue_count || 0}</strong></div>
+                    <div class="snapshot-metric-row"><span>Overdue value</span><strong>${formatCurrency(invoiceSummary.overdue_value || 0)}</strong></div>
                 </div>
-                <div class="card">
-                    <div class="card-header">Active Customers</div>
-                    <div class="card-value">${data.customer_count}</div>
-                </div>
-                ${data.total_payables !== undefined ? `<div class="card">
-                    <div class="card-header">Total Payables</div>
-                    <div class="card-value">${formatCurrency(data.total_payables)}</div>
-                </div>` : ''}
-            </div>
+            </section>`;
+    },
 
-            <div class="dashboard-section">
-                <h3>Bank Balances</h3>
-                <div class="card-grid">${bankCards}</div>
-            </div>
+    renderDashboardProfitWidget(profitSummary = {}) {
+        const canOpenReports = App.hasPermission('accounts.manage');
+        const income = profitSummary.income || 0;
+        const expenses = profitSummary.expenses || 0;
+        const maxAmount = Math.max(income, expenses, 1);
+        const incomePct = Math.max((income / maxAmount) * 100, 4);
+        const expensePct = Math.max((expenses / maxAmount) * 100, 4);
+        const trendClass = (profitSummary.net_profit || 0) >= 0 ? 'snapshot-trend snapshot-trend--up' : 'snapshot-trend snapshot-trend--down';
+        const changeText = profitSummary.profit_change_pct === null || profitSummary.profit_change_pct === undefined
+            ? ''
+            : `${profitSummary.profit_change_pct >= 0 ? 'Up' : 'Down'} ${Math.abs(profitSummary.profit_change_pct).toFixed(0)}% from ${escapeHtml(profitSummary.comparison_label || 'last year')}`;
 
-            ${chartsHtml}
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Net profit or loss</h3>
+                        <p>${escapeHtml(profitSummary.period_label || 'Year to date')}</p>
+                    </div>
+                    ${canOpenReports ? App.renderDashboardAction('Profit & Loss', '#/reports/profit-loss') : ''}
+                </div>
+                <div class="snapshot-big-number">${formatCurrency(profitSummary.net_profit || 0)}</div>
+                <div class="${trendClass} snapshot-widget__trend">${escapeHtml(changeText || 'Tracking current year-to-date performance')}</div>
+                <div class="snapshot-compare-bars">
+                    <div class="snapshot-compare-bar">
+                        <span>Income ${formatCurrency(income)}</span>
+                        <div class="snapshot-compare-bar__track"><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--primary" style="width:${incomePct}%"></div></div>
+                    </div>
+                    <div class="snapshot-compare-bar">
+                        <span>Expenses ${formatCurrency(expenses)}</span>
+                        <div class="snapshot-compare-bar__track"><div class="snapshot-compare-bar__fill snapshot-compare-bar__fill--muted" style="width:${expensePct}%"></div></div>
+                    </div>
+                </div>
+            </section>`;
+    },
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                <div class="dashboard-section">
-                    <h3>Recent Invoices</h3>
-                    <div class="table-container"><table>
-                        <thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th></tr></thead>
-                        <tbody>${recentInv}</tbody>
-                    </table></div>
+    renderDashboardCashFlowWidget(cashFlow = {}) {
+        const canOpenReports = App.hasPermission('accounts.manage');
+        const months = cashFlow.months || [];
+        const hasCashData = months.some(entry => (entry.cash_in || 0) > 0 || (entry.cash_out || 0) > 0);
+        const maxAmount = Math.max(1, ...months.flatMap(entry => [entry.cash_in || 0, entry.cash_out || 0]));
+        const chart = hasCashData
+            ? months.map(entry => `
+                <div class="snapshot-bar-group">
+                    <div class="snapshot-bar-group__bars">
+                        <div class="snapshot-bar snapshot-bar--in" style="height:${Math.max(((entry.cash_in || 0) / maxAmount) * 100, 2)}%" title="Cash in: ${formatCurrency(entry.cash_in || 0)}"></div>
+                        <div class="snapshot-bar snapshot-bar--out" style="height:${Math.max(((entry.cash_out || 0) / maxAmount) * 100, 2)}%" title="Cash out: ${formatCurrency(entry.cash_out || 0)}"></div>
+                    </div>
+                    <div class="snapshot-bar-group__label">${escapeHtml(entry.month)}</div>
                 </div>
-                <div class="dashboard-section">
-                    <h3>Recent Payments</h3>
-                    <div class="table-container"><table>
-                        <thead><tr><th>Date</th><th>Method</th><th class="amount">Amount</th></tr></thead>
-                        <tbody>${recentPay}</tbody>
-                    </table></div>
+            `).join('')
+            : `<div class="snapshot-empty-state">
+                <strong>No cash movement yet</strong>
+                <span>Cash in and out will appear once bank-linked activity starts posting.</span>
+            </div>`;
+
+        return `
+            <section class="snapshot-widget">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Cash in and out</h3>
+                        <p>Last 6 months of bank-linked movement</p>
+                    </div>
+                    ${canOpenReports ? App.renderDashboardAction('Cash Flow', '#/reports/cash-flow') : ''}
                 </div>
+                <div class="snapshot-split-metrics">
+                    <div><span>Cash in</span><strong>${formatCurrency(cashFlow.cash_in_total || 0)}</strong></div>
+                    <div><span>Cash out</span><strong>${formatCurrency(cashFlow.cash_out_total || 0)}</strong></div>
+                    <div class="snapshot-split-metrics__difference"><span>Difference</span><strong>${formatCurrency(cashFlow.net_total || 0)}</strong></div>
+                </div>
+                <div class="snapshot-bar-chart">${chart}</div>
+            </section>`;
+    },
+
+    renderDashboardWatchlistWidget(watchlist = []) {
+        const canOpenAccounts = App.hasPermission('accounts.view');
+        const body = watchlist.length
+            ? `<div class="table-container snapshot-table-container"><table class="snapshot-watchlist-table">
+                <thead><tr><th>Code</th><th>Account</th><th class="amount">This month</th><th class="amount">YTD</th></tr></thead>
+                <tbody>${watchlist.map(entry => `
+                    <tr>
+                        <td><strong>${escapeHtml(entry.account_number || '')}</strong></td>
+                        <td>${escapeHtml(entry.account_name || '')}</td>
+                        <td class="amount">${formatCurrency(entry.this_month || 0)}</td>
+                        <td class="amount">${formatCurrency(entry.ytd || 0)}</td>
+                    </tr>
+                `).join('')}</tbody>
+            </table></div>`
+            : `<div class="snapshot-empty-state">
+                <strong>No watchlist accounts yet</strong>
+                <span>Revenue and expense accounts appear here once you start posting transactions.</span>
+            </div>`;
+
+        return `
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Chart of accounts watchlist</h3>
+                        <p>Key income and expense accounts at a glance</p>
+                    </div>
+                    ${canOpenAccounts ? App.renderDashboardAction('Open accounts', '#/accounts') : ''}
+                </div>
+                ${body}
+            </section>`;
+    },
+
+    renderDashboardOperationalSnapshot(data = {}) {
+        const canOpenCustomers = App.hasPermission('contacts.view');
+        return `
+            <section class="snapshot-widget snapshot-widget--wide">
+                <div class="snapshot-widget__header">
+                    <div>
+                        <h3>Operational snapshot</h3>
+                        <p>Safe overview for non-financial roles</p>
+                    </div>
+                    ${canOpenCustomers ? App.renderDashboardAction('Open customers', '#/customers') : ''}
+                </div>
+                <div class="snapshot-big-number">${data.customer_count || 0}</div>
+                <div class="snapshot-metric-caption">Active Customers</div>
+                <div class="snapshot-empty-state snapshot-empty-state--inline">
+                    <strong>Financial overview hidden</strong>
+                    <span>Your role can use operational modules, but financial dashboard widgets stay hidden.</span>
+                </div>
+            </section>`;
+    },
+
+    async renderDashboard() {
+        const data = await API.get('/dashboard');
+        const canViewFinancials = !!data.financial_overview_available && App.hasPermission('dashboard.financials.view');
+        let charts = { profit_summary: {}, cash_flow: { months: [] } };
+        if (canViewFinancials) {
+            try {
+                charts = await API.get('/dashboard/charts');
+            } catch (e) { /* Dashboard summary remains usable without charts. */ }
+        }
+
+        const invoiceSummary = data.invoice_summary || {};
+        const bankAccounts = data.bank_accounts || [];
+        const watchlist = data.watchlist || [];
+        const kpis = canViewFinancials ? `
+            <div class="snapshot-kpi-grid">
+                <div class="snapshot-kpi-card">
+                    <span>Active Customers</span>
+                    <strong>${data.customer_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Total Receivables</span>
+                    <strong>${formatCurrency(data.total_receivables || 0)}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Overdue Invoices</span>
+                    <strong>${data.overdue_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Total Payables</span>
+                    <strong>${formatCurrency(data.total_payables || 0)}</strong>
+                </div>
+            </div>`
+            : `
+            <div class="snapshot-kpi-grid">
+                <div class="snapshot-kpi-card">
+                    <span>Active Customers</span>
+                    <strong>${data.customer_count || 0}</strong>
+                </div>
+                <div class="snapshot-kpi-card">
+                    <span>Dashboard access</span>
+                    <strong>Operational</strong>
+                </div>
+            </div>`;
+
+        return `
+            <div class="snapshot-dashboard">
+                <div class="snapshot-hero">
+                    <div>
+                        <div class="snapshot-hero__eyebrow">Business Overview</div>
+                        <h2>Company Snapshot</h2>
+                        <p>Prioritise cash, collections, and account activity from one place.</p>
+                    </div>
+                    <div class="snapshot-hero__meta">Slowbooks Pro 2026 &mdash; Build 12.0.3190-R</div>
+                </div>
+                ${kpis}
+                ${canViewFinancials ? `
+                    <div class="snapshot-widget-grid">
+                        ${App.renderDashboardBankWidget(bankAccounts)}
+                        ${App.renderDashboardInvoiceWidget(invoiceSummary)}
+                        ${App.renderDashboardProfitWidget(charts.profit_summary || {})}
+                        ${App.renderDashboardCashFlowWidget(charts.cash_flow || {})}
+                        ${App.renderDashboardWatchlistWidget(watchlist)}
+                    </div>
+                ` : `
+                    <div class="snapshot-widget-grid">
+                        ${App.renderDashboardOperationalSnapshot(data)}
+                    </div>
+                `}
             </div>`;
     },
 
@@ -368,18 +635,19 @@ const App = {
             </div>
             ${App.renderSystemAccountRoles(systemRoles, { canManageSystemRoles })}
             <div class="table-container"><table>
-                <thead><tr><th style="width:80px;">Number</th><th>Name</th><th style="width:100px;">Type</th><th class="amount" style="width:100px;">Balance</th><th style="width:60px;">Actions</th></tr></thead>
+                <thead><tr><th style="width:80px;">Number</th><th>Name</th><th style="width:100px;">Type</th><th style="width:60px;">Favorite</th><th class="amount" style="width:100px;">Balance</th><th style="width:60px;">Actions</th></tr></thead>
                 <tbody>`;
 
         for (const type of typeOrder) {
             const accts = grouped[type] || [];
             if (accts.length === 0) continue;
-            html += `<tr style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="5" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
+            html += `<tr style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="6" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
             for (const a of accts) {
                 html += `<tr>
                     <td style="font-family:var(--font-mono);">${escapeHtml(a.account_number || '')}</td>
                     <td>${a.is_system ? '' : ''}<strong>${escapeHtml(a.name)}</strong></td>
                     <td>${a.account_type}</td>
+                    <td style="text-align:center;">${a.is_dashboard_favorite ? '&#9733;' : ''}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
                         ${canManageAccounts ? `<button class="btn btn-sm btn-secondary" onclick="App.showAccountForm(${a.id})">Edit</button>` : ''}
@@ -464,7 +732,7 @@ const App = {
     },
 
     async showAccountForm(id = null) {
-        let acct = { name: '', account_number: '', account_type: 'expense', description: '' };
+        let acct = { name: '', account_number: '', account_type: 'expense', description: '', is_dashboard_favorite: false };
         if (id) acct = await API.get(`/accounts/${id}`);
 
         const types = ['asset','liability','equity','income','cogs','expense'];
@@ -479,6 +747,12 @@ const App = {
                         <select name="account_type">
                             ${types.map(t => `<option value="${t}" ${acct.account_type===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
                         </select></div>
+                    <div class="form-group full-width form-group--checkbox">
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="is_dashboard_favorite" ${acct.is_dashboard_favorite ? 'checked' : ''}>
+                            <span>Show this account in the dashboard watchlist</span>
+                        </label>
+                    </div>
                     <div class="form-group full-width"><label>Description</label>
                         <textarea name="description">${escapeHtml(acct.description || '')}</textarea></div>
                 </div>
@@ -492,6 +766,8 @@ const App = {
     async saveAccount(e, id) {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
+        const favoriteField = e.target.elements?.is_dashboard_favorite || (e.target.querySelector ? e.target.querySelector('input[name="is_dashboard_favorite"]') : null);
+        data.is_dashboard_favorite = !!(favoriteField && favoriteField.checked);
         try {
             if (id) { await API.put(`/accounts/${id}`, data); toast('Account updated'); }
             else { await API.post('/accounts', data); toast('Account created'); }
@@ -604,29 +880,38 @@ const App = {
         if (!dropdown) return;
         clearTimeout(App._searchTimeout);
         if (!query || query.length < 2) { dropdown.classList.add('hidden'); return; }
+        const requestId = ++App._searchRequestId;
         App._searchTimeout = setTimeout(async () => {
             try {
                 const results = await API.get(`/search?q=${encodeURIComponent(query)}`);
+                const input = $('#global-search');
+                if (requestId !== App._searchRequestId) return;
+                if (!input || input.value !== query) return;
                 let html = '';
                 const sections = [
-                    { key: 'customers', label: 'Customers', onClick: (item) => `App.navigate('#/customers');closeSearchDropdown();` },
-                    { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
-                    { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
-                    { key: 'invoices', label: 'Invoices', onClick: (item) => `InvoicesPage.view(${item.id});closeSearchDropdown();` },
-                    { key: 'estimates', label: 'Estimates', onClick: (item) => `App.navigate('#/estimates');closeSearchDropdown();` },
-                    { key: 'payments', label: 'Payments', onClick: (item) => `App.navigate('#/payments');closeSearchDropdown();` },
+                    { key: 'customers', label: 'Customers', onClick: (item) => `closeSearchDropdown();CustomersPage.view(${item.id});` },
+                    { key: 'vendors', label: 'Vendors', onClick: (item) => `closeSearchDropdown();App.navigate('#/vendors');` },
+                    { key: 'items', label: 'Items', onClick: (item) => `closeSearchDropdown();App.navigate('#/items');` },
+                    { key: 'invoices', label: 'Invoices', onClick: (item) => `closeSearchDropdown();InvoicesPage.view(${item.id});` },
+                    { key: 'estimates', label: 'Estimates', onClick: (item) => `closeSearchDropdown();EstimatesPage.view(${item.id});` },
+                    { key: 'credit_memos', label: 'Credit Notes', onClick: (item) => `closeSearchDropdown();CreditMemosPage.open(${item.id});` },
+                    { key: 'payments', label: 'Receipts', onClick: (item) => `closeSearchDropdown();App.navigate('#/payments');` },
                 ];
+                if (Object.values(results).some(items => Array.isArray(items) && items.length > 0)) {
+                    html += `<div class="search-header"><span>Search results</span><button type="button" class="search-close" onclick="closeSearchDropdown()" aria-label="Close search results">&times;</button></div>`;
+                }
                 for (const sec of sections) {
                     const items = results[sec.key];
                     if (items && items.length > 0) {
                         html += `<div class="search-section">${sec.label}</div>`;
                         items.forEach(item => {
-                            const label = item.display || item.name || item.invoice_number || `#${item.id}`;
+                            const label = item.display || item.name || item.invoice_number || item.estimate_number || item.memo_number || `#${item.id}`;
                             html += `<div class="search-item" onclick="${sec.onClick(item)}">${escapeHtml(label)}</div>`;
                         });
                     }
                 }
                 if (!html) html = `<div class="search-item" style="color:var(--text-muted);">No results</div>`;
+                if (requestId !== App._searchRequestId) return;
                 dropdown.innerHTML = html;
                 dropdown.classList.remove('hidden');
             } catch (e) {
@@ -704,6 +989,7 @@ const App = {
         App._qeItems = items;
         const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
         const itemOpts = items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+        const termOptions = App.paymentTermLabels().map(t => `<option ${t===App.settings.default_terms?'selected':''}>${t}</option>`).join('');
 
         return `
             <div class="page-header">
@@ -723,8 +1009,7 @@ const App = {
                         <input name="date" id="qe-date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms" id="qe-terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${t==='Net 30'?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                     <div class="form-group"><label>PO #</label>
                         <input name="po_number" id="qe-po"></div>
@@ -855,14 +1140,45 @@ const App = {
         try {
             const s = App.settings || {};
             const companyEl = $('#status-company');
-            if (companyEl && s.company_name && s.company_name !== 'My Company') {
-                companyEl.textContent = `Company: ${s.company_name}`;
+            const selectedCompany = typeof localStorage !== 'undefined' ? localStorage.getItem('slowbooks_company') : null;
+            if (companyEl) {
+                const companyName = s.company_name && s.company_name !== 'My Company' ? s.company_name : '';
+                const display = companyName
+                    ? `Company: ${companyName}${selectedCompany ? ` (${selectedCompany})` : ''}`
+                    : `Company: ${selectedCompany || 'bookkeeper.sbk'}`;
+                companyEl.textContent = display;
             }
         } catch (e) { /* ignore on load */ }
     },
 
     async init() {
-        window.addEventListener('hashchange', () => App.navigate(location.hash));
+        window.addEventListener('hashchange', () => {
+            if (App._suppressNextHashChange) {
+                App._suppressNextHashChange = false;
+                return;
+            }
+            App.navigate(location.hash);
+        });
+        $$('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                const targetHash = link.getAttribute('href');
+                if (!targetHash) return;
+                e.preventDefault();
+                if ((location.hash || '#/') === targetHash) {
+                    App.navigate(targetHash);
+                } else {
+                    App._suppressNextHashChange = true;
+                    location.hash = targetHash;
+                    App.navigate(targetHash);
+                }
+            });
+        });
+        $$('.nav-section-toggle').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                App.toggleNavSection(toggle.dataset.section);
+            });
+        });
 
         // Load saved theme
         App.loadTheme();

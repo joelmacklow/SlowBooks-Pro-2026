@@ -5,7 +5,7 @@ from app.models.transactions import Transaction, TransactionLine
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.estimates import Estimate, EstimateLine
 from app.models.payments import Payment, PaymentAllocation
-from app.models.banking import BankAccount, BankTransaction, Reconciliation
+from app.models.banking import BankAccount, BankRule, BankTransaction, Reconciliation
 from app.models.settings import Settings
 from app.models.gst import GstCode
 from app.models.gst_return import GstReturn
@@ -13,7 +13,7 @@ from app.models.gst_settlement import GstSettlement
 
 # Phase 1: Foundation
 from app.models.audit import AuditLog
-from app.models.auth import User, UserMembership, MembershipPermissionOverride, AuthSession
+from app.models.auth import User, UserMembership, MembershipPermissionOverride, AuthSession, EmployeePortalLink
 
 # Phase 2: Accounts Payable
 from app.models.purchase_orders import PurchaseOrder, PurchaseOrderLine
@@ -25,6 +25,7 @@ from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
 
 # Phase 4: Communication & Export
 from app.models.email_log import EmailLog
+from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRule
 
 # Phase 5: Advanced Integration
 from app.models.tax import TaxCategoryMapping
@@ -33,7 +34,9 @@ from app.models.backups import Backup
 # Phase 6: Ambitious
 from app.models.companies import Company
 from app.models.payroll import Employee, PayRun, PayStub
+from app.models.timesheets import Timesheet, TimesheetLine, TimesheetAuditEvent
 from app.models.payroll_filing import PayrollFilingAudit
+from app.models.fixed_assets import FixedAsset, FixedAssetType
 
 __all__ = [
     "Account", "Customer", "Vendor", "Item",
@@ -41,10 +44,10 @@ __all__ = [
     "Invoice", "InvoiceLine",
     "Estimate", "EstimateLine",
     "Payment", "PaymentAllocation",
-    "BankAccount", "BankTransaction", "Reconciliation",
+    "BankAccount", "BankRule", "BankTransaction", "Reconciliation",
     "Settings", "GstCode", "GstReturn", "GstSettlement",
     # Phase 1
-    "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession",
+    "AuditLog", "User", "UserMembership", "MembershipPermissionOverride", "AuthSession", "EmployeePortalLink",
     # Phase 2
     "PurchaseOrder", "PurchaseOrderLine",
     "Bill", "BillLine", "BillPayment", "BillPaymentAllocation",
@@ -52,9 +55,10 @@ __all__ = [
     # Phase 3
     "RecurringInvoice", "RecurringInvoiceLine",
     # Phase 4
-    "EmailLog",
+    "EmailLog", "InvoiceReminderRule", "InvoiceReminderAudit",
     # Phase 5
     "TaxCategoryMapping", "Backup",
     # Phase 6
-    "Company", "Employee", "PayRun", "PayStub", "PayrollFilingAudit",
+    "Company", "Employee", "PayRun", "PayStub", "Timesheet", "TimesheetLine", "TimesheetAuditEvent", "PayrollFilingAudit",
+    "FixedAsset", "FixedAssetType",
 ]

@@ -30,6 +30,8 @@ SYSTEM_ACCOUNT_KEYS = (
     "system_account_child_support_payable_id",
     "system_account_wages_expense_id",
     "system_account_employer_kiwisaver_expense_id",
+    "system_account_fixed_asset_accumulated_depreciation_id",
+    "system_account_fixed_asset_depreciation_expense_id",
 )
 
 

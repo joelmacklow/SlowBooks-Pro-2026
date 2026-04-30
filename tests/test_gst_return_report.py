@@ -92,11 +92,13 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("5.00"),
                 box13_adjustments=Decimal("2.00"),
                 db=db,
+                auth={"user_id": 1},
             )
             alias = sales_tax_report(
                 start_date=date(2026, 4, 1),
                 end_date=date(2026, 4, 30),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["gst_basis"], "invoice")
@@ -157,6 +159,7 @@ class GstReturnReportTests(unittest.TestCase):
                 start_date=date(2026, 4, 1),
                 end_date=date(2026, 4, 30),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["gst_basis"], "payments")
@@ -187,10 +190,11 @@ class GstReturnReportTests(unittest.TestCase):
                 box13_adjustments=Decimal("2.00"),
                 return_due_date=date(2026, 5, 28),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(response.media_type, "application/pdf")
-        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="GST101A_2026-04-01_2026-04-30.pdf"')
+        self.assertEqual(response.headers["Content-Disposition"], 'inline; filename="GST101A_2026-04-01_2026-04-30.pdf"')
         fields = PdfReader(io.BytesIO(response.body)).get_fields()
         text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(response.body)).pages)
         compact_text = "".join(text.split())
@@ -235,6 +239,7 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("0.00"),
                 box13_adjustments=Decimal("0.00"),
                 db=db,
+                auth={"user_id": 1},
             )
             response = gst_return_pdf(
                 start_date=date(2026, 4, 1),
@@ -242,6 +247,7 @@ class GstReturnReportTests(unittest.TestCase):
                 box9_adjustments=Decimal("0.00"),
                 box13_adjustments=Decimal("0.00"),
                 db=db,
+                auth={"user_id": 1},
             )
 
         self.assertEqual(report["return_confirmation"]["status"], "confirmed")

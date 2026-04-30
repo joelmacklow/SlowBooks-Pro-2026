@@ -1,0 +1,249 @@
+{% include "_document_fonts.html" %}
+@page { size: {{ page_size | default('A4') }}; margin: {{ page_margin | default('1.5cm') }}; }
+:root {
+    --ink: #1f2933;
+    --muted: #586474;
+    --brand: #123b6d;
+    --brand-soft: #eef4f9;
+    --line: #d7dee6;
+    --line-strong: #aeb8c5;
+    --panel: #f8fafc;
+}
+body {
+    font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 9.5pt;
+    color: var(--ink);
+    line-height: 1.45;
+    margin: 0;
+    padding: 0 0 1.4cm 0;
+}
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1cm;
+    margin-bottom: 18px;
+}
+.company-panel {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 58%;
+}
+.company-name {
+    font-size: 16pt;
+    font-weight: 700;
+    color: var(--brand);
+    margin: 0 0 4px 0;
+}
+.company-logo {
+    display: block;
+    max-width: 8cm;
+    max-height: 2.2cm;
+    margin: 0 0 6px 0;
+    object-fit: contain;
+}
+.header-logo {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+.header-logo img {
+    display: block;
+    max-width: 3.2cm;
+    max-height: 1.8cm;
+    object-fit: contain;
+}
+.company-meta {
+    font-size: 9pt;
+    color: var(--muted);
+    line-height: 1.55;
+}
+.doc-panel {
+    flex: 0 0 auto;
+    min-width: 4.4cm;
+    text-align: right;
+}
+.doc-kicker {
+    margin: 0 0 4px 0;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+}
+.doc-title {
+    margin: 0;
+    font-size: 24pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--brand);
+}
+.doc-number {
+    margin-top: 4px;
+    font-size: 11pt;
+    color: var(--muted);
+}
+.doc-subtitle {
+    margin-top: 4px;
+    font-size: 9pt;
+    color: var(--muted);
+}
+.meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+}
+.meta-table td {
+    padding: 4px 6px;
+    font-size: 9pt;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+}
+.meta-table.compact td {
+    padding: 3px 0;
+    border-bottom: none;
+}
+.meta-label {
+    width: 95px;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #3a495d;
+}
+.detail-grid {
+    display: flex;
+    gap: 0.8cm;
+    margin-bottom: 16px;
+}
+.detail-card {
+    flex: 1;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--brand-soft);
+}
+.section-heading {
+    margin: 0 0 6px 0;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brand);
+}
+.detail-card p,
+.note-block p,
+.remittance-panel p {
+    margin: 0;
+    font-size: 9pt;
+    line-height: 1.55;
+}
+.doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+}
+.doc-table th {
+    padding: 7px 8px;
+    background: var(--brand);
+    color: white;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: left;
+}
+.doc-table td {
+    padding: 7px 8px;
+    font-size: 9pt;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+}
+.doc-table tbody tr:nth-child(even) {
+    background: #f9fbfd;
+}
+.doc-table th.r,
+.doc-table td.r {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.summary-wrap {
+    display: flex;
+    justify-content: flex-end;
+}
+.summary-block {
+    width: 7.2cm;
+    border: 1px solid var(--line-strong);
+    background: white;
+}
+.summary-block table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.summary-block td {
+    padding: 6px 10px;
+    font-size: 9pt;
+    border-bottom: 1px solid var(--line);
+}
+.summary-block .label {
+    font-weight: 700;
+    color: #3a495d;
+}
+.summary-block .r {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.summary-block .grand td {
+    border-top: 2px solid var(--brand);
+    border-bottom: none;
+    background: var(--brand-soft);
+    font-size: 12pt;
+    font-weight: 700;
+    color: var(--brand);
+}
+.note-block,
+.remittance-panel {
+    clear: both;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+}
+.payment-advice-table td {
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+.payment-advice-table .meta-label {
+    width: 142px;
+    padding-right: 24px;
+}
+.payment-advice-table td + td {
+    padding-left: 10px;
+}
+.muted {
+    color: var(--muted);
+}
+.no-wrap {
+    white-space: nowrap;
+}
+.page-break-avoid {
+    page-break-inside: avoid;
+}
+.footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-size: 7.5pt;
+    color: var(--muted);
+}
+.footer-left {
+    float: left;
+}
+.footer-right {
+    float: right;
+    text-align: right;
+}
+.footer-right::after {
+    content: "Page " counter(page) " of " counter(pages);
+}

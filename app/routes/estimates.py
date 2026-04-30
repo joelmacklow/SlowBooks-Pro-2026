@@ -11,6 +11,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
@@ -19,31 +20,29 @@ from app.models.contacts import Customer
 from app.schemas.email import DocumentEmailRequest
 from app.schemas.estimates import EstimateCreate, EstimateUpdate, EstimateResponse
 from app.schemas.invoices import InvoiceCreate, InvoiceLineCreate, InvoiceResponse
+from app.services.document_sequences import allocate_document_number
 from app.services.pdf_service import generate_estimate_pdf
-from app.routes.settings import _get_all as get_settings, _set as set_setting
-from app.services.email_service import render_document_email, send_document_email
+from app.routes.settings import _get_all as get_settings
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import resolve_gst_line_inputs, resolve_line_gst
+from app.services.payment_terms import resolve_due_date_for_terms
 from app.services.auth import require_permissions
+from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/estimates", tags=["estimates"])
 
 
 def _next_estimate_number(db: Session) -> str:
-    settings = get_settings(db)
-    prefix = settings.get("estimate_prefix", "E-")
-    next_number = settings.get("estimate_next_number", "1001").strip() or "1001"
-    try:
-        current_number = int(next_number)
-    except ValueError:
-        current_number = 1001
-
-    while True:
-        estimate_number = f"{prefix}{current_number}"
-        exists = db.query(Estimate.id).filter(Estimate.estimate_number == estimate_number).first()
-        if not exists:
-            return estimate_number
-        current_number += 1
+    return allocate_document_number(
+        db,
+        model=Estimate,
+        field_name="estimate_number",
+        prefix_key="estimate_prefix",
+        next_key="estimate_next_number",
+        default_prefix="E-",
+        default_next_number="1001",
+    )
 
 
 @router.get("", response_model=list[EstimateResponse])
@@ -119,10 +118,6 @@ def create_estimate(data: EstimateCreate, db: Session = Depends(get_db), auth=De
         )
         db.add(line)
 
-    numeric_part = estimate_number.removeprefix(get_settings(db).get("estimate_prefix", "E-"))
-    if numeric_part.isdigit():
-        set_setting(db, "estimate_next_number", str(int(numeric_part) + 1))
-
     db.commit()
     db.refresh(estimate)
     resp = EstimateResponse.model_validate(estimate)
@@ -193,7 +188,14 @@ def estimate_pdf(estimate_id: int, db: Session = Depends(get_db), auth=Depends(r
 
 
 @router.post("/{estimate_id}/email")
-def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage"))):
+def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = Depends(get_db), auth=Depends(require_permissions("sales.manage")), request: Request = None):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     est = db.query(Estimate).filter(Estimate.id == estimate_id).first()
     if not est:
         raise HTTPException(status_code=404, detail="Estimate not found")
@@ -220,8 +222,8 @@ def email_estimate(estimate_id: int, data: DocumentEmailRequest, db: Session = D
             entity_id=est.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
 
 
 @router.post("/{estimate_id}/convert", response_model=InvoiceResponse)
@@ -236,11 +238,7 @@ def convert_to_invoice(estimate_id: int, db: Session = Depends(get_db), auth=Dep
     # Parse terms for due date
     settings = get_settings(db)
     terms = settings.get("default_terms", "Net 30")
-    try:
-        days = int(terms.lower().replace("net ", ""))
-    except ValueError:
-        days = 30
-    due_date = estimate.date + timedelta(days=days)
+    due_date = resolve_due_date_for_terms(estimate.date, terms, settings.get("payment_terms_config"))
 
     from app.routes.invoices import create_invoice
 

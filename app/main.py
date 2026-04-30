@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse
 from app.routes import (
     dashboard, accounts, customers, vendors, items,
     invoices, estimates, payments, banking, reports, settings, iif, auth,
-    journal, deposits, cc_charges,
+    journal, deposits, cc_charges, opening_balances, fixed_assets,
 )
 # Phase 1: Foundation
 from app.routes import audit, search
@@ -38,16 +38,41 @@ from app.routes import uploads, xero_import
 # Phase 5: Advanced Integration
 from app.routes import bank_import, tax, backups, gst
 # Phase 6: Ambitious
-from app.routes import companies, employees, payroll
+from app.routes import companies, employees, payroll, employee_portal, timesheets
 
+from app.config import CORS_ALLOW_ORIGINS, SECURITY_HEADERS_ENABLE_HSTS, UPLOADS_DIR
 from app.database import SessionLocal
 from app.services.audit import register_audit_hooks
 
 app = FastAPI(title="Slowbooks Pro 2026", version="2.0.0")
 
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'",
+    )
+    if SECURITY_HEADERS_ENABLE_HSTS:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOW_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,6 +91,8 @@ app.include_router(banking.router)
 app.include_router(journal.router)
 app.include_router(deposits.router)
 app.include_router(cc_charges.router)
+app.include_router(opening_balances.router)
+app.include_router(fixed_assets.router)
 app.include_router(reports.router)
 app.include_router(settings.router)
 app.include_router(iif.router)
@@ -95,17 +122,17 @@ app.include_router(gst.router)
 app.include_router(companies.router)
 app.include_router(employees.router)
 app.include_router(payroll.router)
+app.include_router(employee_portal.router)
+app.include_router(timesheets.router)
 
 # Register audit log hooks
 register_audit_hooks(SessionLocal)
 
 # Static files
 static_dir = Path(__file__).parent / "static"
+app.mount("/static/uploads", StaticFiles(directory=str(UPLOADS_DIR), check_dir=False), name="uploads-static")
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# Ensure uploads directory exists
-uploads_dir = static_dir / "uploads"
-uploads_dir.mkdir(exist_ok=True)
 
 # SPA entry point
 index_path = Path(__file__).parent.parent / "index.html"

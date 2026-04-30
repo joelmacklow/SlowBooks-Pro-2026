@@ -24,6 +24,12 @@ class ReconciliationStatus(str, enum.Enum):
     COMPLETED = "completed"        # status byte 0x01
 
 
+class BankRuleDirection(str, enum.Enum):
+    ANY = "any"
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
+
+
 class BankAccount(Base):
     __tablename__ = "bank_accounts"
 
@@ -52,20 +58,51 @@ class BankTransaction(Base):
     payee = Column(String(200), nullable=True)
     description = Column(String(500), nullable=True)
     check_number = Column(String(50), nullable=True)
+    reference = Column(String(100), nullable=True)
+    code = Column(String(100), nullable=True)
     category_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     reconciled = Column(Boolean, default=False)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
 
     # OFX/QFX import fields (Feature 18)
     import_id = Column(String(100), nullable=True)      # OFX FITID for dedup
-    import_source = Column(String(50), nullable=True)    # e.g. "ofx", "qfx"
+    import_source = Column(String(50), nullable=True)    # e.g. "ofx", "qfx", "csv"
+    import_batch_id = Column(String(64), nullable=True)
     match_status = Column(String(20), nullable=True)     # "auto", "manual", "unmatched"
+    suggested_rule_id = Column(Integer, ForeignKey("bank_rules.id"), nullable=True)
+    suggested_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    rule_match_reason = Column(String(500), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     bank_account = relationship("BankAccount", back_populates="transactions")
     category_account = relationship("Account", foreign_keys=[category_account_id])
+    suggested_account = relationship("Account", foreign_keys=[suggested_account_id])
     transaction = relationship("Transaction", foreign_keys=[transaction_id])
+    suggested_rule = relationship("BankRule", foreign_keys=[suggested_rule_id])
+
+
+class BankRule(Base):
+    __tablename__ = "bank_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    priority = Column(Integer, nullable=False, default=100)
+    is_active = Column(Boolean, default=True, nullable=False)
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
+    direction = Column(Enum(BankRuleDirection), default=BankRuleDirection.ANY, nullable=False)
+    payee_contains = Column(String(200), nullable=True)
+    description_contains = Column(String(200), nullable=True)
+    reference_contains = Column(String(200), nullable=True)
+    code_equals = Column(String(100), nullable=True)
+    target_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    default_description = Column(String(300), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    bank_account = relationship("BankAccount", foreign_keys=[bank_account_id])
+    target_account = relationship("Account", foreign_keys=[target_account_id])
 
 
 class Reconciliation(Base):
@@ -75,9 +112,11 @@ class Reconciliation(Base):
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False)
     statement_date = Column(Date, nullable=False)
     statement_balance = Column(Numeric(12, 2), nullable=False)
+    import_batch_id = Column(String(64), nullable=True)
     status = Column(Enum(ReconciliationStatus), default=ReconciliationStatus.IN_PROGRESS)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    balance_applied_at = Column(DateTime(timezone=True), nullable=True)
 
     bank_account = relationship("BankAccount")

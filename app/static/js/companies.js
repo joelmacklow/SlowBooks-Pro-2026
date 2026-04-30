@@ -3,9 +3,14 @@
  * Feature 16: Company list and creation UI
  */
 const CompaniesPage = {
+    _databaseNameTouched: false,
+    _lastSuggestedDatabaseName: '',
+    _companies: [],
+
     async render() {
         const canManageCompanies = App.hasPermission ? App.hasPermission('companies.manage') : true;
         const companies = await API.get('/companies');
+        CompaniesPage._companies = companies;
         let html = `
             <div class="page-header">
                 <h2>Company Files</h2>
@@ -21,10 +26,12 @@ const CompaniesPage = {
             html += '<div class="card-grid">';
             for (const c of companies) {
                 html += `<div class="card" style="cursor:pointer;" onclick="CompaniesPage.switchTo('${escapeHtml(c.database_name)}')">
-                    <div class="card-header">${escapeHtml(c.name)}</div>
+                    <div class="card-header">${escapeHtml(c.name)}${c.is_default ? ' <span class="badge badge-draft">Default</span>' : ''}</div>
                     <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.database_name)}</div>
                     ${c.description ? `<div style="font-size:11px;margin-top:4px;">${escapeHtml(c.description)}</div>` : ''}
+                    <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Org Lock: ${escapeHtml(c.org_lock_date || 'Not set')}</div>
                     <div style="font-size:9px;color:var(--text-light);margin-top:4px;">Last accessed: ${c.last_accessed ? formatDate(c.last_accessed) : 'Never'}</div>
+                    ${canManageCompanies ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); CompaniesPage.showEdit(${c.id === null ? 'null' : c.id})">Edit</button></div>` : ''}
                 </div>`;
             }
             html += '</div>';
@@ -32,20 +39,70 @@ const CompaniesPage = {
         return html;
     },
 
+    suggestDatabaseName(name) {
+        return String(name || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .replace(/_+/g, '_')
+            .slice(0, 63);
+    },
+
+    handleCompanyNameInput(input) {
+        const databaseInput = input?.form?.database_name;
+        if (!databaseInput) return;
+        const suggestion = CompaniesPage.suggestDatabaseName(input.value);
+        const currentValue = databaseInput.value || '';
+        if (!CompaniesPage._databaseNameTouched || currentValue === '' || currentValue === CompaniesPage._lastSuggestedDatabaseName) {
+            databaseInput.value = suggestion;
+            CompaniesPage._lastSuggestedDatabaseName = suggestion;
+            CompaniesPage._databaseNameTouched = false;
+        }
+    },
+
+    handleDatabaseNameInput(input) {
+        CompaniesPage._databaseNameTouched = true;
+    },
+
     showCreate() {
+        CompaniesPage._databaseNameTouched = false;
+        CompaniesPage._lastSuggestedDatabaseName = '';
         openModal('New Company', `
             <form onsubmit="CompaniesPage.create(event)">
                 <div class="form-grid">
                     <div class="form-group"><label>Company Name *</label>
-                        <input name="name" required></div>
+                        <input name="name" required oninput="CompaniesPage.handleCompanyNameInput(this)"></div>
                     <div class="form-group"><label>Database Name *</label>
-                        <input name="database_name" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, underscores only"></div>
+                        <input name="database_name" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, underscores only" oninput="CompaniesPage.handleDatabaseNameInput(this)"></div>
                     <div class="form-group full-width"><label>Description</label>
                         <textarea name="description"></textarea></div>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Create Company</button>
+                </div>
+            </form>`);
+    },
+
+    showEdit(companyId) {
+        const company = CompaniesPage._companies.find(c => (companyId === null ? c.id === null : c.id === companyId));
+        if (!company) return;
+        openModal('Edit Company', `
+            <form onsubmit="CompaniesPage.update(event, ${company.id === null ? 'null' : company.id})">
+                <div class="form-grid">
+                    <div class="form-group"><label>Company Name *</label>
+                        <input name="name" required value="${escapeHtml(company.name || '')}"></div>
+                    <div class="form-group"><label>Database Name</label>
+                        <input name="database_name" disabled value="${escapeHtml(company.database_name || '')}"></div>
+                    <div class="form-group full-width"><label>Description</label>
+                        <textarea name="description">${escapeHtml(company.description || '')}</textarea></div>
+                    <div class="form-group"><label>Organization Lock Date</label>
+                        <input name="org_lock_date" type="date" value="${escapeHtml(company.org_lock_date || '')}">
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">This is the organization-admin lock date for this company. It blocks transactions on or before the selected date and cannot be bypassed by company-level override passwords.</div></div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Company</button>
                 </div>
             </form>`);
     },
@@ -61,11 +118,27 @@ const CompaniesPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    switchTo(dbName) {
+    async update(e, companyId = null) {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        try {
+            await API.put(companyId === null ? '/companies/default' : `/companies/${companyId}`, data);
+            toast('Company updated');
+            closeModal();
+            App.navigate('#/companies');
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async switchTo(dbName) {
         // Store selected company in localStorage
         localStorage.setItem('slowbooks_company', dbName);
         toast(`Switched to ${dbName}. Reload to apply.`);
-        // In a full implementation, this would reload with X-Company-Id header
+        if (typeof App !== 'undefined') {
+            await App.loadSettings();
+            App.loadCompanyName();
+            App.navigate('#/');
+            return;
+        }
         location.reload();
     },
 };

@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func,
+    Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import relationship
 
@@ -19,6 +19,12 @@ class User(Base):
 
     memberships = relationship("UserMembership", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
+    employee_links = relationship(
+        "EmployeePortalLink",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="EmployeePortalLink.user_id",
+    )
 
 
 class UserMembership(Base):
@@ -72,3 +78,39 @@ class AuthSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="sessions")
+
+
+class EmployeePortalLink(Base):
+    __tablename__ = "employee_portal_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company_scope = Column(String(100), nullable=False)
+    employee_id = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deactivated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deactivated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="employee_links", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index(
+            "uq_employee_portal_links_user_scope_active",
+            "user_id",
+            "company_scope",
+            unique=True,
+            sqlite_where=is_active.is_(True),
+            postgresql_where=is_active.is_(True),
+        ),
+        Index(
+            "uq_employee_portal_links_scope_employee_active",
+            "company_scope",
+            "employee_id",
+            unique=True,
+            sqlite_where=is_active.is_(True),
+            postgresql_where=is_active.is_(True),
+        ),
+    )

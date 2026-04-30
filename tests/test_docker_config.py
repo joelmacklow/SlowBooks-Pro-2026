@@ -36,27 +36,69 @@ class DockerConfigTests(unittest.TestCase):
             os.environ["DATABASE_URL"] = ""
             os.environ["POSTGRES_HOST"] = "postgres"
             os.environ["POSTGRES_PORT"] = "5432"
-            os.environ["POSTGRES_DB"] = "bookkeeper"
-            os.environ["POSTGRES_USER"] = "bookkeeper"
-            os.environ["POSTGRES_PASSWORD"] = "bookkeeper"
+            os.environ["POSTGRES_DB"] = "slowbooks"
+            os.environ["POSTGRES_USER"] = "slowbooks"
+            os.environ["POSTGRES_PASSWORD"] = "replace-with-a-long-random-password"
             os.environ["POSTGRES_SSLMODE"] = "disable"
 
             config = importlib.reload(config)
 
             self.assertEqual(
                 config.DATABASE_URL,
-                "postgresql://bookkeeper:bookkeeper@postgres:5432/bookkeeper?sslmode=disable",
+                "postgresql://slowbooks:replace-with-a-long-random-password@postgres:5432/slowbooks?sslmode=disable",
             )
         finally:
             os.environ.clear()
             os.environ.update(original)
             importlib.reload(config)
 
+    def test_build_database_url_uses_safer_non_legacy_fallback_defaults(self):
+        import app.config as config
+
+        self.assertEqual(
+            config.build_database_url(env={}),
+            "postgresql://slowbooks:replace-with-a-long-random-password@localhost:5432/slowbooks?sslmode=disable",
+        )
+
+    def test_uploads_dir_defaults_to_tmp_managed_path(self):
+        import app.config as config
+
+        original = os.environ.copy()
+        try:
+            os.environ.pop("UPLOADS_DIR", None)
+            config = importlib.reload(config)
+            self.assertEqual(str(config.UPLOADS_DIR), "/tmp/slowbooks/uploads")
+        finally:
+            os.environ.clear()
+            os.environ.update(original)
+            importlib.reload(config)
+
+    def test_resolve_cors_origins_uses_explicit_loopback_safe_defaults(self):
+        import app.config as config
+
+        self.assertEqual(
+            config.resolve_cors_origins(env={}),
+            [
+                "http://localhost:3001",
+                "http://127.0.0.1:3001",
+            ],
+        )
+
+    def test_resolve_cors_origins_honors_env_override(self):
+        import app.config as config
+
+        env = {"CORS_ALLOW_ORIGINS": "https://app.example.com, https://admin.example.com "}
+        self.assertEqual(
+            config.resolve_cors_origins(env=env),
+            ["https://app.example.com", "https://admin.example.com"],
+        )
+
     def test_docker_assets_and_env_keys_exist(self):
         root = Path(__file__).resolve().parent.parent
         env_example = (root / ".env.example").read_text()
         dockerfile_text = (root / "Dockerfile").read_text()
         backup_script = (root / "scripts" / "backup.sh").read_text()
+        entrypoint_script = (root / "scripts" / "docker-entrypoint.sh").read_text()
 
         self.assertTrue((root / "Dockerfile").exists())
         self.assertTrue((root / "docker-compose.yml").exists())
@@ -67,12 +109,31 @@ class DockerConfigTests(unittest.TestCase):
         self.assertIn('CMD ["/bin/sh", "/app/scripts/docker-entrypoint.sh"]', dockerfile_text)
         self.assertIn('USER slowbooks', dockerfile_text)
         self.assertIn('set -eo pipefail', backup_script)
+        self.assertIn('mkdir -p /app/backups /tmp/slowbooks/uploads 2>/dev/null || true', entrypoint_script)
+        self.assertNotIn("BOOTSTRAP_ADMIN_TOKEN=\"$(python - <<'PY'", entrypoint_script)
+        self.assertNotIn('export BOOTSTRAP_ADMIN_TOKEN', entrypoint_script)
+        self.assertNotIn('Bootstrap admin token:', entrypoint_script)
+        self.assertIn("BOOTSTRAP_SETUP_URL=\"$(python - <<'PY'", entrypoint_script)
+        self.assertIn('Bootstrap admin setup URL:', entrypoint_script)
+        self.assertIn('the token is never printed to logs', entrypoint_script)
+        self.assertIn('print("Database ready")', entrypoint_script)
+        self.assertNotIn('Database ready: {DATABASE_URL}', entrypoint_script)
+        self.assertIn('replace localhost with your Docker host name or IP', entrypoint_script)
         compose_text = (root / "docker-compose.yml").read_text()
         self.assertIn("image: postgres:18", compose_text)
         self.assertIn("postgres_data:/var/lib/postgresql", compose_text)
         self.assertNotIn("./data/postgres:/var/lib/postgresql/data", compose_text)
         self.assertIn("volumes:\n  postgres_data:", compose_text)
         self.assertIn("./:/app:Z", compose_text)
+        self.assertNotIn('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookkeeper}', compose_text)
+        self.assertNotIn('APP_DEBUG: ${APP_DEBUG:-true}', compose_text)
+        self.assertNotIn('      - "${POSTGRES_PORT:-5432}:5432"', compose_text)
+        self.assertIn('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in your .env or environment}', compose_text)
+        self.assertIn('APP_DEBUG: ${APP_DEBUG:-false}', compose_text)
+        self.assertIn('BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-}', compose_text)
+        self.assertIn('SMTP_HOST: ${SMTP_HOST:-}', compose_text)
+        self.assertIn('SMTP_PASSWORD: ${SMTP_PASSWORD:-}', compose_text)
+        self.assertIn('SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}', compose_text)
 
         for key in (
             "DATABASE_URL=",
@@ -82,8 +143,34 @@ class DockerConfigTests(unittest.TestCase):
             "POSTGRES_USER=",
             "POSTGRES_PASSWORD=",
             "POSTGRES_SSLMODE=",
+            "CORS_ALLOW_ORIGINS=",
+            "BOOTSTRAP_ADMIN_TOKEN=",
+            "SESSION_COOKIE_SECURE=",
+            "SMTP_HOST=",
+            "SMTP_PORT=",
+            "SMTP_USER=",
+            "SMTP_PASSWORD=",
+            "SMTP_FROM_EMAIL=",
+            "SMTP_FROM_NAME=",
+            "SMTP_USE_TLS=",
         ):
             self.assertIn(key, env_example)
+        self.assertIn("POSTGRES_PASSWORD=replace-with-a-long-random-password", env_example)
+        self.assertIn("APP_DEBUG=false", env_example)
+        self.assertNotIn("POSTGRES_PASSWORD=bookkeeper", env_example)
+
+    def test_docs_call_for_explicit_password_setup_and_non_published_postgres(self):
+        root = Path(__file__).resolve().parent.parent
+        readme = (root / "README.md").read_text()
+        install = (root / "INSTALL.md").read_text()
+
+        self.assertIn("set POSTGRES_PASSWORD to a long random secret", readme)
+        self.assertIn("Postgres is not published to the host by default", readme)
+        self.assertIn("APP_DEBUG=false", readme)
+        self.assertIn("CORS_ALLOW_ORIGINS", readme)
+        self.assertIn("set POSTGRES_PASSWORD to a long random secret", install)
+        self.assertIn("Postgres is not published to the host by default", install)
+        self.assertIn("CORS_ALLOW_ORIGINS", install)
 
     def test_bootstrap_database_script_can_import_app_when_run_as_script(self):
         root = Path(__file__).resolve().parent.parent

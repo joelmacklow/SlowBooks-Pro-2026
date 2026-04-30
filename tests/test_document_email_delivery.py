@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 
@@ -84,6 +85,30 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
             db.add(Settings(key=key, value=value))
         db.commit()
 
+    @contextmanager
+    def _smtp_env(self, email_service, *, password="env-secret"):
+        originals = {
+            "SMTP_HOST": email_service.SMTP_HOST,
+            "SMTP_PORT": email_service.SMTP_PORT,
+            "SMTP_USER": email_service.SMTP_USER,
+            "SMTP_PASSWORD": email_service.SMTP_PASSWORD,
+            "SMTP_FROM_EMAIL": email_service.SMTP_FROM_EMAIL,
+            "SMTP_FROM_NAME": email_service.SMTP_FROM_NAME,
+            "SMTP_USE_TLS": email_service.SMTP_USE_TLS,
+        }
+        email_service.SMTP_HOST = "smtp.example.com"
+        email_service.SMTP_PORT = 587
+        email_service.SMTP_USER = "mailer@example.com"
+        email_service.SMTP_PASSWORD = password
+        email_service.SMTP_FROM_EMAIL = "accounts@example.com"
+        email_service.SMTP_FROM_NAME = "SlowBooks NZ"
+        email_service.SMTP_USE_TLS = True
+        try:
+            yield
+        finally:
+            for key, value in originals.items():
+                setattr(email_service, key, value)
+
     def test_send_email_logs_failure_when_smtp_not_configured(self):
         from app.services.email_service import send_email_or_raise
 
@@ -112,7 +137,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         invoices_route.generate_invoice_pdf = lambda *_args, **_kwargs: b"%PDF-invoice"
 
         try:
-            with self.Session() as db:
+            with self._smtp_env(email_service), self.Session() as db:
                 self._seed_smtp(db)
                 customer = Customer(name="Aroha Ltd", email="customer@example.com")
                 invoice = Invoice(
@@ -150,7 +175,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         original_smtp = email_service.smtplib.SMTP
         email_service.smtplib.SMTP = FakeSMTP
         try:
-            with self.Session() as db:
+            with self._smtp_env(email_service), self.Session() as db:
                 self._seed_smtp(db)
                 FakeSMTP.fail_login = True
 
@@ -171,6 +196,54 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         self.assertEqual(log.subject, "Statement Injected")
         self.assertTrue(FakeSMTP.instances)
         self.assertTrue(FakeSMTP.instances[-1].quit_called)
+
+    def test_send_email_prefers_env_smtp_password_over_db_value(self):
+        from app.services import email_service
+
+        original_smtp = email_service.smtplib.SMTP
+        original_login = FakeSMTP.login
+        login_calls = []
+
+        def record_login(self, user, password):
+            login_calls.append((user, password))
+            return None
+
+        email_service.smtplib.SMTP = FakeSMTP
+        FakeSMTP.login = record_login
+        try:
+            with self._smtp_env(email_service), self.Session() as db:
+                self._seed_smtp(db)
+                email_service.send_email(
+                    db,
+                    to_email="customer@example.com",
+                    subject="Test",
+                    html_body="<p>Hello</p>",
+                    entity_type="statement",
+                    entity_id=8,
+                )
+        finally:
+            email_service.smtplib.SMTP = original_smtp
+            FakeSMTP.login = original_login
+
+        self.assertEqual(login_calls, [("mailer@example.com", "env-secret")])
+
+    def test_send_email_rejects_missing_env_password_for_authenticated_smtp(self):
+        from app.services import email_service
+
+        with self._smtp_env(email_service, password=""), self.Session() as db:
+            self._seed_smtp(db)
+            success = email_service.send_email(
+                db,
+                to_email="customer@example.com",
+                subject="Test",
+                html_body="<p>Hello</p>",
+                entity_type="statement",
+                entity_id=9,
+            )
+            log = db.query(EmailLog).filter_by(entity_type="statement", entity_id=9).one()
+
+        self.assertFalse(success)
+        self.assertIn("environment variable", log.error_message.lower())
 
     def test_document_email_routes_cover_estimate_statement_credit_memo_purchase_order_and_payslip(self):
         from app.routes import credit_memos as credit_memos_route
@@ -194,7 +267,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
         payroll_route.generate_payroll_payslip_pdf = lambda *_args, **_kwargs: b"%PDF-payslip"
 
         try:
-            with self.Session() as db:
+            with self._smtp_env(email_service), self.Session() as db:
                 self._seed_smtp(db)
                 customer = Customer(name="Aroha Ltd", email="customer@example.com")
                 vendor = Vendor(name="Harbour Supplies", email="vendor@example.com")
@@ -263,6 +336,7 @@ class DocumentEmailDeliveryTests(unittest.TestCase):
                     customer.id,
                     StatementEmailRequest(recipient="customer@example.com", as_of_date=date(2026, 4, 30)),
                     db=db,
+                    auth={"user_id": 1},
                 )
                 credit_memos_route.email_credit_memo(
                     credit_memo.id,

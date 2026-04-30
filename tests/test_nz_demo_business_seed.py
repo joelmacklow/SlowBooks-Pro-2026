@@ -22,6 +22,7 @@ class NzDemoBusinessSeedTests(unittest.TestCase):
             Payment, PaymentAllocation, Estimate, EstimateLine, Transaction,
             TransactionLine, Settings, GstCode, BankAccount, Reconciliation,
             BankTransaction, Company, PayRun, PayStub, Employee,
+            CreditMemo, CreditMemoLine, CreditApplication, Bill, BillLine, BillPayment, BillPaymentAllocation,
         )
 
         engine = create_engine("sqlite:///:memory:")
@@ -57,6 +58,29 @@ class NzDemoBusinessSeedTests(unittest.TestCase):
         self.assertEqual(len(invoice_numbers), 10)
         self.assertEqual(len(estimate_numbers), 3)
         self.assertEqual(len(payment_refs), 5)
+
+    def test_demo_seed_includes_paid_and_open_documents_plus_credit_note_spread(self):
+        import scripts.seed_database as seed_database
+        import scripts.seed_irs_mock_data as seed_demo
+        from app.models.bills import Bill, BillStatus
+        from app.models.credit_memos import CreditMemo, CreditMemoStatus
+        from app.models.invoices import Invoice, InvoiceStatus
+
+        seed_database.SessionLocal = self.Session
+        seed_demo.SessionLocal = self.Session
+
+        seed_database.seed()
+        seed_demo.seed()
+
+        with self.Session() as db:
+            invoice_statuses = {row.status for row in db.query(Invoice).all()}
+            bill_statuses = {row.status for row in db.query(Bill).all()}
+            credit_memos = db.query(CreditMemo).order_by(CreditMemo.memo_number).all()
+
+        self.assertTrue({InvoiceStatus.PAID, InvoiceStatus.PARTIAL, InvoiceStatus.SENT}.issubset(invoice_statuses))
+        self.assertTrue({BillStatus.PAID, BillStatus.PARTIAL, BillStatus.UNPAID}.issubset(bill_statuses))
+        self.assertEqual([memo.memo_number for memo in credit_memos], ["CM-2001", "CM-2002", "CM-2003"])
+        self.assertEqual([memo.status for memo in credit_memos], [CreditMemoStatus.APPLIED, CreditMemoStatus.ISSUED, CreditMemoStatus.ISSUED])
 
     def test_demo_seed_uses_nz_gst_rate_not_old_sales_tax_rate(self):
         import scripts.seed_database as seed_database

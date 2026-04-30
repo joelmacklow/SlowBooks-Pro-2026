@@ -2,42 +2,14 @@
 <html>
 <head>
 <style>
-    @page { size: letter; margin: 0.6in 0.75in; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a2e; line-height: 1.4; }
-    .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-    .company-info { font-size: 9pt; color: #4a4a6a; }
-    .company-name { font-size: 16pt; font-weight: 700; color: #003366; margin-bottom: 4px; }
-    .doc-title { text-align: right; }
-    .doc-title h1 { font-size: 22pt; font-weight: 700; color: #003366; margin: 0; letter-spacing: 0.05em; }
-    .doc-number { font-size: 12pt; color: #666; margin-top: 4px; }
-    .meta-table { width: 100%; margin-bottom: 16px; }
-    .meta-table td { padding: 3px 8px; font-size: 9pt; vertical-align: top; }
-    .meta-label { font-weight: 700; color: #4a4a6a; width: 100px; }
-    .addresses { display: flex; gap: 40px; margin-bottom: 20px; }
-    .address-block { flex: 1; }
-    .address-label { font-size: 8pt; font-weight: 700; text-transform: uppercase; color: #003366; letter-spacing: 0.05em; margin-bottom: 4px; border-bottom: 1px solid #003366; padding-bottom: 2px; }
-    .address-text { font-size: 9pt; color: #333; }
-    table.line-items { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    table.line-items th { background: #003366; color: white; padding: 5px 8px; font-size: 8pt; text-transform: uppercase; text-align: left; letter-spacing: 0.03em; }
-    table.line-items th.r { text-align: right; }
-    table.line-items td { padding: 5px 8px; font-size: 9pt; border-bottom: 1px solid #e0e0e0; }
-    table.line-items td.r { text-align: right; font-variant-numeric: tabular-nums; }
-    table.line-items tr:nth-child(even) { background: #f7f9fb; }
-    .totals { float: right; width: 240px; }
-    .totals table { width: 100%; }
-    .totals td { padding: 3px 8px; font-size: 9pt; }
-    .totals td.r { text-align: right; font-variant-numeric: tabular-nums; }
-    .totals .label { font-weight: 700; color: #4a4a6a; }
-    .totals .grand { font-size: 12pt; font-weight: 700; color: #003366; border-top: 2px solid #003366; padding-top: 4px; }
-    .notes { clear: both; margin-top: 40px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #666; }
-    .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 7pt; color: #999; padding: 8px 0; }
+{% include "_document_theme.html" %}
 </style>
 </head>
 <body>
     <div class="header">
-        <div>
+        <div class="company-panel">
             <div class="company-name">{{ company.company_name }}</div>
-            <div class="company-info">
+            <div class="company-meta">
                 {% if company.company_address1 %}{{ company.company_address1 }}<br>{% endif %}
                 {% if company.company_address2 %}{{ company.company_address2 }}<br>{% endif %}
                 {% if company.company_city or company.company_state or company.company_zip %}{{ [company.company_city, company.company_state, company.company_zip] | select | join(' ') }}<br>{% endif %}
@@ -45,32 +17,52 @@
                 {% if company.company_email %}{{ company.company_email }}{% endif %}
             </div>
         </div>
-        <div class="doc-title">
-            <h1>ESTIMATE</h1>
-            <div class="doc-number">#{{ est.estimate_number }}</div>
+        <div class="doc-panel">
+            <div class="doc-kicker">Sales document</div>
+            <h1 class="doc-title">ESTIMATE</h1>
+            <div class="doc-number">Estimate #{{ est.estimate_number }}</div>
+            {% if est.expiration_date %}<div class="doc-subtitle">Valid until {{ est.expiration_date | fdate }}</div>{% endif %}
         </div>
+        {% include "_document_logo.html" %}
     </div>
 
-    <table class="meta-table"><tr>
-        <td class="meta-label">Date:</td><td>{{ est.date | fdate }}</td>
-        {% if est.expiration_date %}<td class="meta-label">Valid Until:</td><td>{{ est.expiration_date | fdate }}</td>{% endif %}
-        <td class="meta-label">Status:</td><td>{{ est.status.value | title }}</td>
-    </tr></table>
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Date</td><td>{{ est.date | fdate }}</td>
+            {% if est.expiration_date %}<td class="meta-label">Valid Until</td><td>{{ est.expiration_date | fdate }}</td>{% endif %}
+            <td class="meta-label">Status</td><td>{{ est.status.value | title }}</td>
+        </tr>
+    </table>
 
-    <div class="addresses">
-        <div class="address-block">
-            <div class="address-label">Prepared For</div>
-            <div class="address-text">
+    <div class="detail-grid">
+        <div class="detail-card">
+            <div class="section-heading">Prepared For</div>
+            <p>
                 <strong>{{ est.customer.name if est.customer else '' }}</strong><br>
                 {% if est.bill_address1 %}{{ est.bill_address1 }}<br>{% endif %}
                 {% if est.bill_address2 %}{{ est.bill_address2 }}<br>{% endif %}
                 {% if est.bill_city or est.bill_state or est.bill_zip %}{{ [est.bill_city, est.bill_state, est.bill_zip] | select | join(' ') }}{% endif %}
-            </div>
+            </p>
+        </div>
+        <div class="detail-card">
+            <div class="section-heading">Quote Summary</div>
+            <p>
+                Quote {{ est.estimate_number }} prepared on {{ est.date | fdate }}.<br>
+                {% if est.expiration_date %}This pricing is valid until {{ est.expiration_date | fdate }}.<br>{% endif %}
+                Total quoted: {{ est.total | currency }}
+            </p>
         </div>
     </div>
 
-    <table class="line-items">
-        <thead><tr><th>Description</th><th class="r" style="width:60px;">Qty</th><th class="r" style="width:80px;">Rate</th><th class="r" style="width:80px;">Amount</th></tr></thead>
+    <table class="doc-table">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th class="r" style="width: 2cm;">Qty</th>
+                <th class="r" style="width: 2.6cm;">Rate</th>
+                <th class="r" style="width: 3cm;">Amount</th>
+            </tr>
+        </thead>
         <tbody>
         {% for line in est.lines %}
             <tr>
@@ -83,20 +75,28 @@
         </tbody>
     </table>
 
-    <div class="totals">
-        <table>
-            <tr><td class="label">Subtotal</td><td class="r">{{ est.subtotal | currency }}</td></tr>
-            {% if est.tax_amount and est.tax_amount != 0 %}
-            <tr><td class="label">Tax ({{ "%.2f" | format(est.tax_rate * 100) }}%)</td><td class="r">{{ est.tax_amount | currency }}</td></tr>
-            {% endif %}
-            <tr><td class="label grand">Total</td><td class="r grand">{{ est.total | currency }}</td></tr>
-        </table>
+    <div class="summary-wrap page-break-avoid">
+        <div class="summary-block">
+            <table>
+                <tr><td class="label">Subtotal</td><td class="r">{{ est.subtotal | currency }}</td></tr>
+                {% if est.tax_amount and est.tax_amount != 0 %}
+                <tr><td class="label">Tax ({{ "%.2f" | format(est.tax_rate * 100) }}%)</td><td class="r">{{ est.tax_amount | currency }}</td></tr>
+                {% endif %}
+                <tr class="grand"><td class="label">Total</td><td class="r">{{ est.total | currency }}</td></tr>
+            </table>
+        </div>
     </div>
 
     {% if est.notes %}
-    <div class="notes"><strong>Notes:</strong> {{ est.notes }}</div>
+    <div class="note-block page-break-avoid">
+        <div class="section-heading">Scope / Notes</div>
+        <p>{{ est.notes }}</p>
+    </div>
     {% endif %}
 
-    <div class="footer">Generated by Slowbooks Pro 2026 &mdash; Build 12.0.3190-R</div>
+    <div class="footer">
+        <span class="footer-left">{{ company.company_name or 'SlowBooks Pro 2026' }} | Estimate {{ est.estimate_number }}</span>
+        <span class="footer-right"></span>
+    </div>
 </body>
 </html>

@@ -147,11 +147,15 @@ function statusBadge(status) {
 }
 
 function escapeHtml(str) {
-    if (!str) return '';
+    str = String(str ?? '');
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g, '&#39;');
 }
 
 function closeSearchDropdown() {
+    if (typeof App !== 'undefined' && typeof App.dismissSearchResults === 'function') {
+        App.dismissSearchResults();
+        return;
+    }
     const dd = $('#search-results');
     if (dd) dd.classList.add('hidden');
     const input = $('#global-search');

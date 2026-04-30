@@ -7,25 +7,32 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.config import SESSION_COOKIE_NAME
+from app.database import get_master_db
 from app.models.auth import AuthSession, MembershipPermissionOverride, User, UserMembership
+from app.services.company_service import current_database_name, list_company_scope_options
 
 CURRENT_COMPANY_SCOPE = "__current__"
 SESSION_DAYS = 30
 PASSWORD_ITERATIONS = 600_000
 
 PERMISSION_DEFINITIONS = {
+    "dashboard.financials.view": "View dashboard financial totals, bank balances, recent financial activity, and charts.",
     "contacts.view": "View customers and vendors.",
     "contacts.manage": "Create, update, and deactivate customers and vendors.",
     "items.view": "View items and services.",
     "items.manage": "Create, update, and deactivate items and services.",
     "sales.view": "View sales documents and receipts.",
     "sales.manage": "Create and manage invoices, estimates, recurring sales, receipts, and customer credit notes.",
+    "sales.batch_payments.view": "View the batch payments workspace.",
+    "sales.batch_payments.manage": "Create and manage batch payments.",
     "purchasing.view": "View purchasing documents and vendor payments.",
     "purchasing.manage": "Create and manage purchase orders, bills, and vendor payments.",
+    "purchasing.bills.view": "View bills and bill details.",
+    "purchasing.bills.manage": "Create and manage bills.",
     "banking.view": "View bank accounts, transactions, and reconciliations.",
     "banking.manage": "Create and manage bank accounts, imports, transactions, and reconciliations.",
     "import_export.view": "Export CSV/IIF data and open import/export workspaces.",
@@ -37,8 +44,15 @@ PERMISSION_DEFINITIONS = {
     "payroll.create": "Create draft pay runs.",
     "payroll.process": "Process pay runs and post payroll journals.",
     "payroll.payslips.view": "View payslip PDFs.",
+    "payroll.self.payslips.view": "View your own payslip PDFs.",
     "payroll.payslips.email": "Email payslips.",
     "payroll.filing.export": "Export Employment Information and payroll filing outputs.",
+    "timesheets.manage": "View and correct payroll timesheets.",
+    "timesheets.approve": "Approve, reject, and bulk-approve payroll timesheets.",
+    "timesheets.export": "Export payroll timesheet CSV data.",
+    "timesheets.self.view": "View your own timesheets.",
+    "timesheets.self.create": "Create your own timesheets.",
+    "timesheets.self.submit": "Submit your own timesheets.",
     "settings.manage": "View and update sensitive company settings, including SMTP configuration.",
     "accounts.view": "View the chart of accounts and system account role status.",
     "accounts.manage": "Create, update, and delete accounts.",
@@ -61,14 +75,19 @@ ROLE_TEMPLATE_DEFINITIONS = {
         "label": "Operations Admin",
         "description": "Administers business modules, settings, accounts, backups, companies, audit, and users.",
         "permissions": {
+            "dashboard.financials.view",
             "contacts.view",
             "contacts.manage",
             "items.view",
             "items.manage",
             "sales.view",
             "sales.manage",
+            "sales.batch_payments.view",
+            "sales.batch_payments.manage",
             "purchasing.view",
             "purchasing.manage",
+            "purchasing.bills.view",
+            "purchasing.bills.manage",
             "banking.view",
             "banking.manage",
             "import_export.view",
@@ -98,6 +117,9 @@ ROLE_TEMPLATE_DEFINITIONS = {
             "payroll.payslips.view",
             "payroll.payslips.email",
             "payroll.filing.export",
+            "timesheets.manage",
+            "timesheets.approve",
+            "timesheets.export",
         },
     },
     "payroll_viewer": {
@@ -109,10 +131,29 @@ ROLE_TEMPLATE_DEFINITIONS = {
             "payroll.payslips.view",
         },
     },
+    "employee_self_service": {
+        "label": "Employee Self Service",
+        "description": "Create, submit, and review your own timesheets and view your own payslips.",
+        "permissions": {
+            "payroll.self.payslips.view",
+            "timesheets.self.create",
+            "timesheets.self.submit",
+            "timesheets.self.view",
+        },
+    },
     "staff": {
         "label": "Staff",
-        "description": "Base template with no sensitive/admin capabilities by default.",
-        "permissions": set(),
+        "description": "Operational staff access across contacts, sales, purchasing, items, and company views.",
+        "permissions": {
+            "companies.view",
+            "contacts.manage",
+            "contacts.view",
+            "items.view",
+            "purchasing.manage",
+            "purchasing.view",
+            "sales.manage",
+            "sales.view",
+        },
     },
 }
 
@@ -225,6 +266,25 @@ def _active_membership_for_scope(user: User, company_scope: str = CURRENT_COMPAN
     return None
 
 
+def _first_active_membership(user: User) -> UserMembership | None:
+    active_memberships = [membership for membership in user.memberships if membership.is_active]
+    if not active_memberships:
+        return None
+    current_membership = next((membership for membership in active_memberships if membership.company_scope == CURRENT_COMPANY_SCOPE), None)
+    return current_membership or sorted(active_memberships, key=lambda membership: membership.company_scope)[0]
+
+
+def _normalize_company_scope(company_scope: str | None) -> str:
+    if not isinstance(company_scope, str):
+        return CURRENT_COMPANY_SCOPE
+    candidate = (company_scope or "").strip()
+    if not candidate:
+        return CURRENT_COMPANY_SCOPE
+    if candidate == current_database_name():
+        return CURRENT_COMPANY_SCOPE
+    return candidate
+
+
 def resolve_effective_permissions(membership: UserMembership) -> frozenset[str]:
     permissions = set(ROLE_TEMPLATES.get(membership.role_key, set()))
     for override in membership.permission_overrides:
@@ -241,10 +301,22 @@ def _override_lists(membership: UserMembership) -> tuple[list[str], list[str]]:
     return allow, deny
 
 
-def build_user_response(user: User, membership: UserMembership):
+def _membership_summary(membership: UserMembership) -> dict:
+    allow_permissions, deny_permissions = _override_lists(membership)
+    return {
+        "company_scope": membership.company_scope,
+        "role_key": membership.role_key,
+        "is_active": membership.is_active,
+        "allow_permissions": allow_permissions,
+        "deny_permissions": deny_permissions,
+    }
+
+
+def build_user_response(user: User, membership: UserMembership, memberships: list[UserMembership] | None = None):
     from app.schemas.auth import MembershipResponse, UserResponse
 
     allow_permissions, deny_permissions = _override_lists(membership)
+    ordered_memberships = sorted(memberships or user.memberships, key=lambda item: (item.company_scope != CURRENT_COMPANY_SCOPE, item.company_scope))
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -259,6 +331,7 @@ def build_user_response(user: User, membership: UserMembership):
             deny_permissions=deny_permissions,
             effective_permissions=sorted(resolve_effective_permissions(membership)),
         ),
+        company_memberships=[_membership_summary(item) for item in ordered_memberships],
     )
 
 
@@ -295,13 +368,13 @@ def login_user(db: Session, email: str, password: str):
     user = db.query(User).filter(User.email == email.strip().lower()).first()
     if not user or not user.is_active or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    membership = _active_membership_for_scope(user)
+    membership = _first_active_membership(user)
     if not membership:
         raise HTTPException(status_code=403, detail="User does not have an active membership for this company")
     raw_token, _session = _issue_session(db, user, company_scope=membership.company_scope)
     db.commit()
     db.refresh(user)
-    return raw_token, build_user_response(user, membership)
+    return raw_token, build_user_response(user, membership, memberships=user.memberships)
 
 
 def _get_session_by_token(db: Session, raw_token: str) -> AuthSession | None:
@@ -316,12 +389,21 @@ def _get_session_by_token(db: Session, raw_token: str) -> AuthSession | None:
     return session
 
 
-def get_auth_context(db: Session, authorization: str | None, *, required: bool = True) -> AuthContext | None:
+def get_auth_context(
+    db: Session,
+    authorization: str | None,
+    requested_company_scope: str | None = None,
+    *,
+    session_cookie: str | None = None,
+    required: bool = True,
+) -> AuthContext | None:
     raw_token = None
     if authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() == "bearer" and token:
             raw_token = token.strip()
+    if not raw_token and isinstance(session_cookie, str) and session_cookie:
+        raw_token = session_cookie.strip()
     session = _get_session_by_token(db, raw_token)
     if not session:
         if required:
@@ -334,30 +416,47 @@ def get_auth_context(db: Session, authorization: str | None, *, required: bool =
     user = db.query(User).filter(User.id == session.user_id).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Authenticated user is inactive")
-    membership = _active_membership_for_scope(user, company_scope=session.company_scope)
+    membership = _active_membership_for_scope(user, company_scope=_normalize_company_scope(requested_company_scope or session.company_scope))
     if not membership:
         raise HTTPException(status_code=403, detail="Authenticated user does not have an active membership for this company")
 
+    session.company_scope = membership.company_scope
     session.last_used_at = _utcnow()
     db.flush()
     return AuthContext(user=user, membership=membership, session=session, permissions=resolve_effective_permissions(membership))
 
 
 def get_optional_auth_context(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_master_db),
     authorization: str | None = Header(default=None),
+    x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> AuthContext | None:
-    return get_auth_context(db, authorization, required=False)
+    return get_auth_context(
+        db,
+        authorization,
+        requested_company_scope=x_company_database,
+        session_cookie=session_cookie,
+        required=False,
+    )
 
 
 def require_permissions(*required_permissions: str):
     validated = tuple(validate_permission_keys(list(required_permissions)))
 
     def dependency(
-        db: Session = Depends(get_db),
+        db: Session = Depends(get_master_db),
         authorization: str | None = Header(default=None),
+        x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+        session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     ) -> AuthContext:
-        context = get_auth_context(db, authorization, required=True)
+        context = get_auth_context(
+            db,
+            authorization,
+            requested_company_scope=x_company_database,
+            session_cookie=session_cookie,
+            required=True,
+        )
         missing = [permission for permission in validated if permission not in context.permissions]
         if missing:
             raise HTTPException(status_code=403, detail=f"Missing required permissions: {', '.join(missing)}")
@@ -385,6 +484,53 @@ def _sync_permission_overrides(db: Session, membership: UserMembership, allow_pe
     db.flush()
 
 
+def _validated_company_scopes(db: Session, company_scopes: list[str] | None) -> list[str]:
+    available_scopes = {option["key"] for option in list_company_scope_options(db)}
+    result = []
+    for scope in company_scopes or [CURRENT_COMPANY_SCOPE]:
+        normalized = _normalize_company_scope(scope)
+        if normalized not in available_scopes:
+            raise HTTPException(status_code=400, detail=f"Unknown company scope: {scope}")
+        if normalized not in result:
+            result.append(normalized)
+    if not result:
+        result.append(CURRENT_COMPANY_SCOPE)
+    return result
+
+
+def _sync_company_memberships(
+    db: Session,
+    user: User,
+    *,
+    company_scopes: list[str],
+    role_key: str,
+    allow_permissions: list[str],
+    deny_permissions: list[str],
+    membership_active: bool,
+) -> list[UserMembership]:
+    desired_scopes = set(_validated_company_scopes(db, company_scopes))
+    existing_by_scope = {membership.company_scope: membership for membership in user.memberships}
+    synced_memberships = []
+
+    for scope in desired_scopes:
+        membership = existing_by_scope.get(scope)
+        if membership is None:
+            membership = UserMembership(user_id=user.id, company_scope=scope, role_key=role_key, is_active=membership_active)
+            db.add(membership)
+            db.flush()
+        else:
+            membership.role_key = role_key
+            membership.is_active = membership_active
+        _sync_permission_overrides(db, membership, allow_permissions, deny_permissions)
+        synced_memberships.append(membership)
+
+    for scope, membership in existing_by_scope.items():
+        if scope not in desired_scopes:
+            db.delete(membership)
+    db.flush()
+    return synced_memberships
+
+
 def create_user_account(
     db: Session,
     *,
@@ -394,6 +540,7 @@ def create_user_account(
     role_key: str,
     allow_permissions: list[str],
     deny_permissions: list[str],
+    company_scopes: list[str],
     is_active: bool,
 ):
     email = email.strip().lower()
@@ -403,14 +550,20 @@ def create_user_account(
     user = User(email=email, full_name=full_name.strip(), password_hash=hash_password(password), is_active=is_active)
     db.add(user)
     db.flush()
-    membership = UserMembership(user_id=user.id, company_scope=CURRENT_COMPANY_SCOPE, role_key=role_key, is_active=is_active)
-    db.add(membership)
-    db.flush()
-    _sync_permission_overrides(db, membership, allow_permissions, deny_permissions)
+    memberships = _sync_company_memberships(
+        db,
+        user,
+        company_scopes=company_scopes,
+        role_key=role_key,
+        allow_permissions=allow_permissions,
+        deny_permissions=deny_permissions,
+        membership_active=is_active,
+    )
     db.commit()
     db.refresh(user)
-    db.refresh(membership)
-    return build_user_response(user, membership)
+    primary_membership = _active_membership_for_scope(user) or memberships[0]
+    db.refresh(primary_membership)
+    return build_user_response(user, primary_membership, memberships=user.memberships)
 
 
 def update_user_account(
@@ -422,16 +575,14 @@ def update_user_account(
     role_key: str | None = None,
     allow_permissions: list[str] | None = None,
     deny_permissions: list[str] | None = None,
+    company_scopes: list[str] | None = None,
     is_active: bool | None = None,
     membership_active: bool | None = None,
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    membership = _active_membership_for_scope(user) or db.query(UserMembership).filter(
-        UserMembership.user_id == user.id,
-        UserMembership.company_scope == CURRENT_COMPANY_SCOPE,
-    ).first()
+    membership = _first_active_membership(user) or db.query(UserMembership).filter(UserMembership.user_id == user.id).first()
     if not membership:
         raise HTTPException(status_code=404, detail="User membership not found")
 
@@ -439,21 +590,36 @@ def update_user_account(
         user.full_name = full_name.strip()
     if password is not None:
         user.password_hash = hash_password(password)
-    if role_key is not None:
-        membership.role_key = validate_role_key(role_key)
+    effective_role_key = validate_role_key(role_key) if role_key is not None else membership.role_key
     if is_active is not None:
         user.is_active = is_active
-    if membership_active is not None:
-        membership.is_active = membership_active
-    if allow_permissions is not None or deny_permissions is not None:
-        _sync_permission_overrides(db, membership, allow_permissions or [], deny_permissions or [])
+    effective_membership_active = membership_active if membership_active is not None else membership.is_active
+    current_allow, current_deny = _override_lists(membership)
+    effective_allow_permissions = allow_permissions if allow_permissions is not None else current_allow
+    effective_deny_permissions = deny_permissions if deny_permissions is not None else current_deny
+    effective_company_scopes = company_scopes if company_scopes is not None else [item.company_scope for item in user.memberships]
+    memberships = _sync_company_memberships(
+        db,
+        user,
+        company_scopes=effective_company_scopes,
+        role_key=effective_role_key,
+        allow_permissions=effective_allow_permissions,
+        deny_permissions=effective_deny_permissions,
+        membership_active=effective_membership_active,
+    )
 
     db.commit()
     db.refresh(user)
-    db.refresh(membership)
-    return build_user_response(user, membership)
+    primary_membership = _active_membership_for_scope(user) or memberships[0]
+    db.refresh(primary_membership)
+    return build_user_response(user, primary_membership, memberships=user.memberships)
 
 
 def list_user_accounts(db: Session):
-    memberships = db.query(UserMembership).filter(UserMembership.company_scope == CURRENT_COMPANY_SCOPE).all()
-    return [build_user_response(membership.user, membership) for membership in memberships if membership.user]
+    users = db.query(User).order_by(User.full_name).all()
+    results = []
+    for user in users:
+        membership = _first_active_membership(user) or (user.memberships[0] if user.memberships else None)
+        if membership:
+            results.append(build_user_response(user, membership, memberships=user.memberships))
+    return results

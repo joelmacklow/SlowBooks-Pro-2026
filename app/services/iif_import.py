@@ -23,6 +23,7 @@ from app.models.items import Item, ItemType
 from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
 from app.models.payments import Payment, PaymentAllocation
 from app.models.estimates import Estimate, EstimateLine, EstimateStatus
+from app.models.transactions import Transaction
 from app.services.accounting import create_journal_entry, get_ar_account_id
 
 
@@ -136,7 +137,10 @@ def _parse_decimal(s: str) -> Decimal:
     if not s:
         return Decimal("0")
     try:
-        return Decimal(s.strip().replace(",", ""))
+        normalized = str(s).strip().strip('"').replace(",", "")
+        if not normalized:
+            return Decimal("0")
+        return Decimal(normalized)
     except InvalidOperation:
         return Decimal("0")
 
@@ -144,6 +148,73 @@ def _parse_decimal(s: str) -> Decimal:
 def _is_gst_split_account(account_name: str) -> bool:
     normalized = str(account_name or "").strip().lower()
     return normalized in {"gst", "sales tax payable"} or "tax" in normalized
+
+
+def _opening_balance_line_for_account(account: Account, amount: Decimal) -> dict | None:
+    if amount == 0:
+        return None
+    normalized_amount = abs(Decimal(str(amount)))
+    natural_debit = account.account_type in (AccountType.ASSET, AccountType.EXPENSE, AccountType.COGS)
+    use_debit = natural_debit if amount > 0 else not natural_debit
+    return {
+        "account_id": account.id,
+        "debit": normalized_amount if use_debit else Decimal("0"),
+        "credit": Decimal("0") if use_debit else normalized_amount,
+        "description": "IIF opening balance",
+    }
+
+
+def import_opening_balances(db: Session, rows: list) -> dict:
+    """Create a balanced opening-balance journal from ACCNT OBAMOUNT values."""
+    errors = []
+    journal_lines = []
+
+    for i, row in enumerate(rows):
+        amount = _parse_decimal(row.get("OBAMOUNT", ""))
+        if amount == 0:
+            continue
+
+        account = None
+        account_number = row.get("ACCNUM", "").strip()
+        if account_number:
+            account = db.query(Account).filter(Account.account_number == account_number).first()
+        if not account:
+            account_name = row.get("NAME", "").strip().split(":")[-1].strip()
+            if account_name:
+                account = db.query(Account).filter(Account.name == account_name).first()
+        if not account:
+            errors.append({"row": i + 1, "message": f"Opening balance account not found for row '{row.get('NAME', '').strip()}'"})
+            continue
+
+        line = _opening_balance_line_for_account(account, amount)
+        if line:
+            journal_lines.append(line)
+
+    if not journal_lines:
+        return {"errors": errors}
+
+    total_debit = sum((Decimal(str(line["debit"])) for line in journal_lines), Decimal("0"))
+    total_credit = sum((Decimal(str(line["credit"])) for line in journal_lines), Decimal("0"))
+    if total_debit != total_credit:
+        errors.append({
+            "row": 0,
+            "message": f"Opening balances are not balanced (debits={total_debit}, credits={total_credit})",
+        })
+        return {"errors": errors}
+
+    existing = db.query(Transaction).filter(Transaction.reference == "IIF-OPENING").first()
+    if existing:
+        return {"errors": errors}
+
+    create_journal_entry(
+        db,
+        date.today(),
+        "IIF import opening balances",
+        journal_lines,
+        source_type="iif_opening_balance",
+        reference="IIF-OPENING",
+    )
+    return {"errors": errors}
 
 
 # ============================================================================
@@ -865,6 +936,8 @@ def import_all(db: Session, content: str) -> dict:
         r = import_accounts(db, parsed["ACCNT"])
         result["accounts"] = r["imported"]
         result["errors"].extend(r["errors"])
+        opening_balance_result = import_opening_balances(db, parsed["ACCNT"])
+        result["errors"].extend(opening_balance_result["errors"])
 
     if parsed["CUST"]:
         r = import_customers(db, parsed["CUST"])

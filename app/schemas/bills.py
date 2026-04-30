@@ -98,6 +98,8 @@ class BillPaymentResponse(BaseModel):
     vendor_name: Optional[str] = None
     date: date_type
     amount: float
+    allocated_amount: float = 0
+    unallocated_amount: float = 0
     method: Optional[str] = None
     check_number: Optional[str] = None
     notes: Optional[str] = None

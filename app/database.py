@@ -9,6 +9,9 @@
 #       reconstruct from the disassembly + file format analysis.
 # ============================================================================
 
+from urllib.parse import urlparse, urlunparse
+
+from fastapi import Header
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -19,12 +22,76 @@ from app.config import DATABASE_URL
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+_session_factory_cache = {}
 
 
-def get_db():
+def _database_url_for_company(database_name: str | None) -> str:
+    if not database_name:
+        return DATABASE_URL
+    parsed = urlparse(DATABASE_URL)
+    if parsed.scheme.startswith("sqlite"):
+        if parsed.path in ("", "/:memory:"):
+            return DATABASE_URL
+        current_path = parsed.path
+        suffix = ".db" if "." not in current_path.rsplit("/", 1)[-1] else current_path.rsplit(".", 1)[-1]
+        filename = database_name if "." in database_name else f"{database_name}.{suffix.lstrip('.')}"
+        base_dir = current_path.rsplit("/", 1)[0]
+        return urlunparse(parsed._replace(path=f"{base_dir}/{filename}"))
+    return urlunparse(parsed._replace(path=f"/{database_name}"))
+
+
+def get_master_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def _session_factory_for_company(database_name: str | None):
+    if not database_name:
+        return SessionLocal
+    if database_name not in _session_factory_cache:
+        company_engine = create_engine(_database_url_for_company(database_name), pool_pre_ping=True)
+        _session_factory_cache[database_name] = sessionmaker(autocommit=False, autoflush=False, bind=company_engine)
+    return _session_factory_cache[database_name]
+
+
+def _authorized_company_database(
+    x_company_database: str | None,
+    authorization: str | None,
+) -> str | None:
+    if not x_company_database:
+        return None
+
+    from app.services.auth import CURRENT_COMPANY_SCOPE, get_auth_context
+
+    master_db = SessionLocal()
+    try:
+        context = get_auth_context(
+            master_db,
+            authorization,
+            requested_company_scope=x_company_database,
+            required=False,
+        )
+    finally:
+        master_db.close()
+
+    if not context or context.membership.company_scope == CURRENT_COMPANY_SCOPE:
+        return None
+    return context.membership.company_scope
+
+
+def get_db(
+    x_company_database: str | None = Header(default=None, alias="X-Company-Database"),
+    x_closing_date_password: str | None = Header(default=None, alias="X-Closing-Date-Password"),
+    authorization: str | None = Header(default=None),
+):
     # Reconstructed from CQBDatabase::AcquireConnection() at offset 0x0004A7C2
     # Original used connection pooling via Pervasive.SQL Workgroup Engine
-    db = SessionLocal()
+    db = _session_factory_for_company(_authorized_company_database(x_company_database, authorization))()
+    if hasattr(db, "info") and isinstance(db.info, dict):
+        db.info["closing_date_password"] = x_closing_date_password or None
     try:
         yield db
     finally:

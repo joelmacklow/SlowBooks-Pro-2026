@@ -6,6 +6,22 @@
  * table (RT_DIALOG id=0x00A7) that they forgot to rename. Classic.
  */
 const VendorsPage = {
+    _detailState: null,
+    _defaultPaymentTerms() {
+        return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    _paymentTermLabels(settings = {}) {
+        const raw = String(settings.payment_terms_config || '').trim();
+        if (!raw) return VendorsPage._defaultPaymentTerms();
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : VendorsPage._defaultPaymentTerms();
+    },
+
     async render() {
         const vendors = await API.get('/vendors');
         const canManageVendors = App.hasPermission ? App.hasPermission('contacts.manage') : true;
@@ -24,7 +40,7 @@ const VendorsPage = {
                     <th>Default Expense</th><th class="amount">Balance</th><th>Actions</th>
                 </tr></thead><tbody>`;
             for (const v of vendors) {
-                html += `<tr>
+                html += `<tr class="clickable vendor-row" onclick="VendorsPage.view(${v.id})">
                     <td><strong>${escapeHtml(v.name)}</strong></td>
                     <td>${escapeHtml(v.company) || ''}</td>
                     <td>${escapeHtml(v.phone) || ''}</td>
@@ -32,13 +48,95 @@ const VendorsPage = {
                     <td>${v.default_expense_account_id ? `#${v.default_expense_account_id}` : ''}</td>
                     <td class="amount">${formatCurrency(v.balance)}</td>
                     <td class="actions">
-                        ${canManageVendors ? `<button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${v.id})">Edit</button>` : ''}
+                        ${canManageVendors ? `<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); VendorsPage.showForm(${v.id})">Edit</button>` : ''}
                     </td>
                 </tr>`;
             }
             html += `</tbody></table></div>`;
         }
         return html;
+    },
+
+    async view(id) {
+        const [vendor, items, bills, payments] = await Promise.all([
+            API.get(`/vendors/${id}`),
+            API.get(`/items?active_only=true&vendor_id=${id}`),
+            API.get(`/bills?vendor_id=${id}`),
+            API.get(`/bill-payments?vendor_id=${id}`),
+        ]);
+        VendorsPage._detailState = { vendor, items, bills, payments };
+        App.navigate('#/vendors/detail');
+    },
+
+    renderDetailScreen() {
+        const state = VendorsPage._detailState;
+        if (!state) {
+            return `<div class="empty-state"><p>Select a vendor first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/vendors')">Back to Vendors</button></p></div>`;
+        }
+        const { vendor, items, bills, payments } = state;
+        const outstandingBills = (bills || []).filter(bill => ['unpaid', 'partial'].includes(String(bill.status || '')));
+        const creditBalance = (payments || []).reduce((sum, payment) => sum + (Number(payment.unallocated_amount || 0)), 0);
+        const itemRows = (items || []).map(item => `<tr>
+            <td><button class="btn btn-link" onclick="ItemsPage.showForm(${item.id})">${escapeHtml(item.name || '')}</button></td>
+            <td>${escapeHtml(item.description || '')}</td>
+            <td class="amount">${formatCurrency(item.rate || 0)}</td>
+            <td class="amount">${formatCurrency(item.cost || 0)}</td>
+        </tr>`).join('') || '<tr><td colspan="4">No preferred-supplier items yet</td></tr>';
+        const billRows = (bills || []).map(bill => `<tr>
+            <td><button class="btn btn-link" onclick="BillsPage.view(${bill.id})">${escapeHtml(bill.bill_number || '')}</button></td>
+            <td>${formatDate(bill.date)}</td>
+            <td>${statusBadge(bill.status)}</td>
+            <td class="amount">${formatCurrency(bill.total || 0)}</td>
+            <td class="amount">${formatCurrency(bill.balance_due || 0)}</td>
+        </tr>`).join('') || '<tr><td colspan="5">No bills yet</td></tr>';
+        const paymentRows = (payments || []).map(payment => `<tr>
+            <td>${formatDate(payment.date)}</td>
+            <td>${escapeHtml(payment.method || '—')}</td>
+            <td>${escapeHtml(payment.check_number || '—')}</td>
+            <td class="amount">${formatCurrency(payment.amount || 0)}</td>
+            <td class="amount">${formatCurrency(payment.unallocated_amount || 0)}</td>
+        </tr>`).join('') || '<tr><td colspan="5">No payments yet</td></tr>';
+        return `
+            <div class="page-header">
+                <div>
+                    <h2>${escapeHtml(vendor.name)}</h2>
+                    <div style="font-size:12px; color:var(--text-muted);">${escapeHtml(vendor.company || '')}</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="App.navigate('#/vendors')">Back to Vendors</button>
+                    ${App.hasPermission && App.hasPermission('contacts.manage') ? `<button class="btn btn-primary" onclick="VendorsPage.showForm(${vendor.id})">Edit Vendor</button>` : ''}
+                </div>
+            </div>
+            <div class="card-grid">
+                <div class="card"><div class="card-header">Balance</div><div class="card-value">${formatCurrency(vendor.balance || 0)}</div></div>
+                <div class="card"><div class="card-header">Credit Balance</div><div class="card-value">${formatCurrency(creditBalance)}</div><div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Unallocated bill payments</div></div>
+                <div class="card"><div class="card-header">Outstanding Bills</div><div class="card-value">${outstandingBills.length}</div></div>
+            </div>
+            <div class="settings-section">
+                <h3>Vendor Details</h3>
+                <div class="form-grid">
+                    <div><strong>Terms</strong><br>${escapeHtml(vendor.terms || '—')}</div>
+                    <div><strong>Tax ID</strong><br>${escapeHtml(vendor.tax_id || '—')}</div>
+                    <div><strong>Account #</strong><br>${escapeHtml(vendor.account_number || '—')}</div>
+                    <div><strong>Default Expense</strong><br>${vendor.default_expense_account_id ? `#${escapeHtml(String(vendor.default_expense_account_id))}` : '—'}</div>
+                    <div><strong>Email</strong><br>${escapeHtml(vendor.email || '—')}</div>
+                    <div><strong>Phone</strong><br>${escapeHtml(vendor.phone || '—')}</div>
+                    <div><strong>Address</strong><br>${escapeHtml([vendor.address1, vendor.address2, vendor.city, vendor.state, vendor.zip].filter(Boolean).join(', ') || '—')}</div>
+                    <div><strong>Notes</strong><br>${escapeHtml(vendor.notes || '—')}</div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Preferred Items</h3>
+                <div class="table-container"><table><thead><tr><th>Item</th><th>Description</th><th class="amount">Rate</th><th class="amount">Cost</th></tr></thead><tbody>${itemRows}</tbody></table></div>
+            </div>
+            <div class="settings-section">
+                <h3>Bills</h3>
+                <div class="table-container"><table><thead><tr><th>#</th><th>Date</th><th>Status</th><th class="amount">Total</th><th class="amount">Balance</th></tr></thead><tbody>${billRows}</tbody></table></div>
+            </div>
+            <div class="settings-section">
+                <h3>Payment History</h3>
+                <div class="table-container"><table><thead><tr><th>Date</th><th>Method</th><th>Reference</th><th class="amount">Amount</th><th class="amount">Unallocated</th></tr></thead><tbody>${paymentRows}</tbody></table></div>
+            </div>`;
     },
 
     async showForm(id = null) {
@@ -49,6 +147,13 @@ const VendorsPage = {
         const v = vendor || { name:'', company:'', email:'', phone:'', fax:'', website:'',
             address1:'', address2:'', city:'', state:'', zip:'', country:'NZ',
             terms:'Net 30', tax_id:'', account_number:'', default_expense_account_id:'', notes:'' };
+        let settings = {};
+        try {
+            settings = await API.get('/settings/public');
+        } catch (_err) {}
+        if (!id && settings.default_terms) v.terms = settings.default_terms;
+        const termOptions = VendorsPage._paymentTermLabels(settings).map(t =>
+            `<option ${v.terms===t?'selected':''}>${t}</option>`).join('');
         const expenseOptions = accounts.map(account => `<option value="${account.id}" ${String(v.default_expense_account_id || '') === String(account.id) ? 'selected' : ''}>${escapeHtml(account.account_number || '')} - ${escapeHtml(account.name)}</option>`).join('');
 
         openModal(id ? 'Edit Vendor' : 'New Vendor', `
@@ -84,8 +189,7 @@ const VendorsPage = {
                 <div class="form-grid" style="margin-top:16px;">
                     <div class="form-group"><label>Terms</label>
                         <select name="terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${v.terms===t?'selected':''}>${t}</option>`).join('')}
+                            ${termOptions}
                         </select></div>
                     <div class="form-group"><label>Tax ID</label>
                         <input name="tax_id" value="${escapeHtml(v.tax_id || '')}"></div>

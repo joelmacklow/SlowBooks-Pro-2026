@@ -3,6 +3,156 @@
  * Feature 2: Weekly/monthly/quarterly/yearly templates
  */
 const RecurringPage = {
+    _items: [],
+    _customers: [],
+    _settings: {},
+    _detailState: null,
+    lineCount: 0,
+    paymentTermLabels() {
+        const raw = String(RecurringPage._settings?.payment_terms_config || '').trim();
+        if (!raw) return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    paymentTermEntries() {
+        const raw = String(RecurringPage._settings?.payment_terms_config || '').trim();
+        const defaults = [
+            { label: 'Net 15', rule: 'net:15' },
+            { label: 'Net 30', rule: 'net:30' },
+            { label: 'Net 45', rule: 'net:45' },
+            { label: 'Net 60', rule: 'net:60' },
+            { label: 'Due on Receipt', rule: 'days:0' },
+        ];
+        if (!raw) return defaults;
+        const entries = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => {
+                if (line.includes('|')) {
+                    const [label, rule] = line.split('|', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                if (line.includes('=')) {
+                    const [label, rule] = line.split('=', 2);
+                    return { label: label.trim(), rule: (rule || '').trim() || 'manual' };
+                }
+                return { label: line, rule: 'manual' };
+            })
+            .filter(entry => entry.label);
+        return entries.length ? entries : defaults;
+    },
+
+    parseIsoDate(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const [year, month, day] = raw.split('-').map(part => parseInt(part, 10));
+        if (!year || !month || !day) return null;
+        return new Date(Date.UTC(year, month - 1, day));
+    },
+
+    formatIsoDate(value) {
+        if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
+        const year = value.getUTCFullYear();
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(value.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    },
+
+    addDays(dateValue, days) {
+        const copy = new Date(dateValue.getTime());
+        copy.setUTCDate(copy.getUTCDate() + days);
+        return copy;
+    },
+
+    addMonthsClamped(dateValue, months) {
+        const year = dateValue.getUTCFullYear();
+        const monthIndex = dateValue.getUTCMonth();
+        const day = dateValue.getUTCDate();
+        const targetMonthIndex = monthIndex + months;
+        const targetYear = year + Math.floor(targetMonthIndex / 12);
+        const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+        const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+        return new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay)));
+    },
+
+    advanceNextInvoiceDate(current, frequency) {
+        if (!(current instanceof Date) || Number.isNaN(current.getTime())) return null;
+        if (frequency === 'weekly') return RecurringPage.addDays(current, 7);
+        if (frequency === 'quarterly') return RecurringPage.addMonthsClamped(current, 3);
+        if (frequency === 'yearly') return RecurringPage.addMonthsClamped(current, 12);
+        return RecurringPage.addMonthsClamped(current, 1);
+    },
+
+    applyDueDateRule(baseDate, rule) {
+        if (!(baseDate instanceof Date) || Number.isNaN(baseDate.getTime())) return null;
+        const rawRule = String(rule || '').trim().toLowerCase();
+        if (!rawRule || rawRule === 'manual') return RecurringPage.addDays(baseDate, 30);
+        if (rawRule === 'receipt') return baseDate;
+        if (rawRule.startsWith('net:') || rawRule.startsWith('days:')) {
+            const value = parseInt(rawRule.split(':', 2)[1], 10);
+            return RecurringPage.addDays(baseDate, Number.isFinite(value) ? value : 30);
+        }
+        if (rawRule.startsWith('next_month_day:')) {
+            const requestedDay = parseInt(rawRule.split(':', 2)[1], 10);
+            const nextMonth = RecurringPage.addMonthsClamped(new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 1)), 1);
+            const year = nextMonth.getUTCFullYear();
+            const month = nextMonth.getUTCMonth();
+            const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            return new Date(Date.UTC(year, month, Math.min(Number.isFinite(requestedDay) ? requestedDay : 1, lastDay)));
+        }
+        return RecurringPage.addDays(baseDate, 30);
+    },
+
+    termRuleForLabel(label) {
+        const entry = RecurringPage.paymentTermEntries().find(term => term.label === label);
+        return entry?.rule || 'manual';
+    },
+
+    schedulePreview(source = null) {
+        const rec = source || RecurringPage._detailState || {};
+        const startDate = RecurringPage.parseIsoDate(rec.start_date);
+        const frequency = rec.frequency || 'monthly';
+        const terms = rec.terms || 'Net 30';
+        if (!startDate) return { nextInvoiceDate: '', invoiceDueDate: '' };
+
+        const today = RecurringPage.parseIsoDate(todayISO()) || new Date();
+        let nextInvoiceDate = new Date(startDate.getTime());
+        while (nextInvoiceDate < today) {
+            nextInvoiceDate = RecurringPage.advanceNextInvoiceDate(nextInvoiceDate, frequency);
+        }
+        const invoiceDueDate = RecurringPage.applyDueDateRule(nextInvoiceDate, RecurringPage.termRuleForLabel(terms));
+        return {
+            nextInvoiceDate: RecurringPage.formatIsoDate(nextInvoiceDate),
+            invoiceDueDate: RecurringPage.formatIsoDate(invoiceDueDate),
+        };
+    },
+
+    currentScheduleFormState() {
+        const base = RecurringPage._detailState || {};
+        const frequencyField = $('#recurring-frequency');
+        const startField = $('#recurring-start-date');
+        const termsField = $('#recurring-terms');
+        return {
+            ...base,
+            frequency: frequencyField?.value || base.frequency || 'monthly',
+            start_date: startField?.value || base.start_date || '',
+            terms: termsField?.value || base.terms || 'Net 30',
+        };
+    },
+
+    updateSchedulePreview() {
+        const preview = RecurringPage.schedulePreview(RecurringPage.currentScheduleFormState());
+        const nextInvoiceEl = $('#rec-next-invoice-date');
+        const duePreviewEl = $('#rec-invoice-due-preview');
+        if (nextInvoiceEl) nextInvoiceEl.value = preview.nextInvoiceDate || '';
+        if (duePreviewEl) duePreviewEl.value = preview.invoiceDueDate || '';
+    },
+
     async render() {
         const recs = await API.get('/recurring');
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
@@ -10,7 +160,7 @@ const RecurringPage = {
             <div class="page-header">
                 <h2>Recurring Invoices</h2>
                 <div class="btn-group">
-                    ${canManageSales ? `<button class="btn btn-primary" onclick="RecurringPage.showForm()">+ New Recurring</button>
+                    ${canManageSales ? `<button class="btn btn-primary" onclick="RecurringPage.startNew()">+ New Recurring</button>
                     <button class="btn btn-secondary" onclick="RecurringPage.generateNow()">Generate Due Now</button>` : ''}
                 </div>
             </div>`;
@@ -28,7 +178,7 @@ const RecurringPage = {
                     <td>${r.is_active ? '<span class="badge badge-paid">Active</span>' : '<span class="badge badge-draft">Inactive</span>'}</td>
                     <td style="font-family:var(--font-mono);">${r.invoices_created}</td>
                     <td class="actions">
-                        ${canManageSales ? `<button class="btn btn-sm btn-secondary" onclick="RecurringPage.showForm(${r.id})">Edit</button>
+                        ${canManageSales ? `<button class="btn btn-sm btn-secondary" onclick="RecurringPage.open(${r.id})">Edit</button>
                         <button class="btn btn-sm btn-danger" onclick="RecurringPage.del(${r.id})">Delete</button>` : ''}
                     </td>
                 </tr>`;
@@ -38,11 +188,24 @@ const RecurringPage = {
         return html;
     },
 
-    _items: [],
-    _customers: [],
-    lineCount: 0,
+    async startNew(originHash = '#/recurring') {
+        App.setDetailOrigin('#/recurring/detail', originHash);
+        await RecurringPage._loadEditorContext(null);
+        App.navigate('#/recurring/detail');
+    },
+
+    async open(id, originHash = '#/recurring') {
+        App.setDetailOrigin('#/recurring/detail', originHash);
+        await RecurringPage._loadEditorContext(id);
+        App.navigate('#/recurring/detail');
+    },
 
     async showForm(id = null) {
+        if (id) return RecurringPage.open(id);
+        return RecurringPage.startNew();
+    },
+
+    async _loadEditorContext(id = null) {
         const [customers, items, settings, gstCodes] = await Promise.all([
             API.get('/customers?active_only=true'),
             API.get('/items?active_only=true'),
@@ -52,8 +215,10 @@ const RecurringPage = {
         App.gstCodes = gstCodes;
         RecurringPage._items = items;
         RecurringPage._customers = customers;
+        RecurringPage._settings = settings;
 
         let rec = {
+            id: null,
             customer_id: '',
             frequency: 'monthly',
             start_date: todayISO(),
@@ -64,58 +229,133 @@ const RecurringPage = {
             lines: [],
         };
         if (id) rec = await API.get(`/recurring/${id}`);
-        if (rec.lines.length === 0) rec.lines = [{ item_id: '', description: '', quantity: 1, rate: 0 }];
+        if (!rec.lines || rec.lines.length === 0) rec.lines = [{ item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }];
         RecurringPage.lineCount = rec.lines.length;
+        RecurringPage._detailState = rec;
+    },
 
-        const custOpts = customers.map(c => `<option value="${c.id}" ${rec.customer_id==c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
-        const itemOpts = items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+    _totals(lines) {
+        return calculateGstTotals((lines || []).map(line => ({
+            quantity: parseFloat(line.quantity) || 0,
+            rate: parseFloat(line.rate) || 0,
+            gst_code: line.gst_code || 'GST15',
+            gst_rate: line.gst_rate || 0,
+        })));
+    },
 
-        openModal(id ? 'Edit Recurring Invoice' : 'New Recurring Invoice', `
-            <form onsubmit="RecurringPage.save(event, ${id})">
-                <div class="form-grid">
-                    <div class="form-group"><label>Customer *</label>
-                        <select name="customer_id" required onchange="RecurringPage.customerSelected(this.value)"><option value="">Select...</option>${custOpts}</select></div>
-                    <div class="form-group"><label>Frequency *</label>
-                        <select name="frequency">
-                            ${['weekly','monthly','quarterly','yearly'].map(f =>
-                                `<option ${rec.frequency===f?'selected':''}>${f}</option>`).join('')}
-                        </select></div>
-                    <div class="form-group"><label>Start Date *</label>
-                        <input name="start_date" type="date" required value="${rec.start_date}"></div>
-                    <div class="form-group"><label>End Date</label>
-                        <input name="end_date" type="date" value="${rec.end_date || ''}"></div>
-                    <div class="form-group"><label>Terms</label>
-                        <select name="terms" id="recurring-terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option value="${t}" ${rec.terms===t?'selected':''}>${t}</option>`).join('')}
-                        </select></div>
-                    <input name="tax_rate" type="hidden" value="${(rec.tax_rate * 100) || 0}">
+    customerOptionsHtml(selectedId = null) {
+        return (RecurringPage._customers || []).map(c => `<option value="${c.id}" ${selectedId == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+    },
+
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return RecurringPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
+    },
+
+    filteredItems(query, selectedItemId = null) {
+        return (RecurringPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return RecurringPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${RecurringPage.itemOptionLabel(i)}</option>`).join('');
+    },
+
+    renderDetailScreen() {
+        const rec = RecurringPage._detailState;
+        const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
+        if (!rec) {
+            return `<div class="empty-state"><p>Select a recurring invoice or create a new one first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/recurring')">Back to Recurring Invoices</button></p></div>`;
+        }
+        const totals = RecurringPage._totals(rec.lines || []);
+        const customerOptions = RecurringPage.customerOptionsHtml(rec.customer_id);
+        const preview = RecurringPage.schedulePreview(rec);
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Sales</div>
+                    <h2>${rec.id ? 'Edit Recurring Invoice' : 'New Recurring Invoice'}</h2>
                 </div>
-                <h3 style="margin:12px 0 8px;font-size:14px;">Line Items</h3>
-                <table class="line-items-table">
-                    <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th></tr></thead>
-                    <tbody id="rec-lines">
-                        ${rec.lines.map((l, i) => {
-                            const opts = items.map(it => `<option value="${it.id}" ${l.item_id==it.id?'selected':''}>${escapeHtml(it.name)}</option>`).join('');
-                            return `<tr data-recline="${i}">
-                                <td><select class="line-item"><option value="">--</option>${opts}</select></td>
-                                <td><input class="line-desc" value="${escapeHtml(l.description || '')}"></td>
-                                <td><input class="line-qty" type="number" step="0.01" value="${l.quantity || 1}"></td>
-                                <td><select class="line-gst">${gstOptionsHtml(l.gst_code || 'GST15')}</select></td>
-                                <td><input class="line-rate" type="number" step="0.01" value="${l.rate || 0}"></td>
-                            </tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
-                <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="RecurringPage.addLine()">+ Add Line</button>
-                <div class="form-group" style="margin-top:12px;"><label>Notes</label>
-                    <textarea name="notes">${escapeHtml(rec.notes || '')}</textarea></div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">${id ? 'Update' : 'Create'}</button>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/recurring/detail', '#/recurring')">${App.detailBackLabel('#/recurring/detail', '#/recurring', 'Recurring Invoices')}</button>
                 </div>
-            </form>`);
-        if (!id && rec.customer_id) RecurringPage.customerSelected(rec.customer_id);
+            </div>
+            <form id="recurring-form" onsubmit="RecurringPage.save(event, ${rec.id || 'null'})">
+                <div class="settings-section">
+                    <div class="form-grid">
+                        <div class="form-group"><label>Customer *</label>
+                            <select name="customer_id" required onchange="RecurringPage.customerSelected(this.value)" ${canManageSales ? '' : 'disabled'}><option value="">Select...</option>${customerOptions}</select></div>
+                        <div class="form-group"><label>Frequency *</label>
+                            <select id="recurring-frequency" name="frequency" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}>
+                                ${['weekly','monthly','quarterly','yearly'].map(f =>
+                                    `<option value="${f}" ${rec.frequency===f?'selected':''}>${f}</option>`).join('')}
+                            </select></div>
+                        <div class="form-group"><label>Start Date *</label>
+                            <input id="recurring-start-date" name="start_date" type="date" required value="${rec.start_date || ''}" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}></div>
+                        <div class="form-group"><label>End Date</label>
+                            <input name="end_date" type="date" value="${rec.end_date || ''}" ${canManageSales ? '' : 'disabled'}></div>
+                        <div class="form-group"><label>Terms</label>
+                            <select name="terms" id="recurring-terms" onchange="RecurringPage.updateSchedulePreview()" ${canManageSales ? '' : 'disabled'}>
+                                ${RecurringPage.paymentTermLabels().map(t =>
+                                    `<option value="${t}" ${rec.terms===t?'selected':''}>${t}</option>`).join('')}
+                            </select></div>
+                        <div class="form-group"><label>Next Invoice Date</label>
+                            <input id="rec-next-invoice-date" value="${escapeHtml(preview.nextInvoiceDate || rec.next_due || rec.start_date || 'Calculated on save')}" disabled></div>
+                        <div class="form-group"><label>Invoice Due Date</label>
+                            <input id="rec-invoice-due-preview" value="${escapeHtml(preview.invoiceDueDate || 'Calculated from terms')}" disabled></div>
+                        <div class="form-group"><label>Status</label>
+                            <input value="${rec.is_active === false ? 'inactive' : 'active'}" disabled></div>
+                        <div class="form-group"><label>Invoices Created</label>
+                            <input value="${escapeHtml(String(rec.invoices_created || 0))}" disabled></div>
+                        <input name="tax_rate" type="hidden" value="${(parseFloat(rec.tax_rate || 0) * 100) || 0}">
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Line Items</h3>
+                    <table class="line-items-table">
+                        <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th><th></th></tr></thead>
+                        <tbody id="rec-lines">
+                            ${(rec.lines || []).map((l, i) => RecurringPage.lineRowHtml(i, l, RecurringPage._items, canManageSales)).join('')}
+                        </tbody>
+                    </table>
+                    ${canManageSales ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="RecurringPage.addLine()">+ Add Line</button>' : ''}
+                </div>
+                <div class="settings-section">
+                    <div style="display:grid; grid-template-columns: 1.4fr 0.8fr; gap:16px; align-items:start;">
+                        <div class="form-group"><label>Notes</label>
+                            <textarea name="notes" rows="5" ${canManageSales ? '' : 'disabled'}>${escapeHtml(rec.notes || '')}</textarea></div>
+                        <div>
+                            <div class="table-container"><table>
+                                <tbody>
+                                    <tr><td><strong>Subtotal</strong></td><td class="amount" id="rec-subtotal">${formatCurrency(totals.subtotal)}</td></tr>
+                                    <tr><td><strong>Tax</strong></td><td class="amount" id="rec-tax">${formatCurrency(totals.tax_amount)}</td></tr>
+                                    <tr><td><strong>Template Total</strong></td><td class="amount" id="rec-total">${formatCurrency(totals.total)}</td></tr>
+                                </tbody>
+                            </table></div>
+                        </div>
+                    </div>
+                </div>
+                ${canManageSales ? `<div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/recurring/detail', '#/recurring')">Cancel</button>
+                    ${rec.id ? '' : `<button type="button" class="btn btn-secondary" onclick="RecurringPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>`}
+                    <button type="submit" class="btn btn-primary">${rec.id ? 'Update Recurring Invoice' : 'Create'}</button>
+                </div>` : ''}
+            </form>`;
     },
 
     customerSelected(customerId) {
@@ -126,20 +366,111 @@ const RecurringPage = {
         }
     },
 
-    addLine() {
-        const idx = RecurringPage.lineCount++;
-        const itemOpts = RecurringPage._items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
-        $('#rec-lines').insertAdjacentHTML('beforeend', `
-            <tr data-recline="${idx}">
-                <td><select class="line-item"><option value="">--</option>${itemOpts}</select></td>
-                <td><input class="line-desc"></td>
-                <td><input class="line-qty" type="number" step="0.01" value="1"></td>
-                <td><select class="line-gst">${gstOptionsHtml('GST15')}</select></td>
-                <td><input class="line-rate" type="number" step="0.01" value="0"></td>
-            </tr>`);
+    lineRowHtml(idx, line, items, canManage = true) {
+        const itemOpts = RecurringPage.itemOptionsHtml(items, line.item_id);
+        return `<tr data-recline="${idx}">
+            <td><select class="line-item" onchange="RecurringPage.itemSelected(${idx})" onkeydown="RecurringPage.handleItemKeydown(${idx}, event)" onblur="RecurringPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}><option value="">--</option>${itemOpts}</select></td>
+            <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
+            <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="RecurringPage.recalc()" ${canManage ? '' : 'disabled'}></td>
+            <td><select class="line-gst" onchange="RecurringPage.recalc()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
+            <td><input class="line-rate" type="number" step="0.01" value="${line.rate || 0}" oninput="RecurringPage.recalc()" ${canManage ? '' : 'disabled'}></td>
+            <td class="col-amount line-amount">${formatCurrency((line.quantity||1) * (line.rate||0))}</td>
+            <td>${canManage ? `<button type="button" class="btn btn-sm btn-secondary" onclick="RecurringPage.removeLine(${idx})">Remove</button>` : ''}</td>
+        </tr>`;
     },
 
-    async save(e, id) {
+    addLine() {
+        const tbody = $('#rec-lines');
+        const idx = RecurringPage.lineCount++;
+        tbody.insertAdjacentHTML('beforeend', RecurringPage.lineRowHtml(idx, {}, RecurringPage._items, true));
+    },
+
+    removeLine(idx) {
+        const row = $(`[data-recline="${idx}"]`);
+        if (row) row.remove();
+        RecurringPage.recalc();
+    },
+
+    itemSelected(idx) {
+        const row = $(`[data-recline="${idx}"]`);
+        const itemId = row.querySelector('.line-item').value;
+        const item = RecurringPage._items.find(i => i.id == itemId);
+        if (item) {
+            row.querySelector('.line-desc').value = item.description || item.name;
+            row.querySelector('.line-rate').value = item.rate;
+            RecurringPage.recalc();
+        }
+    },
+
+    applyItemFilter(idx, query) {
+        const row = $(`[data-recline="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = RecurringPage.filteredItems(query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${RecurringPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
+        }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-recline="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            RecurringPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            RecurringPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            RecurringPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-recline="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        itemSelect.innerHTML = `<option value="">--</option>${RecurringPage.itemOptionsHtml(RecurringPage._items || [], currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
+    },
+
+    recalc() {
+        const lines = [];
+        $$('#rec-lines tr').forEach(row => {
+            const payload = readGstLinePayload(row);
+            const amount = payload.quantity * payload.rate;
+            lines.push(payload);
+            const amountCell = row.querySelector('.line-amount');
+            if (amountCell) amountCell.textContent = formatCurrency(amount);
+        });
+        const totals = calculateGstTotals(lines);
+        if ($('#rec-subtotal')) $('#rec-subtotal').textContent = formatCurrency(totals.subtotal);
+        if ($('#rec-tax')) $('#rec-tax').textContent = formatCurrency(totals.tax_amount);
+        if ($('#rec-total')) $('#rec-total').textContent = formatCurrency(totals.total);
+    },
+
+    async submitWithAction(e, id, action) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const form = e?.target?.form || e?.target?.closest?.('form');
+        if (!form) return;
+        await RecurringPage.save({ preventDefault() {}, target: form }, id, action);
+    },
+
+    async save(e, id, afterAction = null) {
         e.preventDefault();
         const form = e.target;
         const lines = [];
@@ -166,9 +497,21 @@ const RecurringPage = {
             lines,
         };
         try {
-            if (id) { await API.put(`/recurring/${id}`, data); toast('Recurring updated'); }
-            else { await API.post('/recurring', data); toast('Recurring created'); }
-            closeModal();
+            if (id) {
+                await API.put(`/recurring/${id}`, data);
+                toast('Recurring updated');
+                RecurringPage._detailState = null;
+                App.navigate('#/recurring');
+                return;
+            }
+            await API.post('/recurring', data);
+            toast('Recurring created');
+            if (afterAction === 'add-new') {
+                await RecurringPage._loadEditorContext(null);
+                App.navigate('#/recurring/detail');
+                return;
+            }
+            RecurringPage._detailState = null;
             App.navigate('#/recurring');
         } catch (err) { toast(err.message, 'error'); }
     },

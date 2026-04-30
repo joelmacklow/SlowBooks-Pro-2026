@@ -7,52 +7,90 @@
  * up the tree. We skipped the hierarchy. Life is too short.
  */
 const ItemsPage = {
+    _searchQuery: '',
+    _searchEndpoint() {
+        const query = String(ItemsPage._searchQuery || '').trim();
+        return query ? `/items?search=${encodeURIComponent(query)}` : '/items';
+    },
+
+    renderItemsTable(items = [], canManageItems = true) {
+        if (items.length === 0) {
+            return `<div class="empty-state"><p>${String(ItemsPage._searchQuery || '').trim() ? 'No items match this search' : 'No items yet'}</p></div>`;
+        }
+        let html = `<div class="table-container"><table>
+            <thead><tr>
+                <th>Code</th><th>Name</th><th>Type</th><th>Description</th>
+                <th class="amount">Rate</th><th class="amount">Cost</th><th>Actions</th>
+            </tr></thead><tbody>`;
+        for (const item of items) {
+            html += `<tr>
+                <td>${escapeHtml(item.code || '')}</td>
+                <td><strong>${escapeHtml(item.name)}</strong></td>
+                <td>${statusBadge(item.item_type)}</td>
+                <td>${escapeHtml(item.description) || ''}</td>
+                <td class="amount">${formatCurrency(item.rate)}</td>
+                <td class="amount">${formatCurrency(item.cost)}</td>
+                <td class="actions">
+                    ${canManageItems ? `<button class="btn btn-sm btn-secondary" onclick="ItemsPage.showForm(${item.id})">Edit</button>` : ''}
+                </td>
+            </tr>`;
+        }
+        html += `</tbody></table></div>`;
+        return html;
+    },
+
     async render() {
-        const items = await API.get('/items');
+        const items = await API.get(ItemsPage._searchEndpoint());
         const canManageItems = App.hasPermission ? App.hasPermission('items.manage') : true;
         let html = `
             <div class="page-header">
                 <h2>Items & Services</h2>
                 ${canManageItems ? `<button class="btn btn-primary" onclick="ItemsPage.showForm()">+ New Item</button>` : ''}
-            </div>`;
-
-        if (items.length === 0) {
-            html += `<div class="empty-state"><p>No items yet</p></div>`;
-        } else {
-            html += `<div class="table-container"><table>
-                <thead><tr>
-                    <th>Name</th><th>Type</th><th>Description</th>
-                    <th class="amount">Rate</th><th class="amount">Cost</th><th>Actions</th>
-                </tr></thead><tbody>`;
-            for (const item of items) {
-                html += `<tr>
-                    <td><strong>${escapeHtml(item.name)}</strong></td>
-                    <td>${statusBadge(item.item_type)}</td>
-                    <td>${escapeHtml(item.description) || ''}</td>
-                    <td class="amount">${formatCurrency(item.rate)}</td>
-                    <td class="amount">${formatCurrency(item.cost)}</td>
-                    <td class="actions">
-                        ${canManageItems ? `<button class="btn btn-sm btn-secondary" onclick="ItemsPage.showForm(${item.id})">Edit</button>` : ''}
-                    </td>
-                </tr>`;
-            }
-            html += `</tbody></table></div>`;
-        }
+            </div>
+            <div class="toolbar">
+                <input
+                    type="search"
+                    placeholder="Search by code or name"
+                    value="${escapeHtml(ItemsPage._searchQuery || '')}"
+                    oninput="ItemsPage.applySearch(this.value)">
+            </div>
+            <div id="items-table-wrap">${ItemsPage.renderItemsTable(items, canManageItems)}</div>`;
         return html;
     },
 
+    async applySearch(value = '') {
+        ItemsPage._searchQuery = String(value || '');
+        const page = typeof $ === 'function' ? $('#page-content') : null;
+        if (!page) return;
+        const items = await API.get(ItemsPage._searchEndpoint());
+        const canManageItems = App.hasPermission ? App.hasPermission('items.manage') : true;
+        const wrap = page.querySelector ? page.querySelector('#items-table-wrap') : null;
+        if (wrap) {
+            wrap.innerHTML = ItemsPage.renderItemsTable(items, canManageItems);
+            return;
+        }
+        page.innerHTML = await ItemsPage.render();
+    },
+
     async showForm(id = null) {
-        let item = { name:'', item_type:'service', description:'', rate:0, cost:0,
-            income_account_id:'', expense_account_id:'', is_taxable:true };
+        let item = { code:'', name:'', item_type:'service', description:'', rate:0, cost:0,
+            vendor_id:'', income_account_id:'', expense_account_id:'', is_taxable:true };
         if (id) item = await API.get(`/items/${id}`);
 
-        const accounts = await API.get('/accounts');
+        const [accounts, vendors] = await Promise.all([
+            API.get('/accounts'),
+            API.get('/vendors?active_only=true'),
+        ]);
         const incomeAccts = accounts.filter(a => ['income','cogs'].includes(a.account_type));
         const expenseAccts = accounts.filter(a => ['expense','cogs'].includes(a.account_type));
+        const vendorOptions = vendors.map(v => `<option value="${v.id}" ${item.vendor_id==v.id?'selected':''}>${escapeHtml(v.name)}</option>`).join('');
 
         openModal(id ? 'Edit Item' : 'New Item', `
             <form id="item-form" onsubmit="ItemsPage.save(event, ${id})">
                 <div class="form-grid">
+                    <div class="form-group"><label>Code</label>
+                        <input name="code" inputmode="numeric" pattern="[0-9-]*" title="Numbers and dashes only" value="${escapeHtml(item.code || '')}">
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Optional item code. Numbers and dashes only.</div></div>
                     <div class="form-group"><label>Name *</label>
                         <input name="name" required value="${escapeHtml(item.name)}"></div>
                     <div class="form-group"><label>Type *</label>
@@ -66,6 +104,11 @@ const ItemsPage = {
                         <input name="rate" type="number" step="0.01" value="${item.rate}"></div>
                     <div class="form-group"><label>Cost</label>
                         <input name="cost" type="number" step="0.01" value="${item.cost}"></div>
+                    <div class="form-group"><label>Preferred Vendor</label>
+                        <select name="vendor_id">
+                            <option value="">-- None --</option>
+                            ${vendorOptions}
+                        </select></div>
                     <div class="form-group"><label>Income Account</label>
                         <select name="income_account_id">
                             <option value="">-- None --</option>
@@ -91,11 +134,13 @@ const ItemsPage = {
         e.preventDefault();
         const form = e.target;
         const data = {
+            code: form.code.value.trim() || null,
             name: form.name.value,
             item_type: form.item_type.value,
             description: form.description.value,
             rate: parseFloat(form.rate.value) || 0,
             cost: parseFloat(form.cost.value) || 0,
+            vendor_id: form.vendor_id.value ? parseInt(form.vendor_id.value) : null,
             income_account_id: form.income_account_id.value ? parseInt(form.income_account_id.value) : null,
             expense_account_id: form.expense_account_id.value ? parseInt(form.expense_account_id.value) : null,
             is_taxable: form.is_taxable.checked,

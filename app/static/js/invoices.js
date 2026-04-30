@@ -3,169 +3,262 @@
  * This was the crown jewel of QB2003 — the "Create Invoices" form with
  * the yellow-tinted paper background texture (resource RT_BITMAP id=0x012C).
  * Line items were rendered in a custom owner-draw CListCtrl subclass called
- * CQBGridCtrl. We're using an HTML table instead. Less charming, more functional.
- * The original auto-fill from item selection was in CInvoiceForm::OnItemChanged()
- * at 0x0015E890 — same logic lives in itemSelected() below.
+ * CQBGridCtrl. We're using a detail-page workflow aligned with purchase orders.
  */
 const InvoicesPage = {
+    lineCount: 0,
+    _customers: [],
+    _items: [],
+    _settings: {},
+    _listState: { invoices: [], statusFilter: '', sortKey: 'date', sortDirection: 'desc' },
+    _detailState: null,
+    _availableCredits: [],
+    _pendingCreditApplications: null,
+    _creditPromptedCustomerId: null,
+    paymentTermLabels() {
+        const raw = String(InvoicesPage._settings?.payment_terms_config || '').trim();
+        if (!raw) return ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+        const labels = raw.split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.includes('|') ? line.split('|', 1)[0].trim() : (line.includes('=') ? line.split('=', 1)[0].trim() : line))
+            .filter(Boolean);
+        return labels.length ? labels : ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt'];
+    },
+
+    parseDateValue(value) {
+        if (!value) return null;
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    },
+
+    todayDate() {
+        return InvoicesPage.parseDateValue(todayISO());
+    },
+
+    isOverdue(inv) {
+        if (!inv || !inv.due_date) return false;
+        if (['paid', 'void'].includes(String(inv.status || '').toLowerCase())) return false;
+        if (Number(inv.balance_due || 0) <= 0) return false;
+        const dueDate = InvoicesPage.parseDateValue(inv.due_date);
+        const today = InvoicesPage.todayDate();
+        if (!dueDate || !today) return false;
+        return dueDate < today;
+    },
+
+    overdueDays(inv) {
+        if (!InvoicesPage.isOverdue(inv)) return 0;
+        const dueDate = InvoicesPage.parseDateValue(inv.due_date);
+        const today = InvoicesPage.todayDate();
+        return Math.round((today - dueDate) / 86400000);
+    },
+
+    overdueLabel(inv) {
+        const days = InvoicesPage.overdueDays(inv);
+        return days > 0 ? `${days} day${days === 1 ? '' : 's'}` : '';
+    },
+
+    reminderSummary(inv) {
+        if (typeof inv?.reminder_summary === 'string' && inv.reminder_summary.trim()) return inv.reminder_summary;
+        if (inv?.invoice_reminders_enabled === false) return 'Turned off';
+        const count = Number(inv?.reminder_count || 0);
+        return count > 0 ? `${count} sent` : '';
+    },
+
+    statusMatchesFilter(inv, statusFilter) {
+        if (!statusFilter) return true;
+        if (statusFilter === 'overdue') return InvoicesPage.isOverdue(inv);
+        return String(inv?.status || '') === statusFilter;
+    },
+
+    filteredInvoices(invoices = [], statusFilter = '') {
+        return invoices.filter(inv => InvoicesPage.statusMatchesFilter(inv, statusFilter));
+    },
+
+    sortValue(inv, sortKey) {
+        switch (sortKey) {
+            case 'invoice_number':
+                return String(inv.invoice_number || '');
+            case 'customer_name':
+                return String(inv.customer_name || '');
+            case 'date':
+            case 'due_date':
+                return String(inv[sortKey] || '');
+            case 'overdue_days':
+                return InvoicesPage.overdueDays(inv);
+            case 'amount_paid':
+                return Number(inv.amount_paid || 0);
+            case 'balance_due':
+                return Number(inv.balance_due || 0);
+            case 'status':
+                return String(inv.status || '');
+            case 'reminder_summary':
+                return InvoicesPage.reminderSummary(inv);
+            default:
+                return inv[sortKey];
+        }
+    },
+
+    sortInvoices(invoices = [], sortKey = 'date', sortDirection = 'desc') {
+        const factor = sortDirection === 'asc' ? 1 : -1;
+        return [...invoices].sort((a, b) => {
+            const left = InvoicesPage.sortValue(a, sortKey);
+            const right = InvoicesPage.sortValue(b, sortKey);
+            if (typeof left === 'number' || typeof right === 'number') {
+                return ((Number(left || 0) - Number(right || 0)) || String(a.invoice_number || '').localeCompare(String(b.invoice_number || ''), undefined, { numeric: true })) * factor;
+            }
+            return (String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' }) || String(a.invoice_number || '').localeCompare(String(b.invoice_number || ''), undefined, { numeric: true })) * factor;
+        });
+    },
+
+    visibleInvoices() {
+        const state = InvoicesPage._listState || {};
+        return InvoicesPage.sortInvoices(
+            InvoicesPage.filteredInvoices(state.invoices || [], state.statusFilter || ''),
+            state.sortKey || 'date',
+            state.sortDirection || 'desc',
+        );
+    },
+
+    sortIndicator(sortKey) {
+        const state = InvoicesPage._listState || {};
+        if (state.sortKey !== sortKey) return '';
+        return state.sortDirection === 'asc' ? ' ▲' : ' ▼';
+    },
+
+    sortHeader(label, sortKey, extraClass = '') {
+        return `<button type="button" class="invoice-sort-button ${extraClass}" onclick="InvoicesPage.sortBy('${sortKey}')">${escapeHtml(label)}${InvoicesPage.sortIndicator(sortKey)}</button>`;
+    },
+
+    renderListRow(inv) {
+        const overdue = InvoicesPage.isOverdue(inv);
+        const dueDateClass = overdue ? 'invoice-due-date--overdue' : '';
+        const reminderSummary = InvoicesPage.reminderSummary(inv);
+        return `<tr class="inv-row" data-status="${escapeHtml(inv.status)}" data-overdue="${overdue ? 'true' : 'false'}">
+            <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
+            <td>${escapeHtml(inv.customer_name || '')}</td>
+            <td>${formatDate(inv.date)}</td>
+            <td class="${dueDateClass}">${formatDate(inv.due_date)}</td>
+            <td class="${overdue ? 'invoice-overdue-days' : ''}">${escapeHtml(InvoicesPage.overdueLabel(inv))}</td>
+            <td class="amount">${formatCurrency(inv.amount_paid || 0)}</td>
+            <td class="amount">${formatCurrency(inv.balance_due || 0)}</td>
+            <td>${statusBadge(inv.status)}</td>
+            <td class="${reminderSummary ? '' : 'invoice-reminder-muted'}">${escapeHtml(reminderSummary || '—')}</td>
+            <td class="actions">
+                <button class="btn btn-sm btn-secondary" onclick="InvoicesPage.open(${inv.id})">Open</button>
+                ${InvoicesPage.canSendDraft(inv) ? `<button class="btn btn-sm btn-primary" onclick="InvoicesPage.markSent(${inv.id}, '#/invoices')">Send</button>` : ''}
+            </td>
+        </tr>`;
+    },
+
+    renderListTable(invoices = []) {
+        if (!invoices.length) {
+            const allInvoices = InvoicesPage._listState?.invoices || [];
+            return `<div class="empty-state"><p>${allInvoices.length ? 'No invoices match the current filter' : 'No invoices yet'}</p></div>`;
+        }
+        return `<div class="table-container"><table>
+            <thead><tr>
+                <th>${InvoicesPage.sortHeader('Number', 'invoice_number')}</th>
+                <th>${InvoicesPage.sortHeader('Customer', 'customer_name')}</th>
+                <th>${InvoicesPage.sortHeader('Date', 'date')}</th>
+                <th>${InvoicesPage.sortHeader('Due Date', 'due_date')}</th>
+                <th>${InvoicesPage.sortHeader('Overdue by', 'overdue_days')}</th>
+                <th class="amount">${InvoicesPage.sortHeader('Paid', 'amount_paid', 'amount')}</th>
+                <th class="amount">${InvoicesPage.sortHeader('Due', 'balance_due', 'amount')}</th>
+                <th>${InvoicesPage.sortHeader('Status', 'status')}</th>
+                <th>${InvoicesPage.sortHeader('Reminders', 'reminder_summary')}</th>
+                <th>Actions</th>
+            </tr></thead>
+            <tbody id="inv-tbody">${invoices.map(inv => InvoicesPage.renderListRow(inv)).join('')}</tbody>
+        </table></div>`;
+    },
+
     async render() {
         const invoices = await API.get('/invoices');
         const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
+        InvoicesPage._listState = {
+            invoices,
+            statusFilter: InvoicesPage._listState?.statusFilter || '',
+            sortKey: InvoicesPage._listState?.sortKey || 'date',
+            sortDirection: InvoicesPage._listState?.sortDirection || 'desc',
+        };
         let html = `
             <div class="page-header">
                 <h2>Invoices</h2>
-                ${canManageSales ? `<button class="btn btn-primary" onclick="InvoicesPage.showForm()">+ New Invoice</button>` : ''}
+                ${canManageSales ? `<button class="btn btn-primary" onclick="InvoicesPage.startNew()">+ New Invoice</button>` : ''}
             </div>
             <div class="toolbar">
                 <select id="inv-status-filter" onchange="InvoicesPage.applyFilter()">
-                    <option value="">All Statuses</option>
-                    <option value="draft">Draft</option>
-                    <option value="sent">Sent</option>
-                    <option value="partial">Partial</option>
-                    <option value="paid">Paid</option>
-                    <option value="void">Void</option>
+                    <option value="" ${InvoicesPage._listState.statusFilter === '' ? 'selected' : ''}>All Statuses</option>
+                    <option value="draft" ${InvoicesPage._listState.statusFilter === 'draft' ? 'selected' : ''}>Draft</option>
+                    <option value="sent" ${InvoicesPage._listState.statusFilter === 'sent' ? 'selected' : ''}>Sent</option>
+                    <option value="partial" ${InvoicesPage._listState.statusFilter === 'partial' ? 'selected' : ''}>Partial</option>
+                    <option value="overdue" ${InvoicesPage._listState.statusFilter === 'overdue' ? 'selected' : ''}>Overdue</option>
+                    <option value="paid" ${InvoicesPage._listState.statusFilter === 'paid' ? 'selected' : ''}>Paid</option>
+                    <option value="void" ${InvoicesPage._listState.statusFilter === 'void' ? 'selected' : ''}>Void</option>
                 </select>
-            </div>`;
-
-        if (invoices.length === 0) {
-            html += `<div class="empty-state"><p>No invoices yet</p></div>`;
-        } else {
-            html += `<div class="table-container"><table>
-                <thead><tr>
-                    <th>#</th><th>Customer</th><th>Date</th><th>Due Date</th>
-                    <th>Status</th><th class="amount">Total</th><th class="amount">Balance</th><th>Actions</th>
-                </tr></thead><tbody id="inv-tbody">`;
-            for (const inv of invoices) {
-                html += `<tr class="inv-row" data-status="${inv.status}">
-                    <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
-                    <td>${escapeHtml(inv.customer_name || '')}</td>
-                    <td>${formatDate(inv.date)}</td>
-                    <td>${formatDate(inv.due_date)}</td>
-                    <td>${statusBadge(inv.status)}</td>
-                    <td class="amount">${formatCurrency(inv.total)}</td>
-                    <td class="amount">${formatCurrency(inv.balance_due)}</td>
-                    <td class="actions">
-                        <button class="btn btn-sm btn-secondary" onclick="InvoicesPage.view(${inv.id})">View</button>
-                        ${canManageSales ? `<button class="btn btn-sm btn-secondary" onclick="InvoicesPage.showForm(${inv.id})">Edit</button>` : ''}
-                    </td>
-                </tr>`;
-            }
-            html += `</tbody></table></div>`;
-        }
+            </div>
+            <div id="inv-table-wrap">${InvoicesPage.renderListTable(InvoicesPage.visibleInvoices())}</div>`;
         return html;
     },
 
     applyFilter() {
-        const status = $('#inv-status-filter').value;
-        $$('.inv-row').forEach(row => {
-            row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
-        });
+        InvoicesPage._listState.statusFilter = $('#inv-status-filter')?.value || '';
+        InvoicesPage.refreshList();
+    },
+
+    sortBy(sortKey) {
+        const state = InvoicesPage._listState || {};
+        if (state.sortKey === sortKey) {
+            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            state.sortKey = sortKey;
+            state.sortDirection = ['date', 'due_date', 'overdue_days', 'amount_paid', 'balance_due'].includes(sortKey) ? 'desc' : 'asc';
+        }
+        InvoicesPage._listState = state;
+        InvoicesPage.refreshList();
+    },
+
+    refreshList() {
+        const container = $('#inv-table-wrap') || $('#page-content');
+        if (!container) return;
+        const tableMarkup = InvoicesPage.renderListTable(InvoicesPage.visibleInvoices());
+        if (container.id === 'page-content') {
+            container.innerHTML = tableMarkup;
+            return;
+        }
+        container.innerHTML = tableMarkup;
+    },
+
+    canSendDraft(inv) {
+        const lines = inv?.lines || [];
+        const hasLine = lines.length ? lines.some(line => (parseFloat(line.quantity) || 0) > 0) : true;
+        const hasCustomer = !!(inv?.customer_id || inv?.customer_name);
+        return !!(inv?.id && inv.status === 'draft' && hasCustomer && inv.date && inv.due_date && hasLine);
+    },
+
+    async startNew(originHash = '#/invoices') {
+        App.setDetailOrigin('#/invoices/detail', originHash);
+        await InvoicesPage._loadEditorContext(null);
+        App.navigate('#/invoices/detail');
+    },
+
+    async open(id, originHash = '#/invoices') {
+        App.setDetailOrigin('#/invoices/detail', originHash);
+        await InvoicesPage._loadEditorContext(id);
+        App.navigate('#/invoices/detail');
     },
 
     async view(id) {
-        const inv = await API.get(`/invoices/${id}`);
-        let linesHtml = inv.lines.map(l =>
-            `<tr><td>${escapeHtml(l.description || '')}</td><td class="amount">${l.quantity}</td>
-             <td class="amount">${formatCurrency(l.rate)}</td><td class="amount">${formatCurrency(l.amount)}</td></tr>`
-        ).join('');
-
-        openModal(`Invoice #${inv.invoice_number}`, `
-            <div style="margin-bottom:12px;">
-                <strong>Customer:</strong> ${escapeHtml(inv.customer_name || '')}<br>
-                <strong>Date:</strong> ${formatDate(inv.date)}<br>
-                <strong>Due:</strong> ${formatDate(inv.due_date)}<br>
-                <strong>Status:</strong> ${statusBadge(inv.status)}<br>
-                ${inv.po_number ? `<strong>PO#:</strong> ${escapeHtml(inv.po_number)}<br>` : ''}
-            </div>
-            <div class="table-container"><table>
-                <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Amount</th></tr></thead>
-                <tbody>${linesHtml}</tbody>
-            </table></div>
-            <div class="invoice-totals">
-                <div class="total-row"><span class="label">Subtotal</span><span class="value">${formatCurrency(inv.subtotal)}</span></div>
-                <div class="total-row"><span class="label">Tax</span><span class="value">${formatCurrency(inv.tax_amount)}</span></div>
-                <div class="total-row grand-total"><span class="label">Total</span><span class="value">${formatCurrency(inv.total)}</span></div>
-                <div class="total-row"><span class="label">Paid</span><span class="value">${formatCurrency(inv.amount_paid)}</span></div>
-                <div class="total-row grand-total"><span class="label">Balance Due</span><span class="value">${formatCurrency(inv.balance_due)}</span></div>
-            </div>
-            ${inv.notes ? `<p style="margin-top:12px;color:var(--gray-500);">${escapeHtml(inv.notes)}</p>` : ''}
-            <div class="form-actions">
-                <button class="btn btn-secondary" onclick="API.open('/invoices/${inv.id}/pdf', 'invoice-${inv.invoice_number}.pdf')">Print / PDF</button>
-                ${App.hasPermission && !App.hasPermission('sales.manage') ? '' : `<button class="btn btn-secondary" onclick="InvoicesPage.duplicate(${inv.id})">Duplicate</button>
-                <button class="btn btn-secondary" onclick="InvoicesPage.emailInvoice(${inv.id})">Email Invoice</button>
-                ${inv.status === 'draft' ? `<button class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Mark Sent</button>` : ''}
-                ${inv.status !== 'void' ? `<button class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}` }
-                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-            </div>`);
+        await InvoicesPage.open(id);
     },
-
-    async void(id) {
-        if (!confirm('Void this invoice? This cannot be undone.')) return;
-        try {
-            await API.post(`/invoices/${id}/void`);
-            toast('Invoice voided');
-            closeModal();
-            App.navigate(location.hash);
-        } catch (err) { toast(err.message, 'error'); }
-    },
-
-    async markSent(id) {
-        try {
-            await API.post(`/invoices/${id}/send`);
-            toast('Invoice marked as sent');
-            closeModal();
-            App.navigate(location.hash);
-        } catch (err) { toast(err.message, 'error'); }
-    },
-
-    async duplicate(id) {
-        try {
-            const inv = await API.post(`/invoices/${id}/duplicate`);
-            toast(`Duplicated as Invoice #${inv.invoice_number}`);
-            closeModal();
-            App.navigate('#/invoices');
-        } catch (err) { toast(err.message, 'error'); }
-    },
-
-    async emailInvoice(id) {
-        const inv = await API.get(`/invoices/${id}`);
-        const email = inv.customer_email || '';
-        openModal('Email Invoice', `
-            <form onsubmit="InvoicesPage.sendEmail(event, ${id})">
-                <div class="form-grid">
-                    <div class="form-group full-width"><label>Recipient Email *</label>
-                        <input name="recipient" type="email" required value="${escapeHtml(email)}"></div>
-                    <div class="form-group full-width"><label>Subject</label>
-                        <input name="subject" value="Invoice #${escapeHtml(inv.invoice_number)} from ${escapeHtml(inv.customer_name || 'us')}"></div>
-                    <div class="form-group full-width"><label>Message</label>
-                        <textarea name="message">Please find attached Invoice #${escapeHtml(inv.invoice_number)}.</textarea></div>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Send Email</button>
-                </div>
-            </form>`);
-    },
-
-    async sendEmail(e, id) {
-        e.preventDefault();
-        const form = e.target;
-        try {
-            await API.post(`/invoices/${id}/email`, {
-                recipient: form.recipient.value,
-                subject: form.subject.value,
-                message: form.message.value,
-            });
-            toast('Invoice emailed');
-            closeModal();
-        } catch (err) { toast(err.message, 'error'); }
-    },
-
-    lineCount: 0,
-    _customers: [],
-    _gstCodes: [],
 
     async showForm(id = null) {
+        if (id) return InvoicesPage.open(id);
+        return InvoicesPage.startNew();
+    },
+
+    async _loadEditorContext(id = null) {
         const [customers, items, settings, gstCodes] = await Promise.all([
             API.get('/customers?active_only=true'),
             API.get('/items?active_only=true'),
@@ -173,92 +266,290 @@ const InvoicesPage = {
             API.get('/gst-codes'),
         ]);
         App.gstCodes = gstCodes;
+        InvoicesPage._customers = customers;
+        InvoicesPage._items = items;
+        InvoicesPage._settings = settings;
 
         let inv = {
+            id: null,
             customer_id: '',
+            invoice_number: '',
+            status: 'draft',
             date: todayISO(),
+            due_date: '',
             terms: settings.default_terms || 'Net 30',
             po_number: '',
             tax_rate: (parseFloat(settings.default_tax_rate || '0') || 0) / 100,
             notes: settings.invoice_notes || '',
+            subtotal: 0,
+            tax_amount: 0,
+            total: 0,
+            amount_paid: 0,
+            balance_due: 0,
             lines: [],
         };
         if (id) inv = await API.get(`/invoices/${id}`);
-        if (inv.lines.length === 0) inv.lines = [{ item_id: '', description: '', quantity: 1, rate: 0 }];
-
+        if (!inv.lines || inv.lines.length === 0) inv.lines = [{ item_id: '', description: '', quantity: 1, rate: 0, gst_code: 'GST15' }];
         InvoicesPage.lineCount = inv.lines.length;
-        InvoicesPage._items = items;
-        InvoicesPage._customers = customers;
-        InvoicesPage._gstCodes = gstCodes;
+        InvoicesPage._detailState = inv;
+        InvoicesPage._availableCredits = inv.customer_id
+            ? (await API.get(`/credit-memos?customer_id=${inv.customer_id}&status=issued`)).filter(cm => Number(cm.balance_remaining || 0) > 0)
+            : [];
+        InvoicesPage._pendingCreditApplications = null;
+        InvoicesPage._creditPromptedCustomerId = inv.customer_id || null;
+    },
 
+    _totals(lines) {
+        return calculateGstTotals((lines || []).map(line => ({
+            quantity: parseFloat(line.quantity) || 0,
+            rate: parseFloat(line.rate) || 0,
+            gst_code: line.gst_code || 'GST15',
+            gst_rate: line.gst_rate || 0,
+        })));
+    },
+
+    itemOptionLabel(item) {
+        return item.code ? `${escapeHtml(item.code)} — ${escapeHtml(item.name)}` : escapeHtml(item.name);
+    },
+
+    itemSearchValues(item) {
+        const values = [];
+        if (item?.code) values.push(String(item.code));
+        if (item?.name) values.push(String(item.name));
+        if (item?.code && item?.name) values.push(`${item.code} — ${item.name}`);
+        return [...new Set(values)];
+    },
+
+    itemMatchesFilter(item, query) {
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return true;
+        return InvoicesPage.itemSearchValues(item).some(candidate => candidate.toLowerCase().includes(needle));
+    },
+
+    filteredItems(query, selectedItemId = null) {
+        return (InvoicesPage._items || []).filter(item => {
+            if (selectedItemId && String(item.id) === String(selectedItemId)) return true;
+            return InvoicesPage.itemMatchesFilter(item, query);
+        });
+    },
+
+    itemOptionsHtml(items, selectedItemId = null) {
+        return items.map(i => `<option value="${i.id}" ${selectedItemId == i.id ? 'selected' : ''}>${InvoicesPage.itemOptionLabel(i)}</option>`).join('');
+    },
+
+    renderDetailScreen() {
+        const inv = InvoicesPage._detailState;
+        const canManageSales = App.hasPermission ? App.hasPermission('sales.manage') : true;
+        const canEditInvoice = canManageSales && inv?.status !== 'paid';
+        if (!inv) {
+            return `<div class="empty-state"><p>Select an invoice or create a new one first.</p><p style="margin-top:8px;"><button class="btn btn-primary" onclick="App.navigate('#/invoices')">Back to Invoices</button></p></div>`;
+        }
+        const totals = InvoicesPage._totals(inv.lines || []);
         const canCreateCustomers = App.hasPermission ? App.hasPermission('contacts.manage') : true;
-        const custOpts = InvoicesPage.customerOptionsHtml(inv.customer_id);
-
-        openModal(id ? 'Edit Invoice' : 'New Invoice', `
-            <form id="invoice-form" onsubmit="InvoicesPage.save(event, ${id})">
-                <div class="form-grid">
-                    <div class="form-group"><label>Customer *</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select name="customer_id" required onchange="InvoicesPage.customerSelected(this.value)" style="flex:1;"><option value="">Select...</option>${custOpts}</select>
-                            ${canCreateCustomers ? `<button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.toggleInlineCustomer()">+ New Customer</button>` : ''}
-                        </div>
-                        ${canCreateCustomers ? `<div id="invoice-inline-customer" class="card" style="display:none; margin-top:8px; padding:12px;">
-                            <div class="form-grid">
-                                <div class="form-group"><label>Name *</label><input name="inline_customer_name"></div>
-                                <div class="form-group"><label>Email</label><input name="inline_customer_email" type="email"></div>
-                                <div class="form-group"><label>Phone</label><input name="inline_customer_phone"></div>
-                                <div class="form-group"><label>Terms</label><select name="inline_customer_terms">${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t => `<option>${t}</option>`).join('')}</select></div>
+        const customerOptions = InvoicesPage.customerOptionsHtml(inv.customer_id);
+        const availableCredits = (InvoicesPage._availableCredits || []).filter(cm => Number(cm.balance_remaining || 0) > 0);
+        const appliedCredits = inv.applied_credits || [];
+        return `
+            <div class="page-header">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted);">Sales</div>
+                    <h2>${inv.id ? `Invoice ${escapeHtml(inv.invoice_number || '')}` : 'New Invoice'}</h2>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices')">${App.detailBackLabel('#/invoices/detail', '#/invoices', 'Invoices')}</button>
+                </div>
+            </div>
+            <form id="invoice-form" onsubmit="InvoicesPage.save(event, ${inv.id || 'null'})">
+                <div class="settings-section">
+                    <div class="form-grid">
+                        <div class="form-group"><label>Customer *</label>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <select name="customer_id" required onchange="InvoicesPage.customerSelected(this.value)" style="flex:1;" ${canEditInvoice ? '' : 'disabled'}><option value="">Select...</option>${customerOptions}</select>
+                                ${canCreateCustomers ? `<button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.toggleInlineCustomer()">+ New Customer</button>` : ''}
                             </div>
-                            <div class="form-actions" style="margin-top:8px;"><button type="button" class="btn btn-primary" onclick="InvoicesPage.createInlineCustomer(event)">Create Customer</button></div>
-                        </div>` : ''}</div>
-                    <div class="form-group"><label>Date *</label>
-                        <input name="date" type="date" required value="${inv.date}"></div>
-                    <div class="form-group"><label>Terms</label>
-                        <select name="terms" id="invoice-terms">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option value="${t}" ${inv.terms===t?'selected':''}>${t}</option>`).join('')}
-                        </select></div>
-                    <div class="form-group"><label>PO #</label>
-                        <input name="po_number" value="${escapeHtml(inv.po_number || '')}"></div>
-                    <input name="tax_rate" type="hidden" value="${(inv.tax_rate * 100) || 0}">
+                            ${canCreateCustomers ? `<div id="invoice-inline-customer" class="card" style="display:none; margin-top:8px; padding:12px;">
+                                <div class="form-grid">
+                                    <div class="form-group"><label>Name *</label><input name="inline_customer_name"></div>
+                                    <div class="form-group"><label>Email</label><input name="inline_customer_email" type="email"></div>
+                                    <div class="form-group"><label>Phone</label><input name="inline_customer_phone"></div>
+                                    <div class="form-group"><label>Terms</label><select name="inline_customer_terms">${InvoicesPage.paymentTermLabels().map(t => `<option>${t}</option>`).join('')}</select></div>
+                                </div>
+                                <div class="form-actions" style="margin-top:8px;"><button type="button" class="btn btn-primary" onclick="InvoicesPage.createInlineCustomer(event)">Create Customer</button></div>
+                            </div>` : ''}
+                        </div>
+                        <div class="form-group"><label>Date *</label>
+                            <input name="date" type="date" required value="${inv.date || ''}" ${canEditInvoice ? '' : 'disabled'}></div>
+                        <div class="form-group"><label>Due Date</label>
+                            <input name="due_date" type="date" value="${inv.due_date || ''}" ${canEditInvoice ? '' : 'disabled'}></div>
+                        <div class="form-group"><label>Terms</label>
+                            <select name="terms" id="invoice-terms" ${canEditInvoice ? '' : 'disabled'}>
+                                ${InvoicesPage.paymentTermLabels().map(t => `<option value="${t}" ${inv.terms===t?'selected':''}>${t}</option>`).join('')}
+                            </select></div>
+                        <div class="form-group"><label>Invoice Number</label>
+                            <input value="${escapeHtml(inv.invoice_number || 'Assigned on save')}" disabled></div>
+                        <div class="form-group"><label>Status</label>
+                            <input value="${escapeHtml(inv.status || 'draft')}" disabled></div>
+                        <div class="form-group"><label>PO #</label>
+                            <input name="po_number" value="${escapeHtml(inv.po_number || '')}" ${canEditInvoice ? '' : 'disabled'}></div>
+                        <input name="tax_rate" type="hidden" value="${(inv.tax_rate * 100) || 0}">
+                    </div>
                 </div>
-                <h3 style="margin:16px 0 8px; font-size:14px; color:var(--gray-600);">Line Items</h3>
-                <table class="line-items-table">
-                    <thead><tr>
-                        <th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th>
-                        <th class="col-rate">Rate</th><th class="col-amount">Amount</th><th class="col-actions"></th>
-                    </tr></thead>
-                    <tbody id="inv-lines">
-                        ${inv.lines.map((l, i) => InvoicesPage.lineRowHtml(i, l, items)).join('')}
-                    </tbody>
-                </table>
-                <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="InvoicesPage.addLine()">+ Add Line</button>
-                <div class="invoice-totals" id="inv-totals">
-                    <div class="total-row"><span class="label">Subtotal</span><span class="value" id="inv-subtotal">$0.00</span></div>
-                    <div class="total-row"><span class="label">Tax</span><span class="value" id="inv-tax">$0.00</span></div>
-                    <div class="total-row grand-total"><span class="label">Total</span><span class="value" id="inv-total">$0.00</span></div>
+                <div class="settings-section">
+                    <h3>Line Items</h3>
+                    <table class="line-items-table">
+                        <thead><tr><th>Item</th><th>Description</th><th class="col-qty">Qty</th><th>GST</th><th class="col-rate">Rate</th><th class="col-amount">Amount</th><th></th></tr></thead>
+                        <tbody id="inv-lines">
+                            ${(inv.lines || []).map((l, i) => InvoicesPage.lineRowHtml(i, l, InvoicesPage._items, canEditInvoice)).join('')}
+                        </tbody>
+                    </table>
+                    ${canEditInvoice ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="InvoicesPage.addLine()">+ Add Line</button>' : ''}
                 </div>
-                <div class="form-group" style="margin-top:12px;"><label>Notes</label>
-                    <textarea name="notes">${escapeHtml(inv.notes || '')}</textarea></div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">${id ? 'Update' : 'Create'} Invoice</button>
+                <div class="settings-section">
+                    <div style="display:grid; grid-template-columns: 1.4fr 0.8fr; gap:16px; align-items:start;">
+                        <div class="form-group"><label>Notes</label>
+                            <textarea name="notes" rows="5" ${canEditInvoice ? '' : 'disabled'}>${escapeHtml(inv.notes || '')}</textarea></div>
+                        <div>
+                            <div class="table-container"><table>
+                                <tbody>
+                                    <tr><td><strong>Subtotal</strong></td><td class="amount" id="inv-subtotal">${formatCurrency(totals.subtotal)}</td></tr>
+                                    <tr><td><strong>Tax</strong></td><td class="amount" id="inv-tax">${formatCurrency(totals.tax_amount)}</td></tr>
+                                    <tr><td><strong>Total</strong></td><td class="amount" id="inv-total">${formatCurrency(totals.total)}</td></tr>
+                                    ${inv.id ? `<tr><td><strong>Paid</strong></td><td class="amount">${formatCurrency(inv.amount_paid || 0)}</td></tr>
+                                    <tr><td><strong>Balance Due</strong></td><td class="amount">${formatCurrency(inv.balance_due || 0)}</td></tr>` : ''}
+                                </tbody>
+                            </table></div>
+                        </div>
+                    </div>
                 </div>
-            </form>`);
-        if (!id && inv.customer_id) InvoicesPage.customerSelected(inv.customer_id);
-        InvoicesPage.recalc();
+                ${inv.id && inv.customer_id && availableCredits.length ? `<div class="settings-section">
+                    <h3>Available Credit Notes</h3>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Credit Note</th><th class="amount">Remaining</th><th></th></tr></thead>
+                        <tbody>
+                            ${availableCredits.map(cm => `<tr>
+                                <td><strong>${escapeHtml(cm.memo_number)}</strong></td>
+                                <td class="amount">${formatCurrency(cm.balance_remaining)}</td>
+                                <td class="actions"><button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.applyCreditMemo(${cm.id}, ${Number(cm.balance_remaining || 0)}, ${inv.id})">Apply Credit</button></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>
+                </div>` : ''}
+                ${inv.id && appliedCredits.length ? `<div class="settings-section">
+                    <h3>Applied Credit Notes</h3>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Credit Note</th><th class="amount">Applied Amount</th></tr></thead>
+                        <tbody>
+                            ${appliedCredits.map(application => `<tr>
+                                <td><strong>${escapeHtml(application.credit_memo_number || `Credit Note #${application.credit_memo_id}`)}</strong></td>
+                                <td class="amount">${formatCurrency(application.amount)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>
+                </div>` : ''}
+                ${canManageSales ? `<div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/invoices/detail', '#/invoices')">Cancel</button>
+                    ${inv.id ? '' : `${canEditInvoice ? `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.submitWithAction(event, null, 'add-new')">Create & Add New</button>` : ''}`}
+                    <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.openPdf(${inv.id}, '${escapeHtml(inv.invoice_number || '')}')` : `InvoicesPage.submitWithAction(event, null, 'pdf')`}">${inv.id ? 'Print / PDF' : 'Create & Print / PDF'}</button>
+                    <button type="button" class="btn btn-secondary" onclick="${inv.id ? `InvoicesPage.emailInvoice(${inv.id})` : `InvoicesPage.submitWithAction(event, null, 'email')`}">${inv.id ? 'Email Invoice' : 'Create & Email'}</button>
+                    ${inv.id ? `<button type="button" class="btn btn-secondary" onclick="InvoicesPage.duplicate(${inv.id})">Duplicate</button>
+                    ${InvoicesPage.canSendDraft(inv) ? `<button type="button" class="btn btn-primary" onclick="InvoicesPage.markSent(${inv.id})">Send Invoice</button>` : ''}
+                    ${inv.status !== 'void' && inv.status !== 'paid' ? `<button type="button" class="btn btn-danger" onclick="InvoicesPage.void(${inv.id})">Void Invoice</button>` : ''}
+                    ${canEditInvoice ? `<button type="submit" class="btn btn-primary">Update Invoice</button>` : ''}` : `${canEditInvoice ? `<button type="submit" class="btn btn-primary">Create</button>` : ''}`}
+                </div>` : ''}
+            </form>`;
     },
 
     customerOptionsHtml(selectedId = null) {
         return (InvoicesPage._customers || []).map(c => `<option value="${c.id}" ${selectedId == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
     },
 
-    customerSelected(customerId) {
+    async customerSelected(customerId) {
         const customer = InvoicesPage._customers.find(c => c.id == customerId);
         const termsField = $('#invoice-terms');
         if (customer && termsField && customer.terms) {
             termsField.value = customer.terms;
         }
+        if (!InvoicesPage._detailState?.id) {
+            await InvoicesPage.checkAvailableCredits(customerId);
+        }
+    },
+
+    async checkAvailableCredits(customerId) {
+        const numericCustomerId = customerId ? parseInt(customerId) : null;
+        if (!numericCustomerId) {
+            InvoicesPage._availableCredits = [];
+            InvoicesPage._pendingCreditApplications = null;
+            InvoicesPage._creditPromptedCustomerId = null;
+            return;
+        }
+        InvoicesPage._availableCredits = (await API.get(`/credit-memos?customer_id=${numericCustomerId}&status=issued`))
+            .filter(cm => Number(cm.balance_remaining || 0) > 0);
+        if (!InvoicesPage._availableCredits.length) {
+            InvoicesPage._pendingCreditApplications = null;
+            InvoicesPage._creditPromptedCustomerId = numericCustomerId;
+            return;
+        }
+        if (InvoicesPage._creditPromptedCustomerId === numericCustomerId) return;
+        InvoicesPage._creditPromptedCustomerId = numericCustomerId;
+        InvoicesPage.promptAvailableCredits();
+    },
+
+    promptAvailableCredits() {
+        const credits = InvoicesPage._availableCredits || [];
+        if (!credits.length) return;
+        openModal('Available Credit Notes', `
+            <div style="font-size:11px; margin-bottom:12px;">
+                This customer has available credit notes. Would you like the available credit notes to be applied after saving the invoice?
+            </div>
+            <div class="table-container"><table>
+                <thead><tr><th>Credit Note</th><th class="amount">Remaining</th></tr></thead>
+                <tbody>
+                    ${credits.map(cm => `<tr><td><strong>${escapeHtml(cm.memo_number)}</strong></td><td class="amount">${formatCurrency(cm.balance_remaining)}</td></tr>`).join('')}
+                </tbody>
+            </table></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Skip for Now</button>
+                <button type="button" class="btn btn-secondary" onclick="InvoicesPage.showPartialCreditPrompt()">Set Partial Credit Amounts</button>
+                <button type="button" class="btn btn-primary" onclick="InvoicesPage.prepareFullCreditApplication()">Apply Full Credit on Save</button>
+            </div>`);
+    },
+
+    prepareFullCreditApplication() {
+        InvoicesPage._pendingCreditApplications = { mode: 'full' };
+        closeModal();
+    },
+
+    showPartialCreditPrompt() {
+        const credits = InvoicesPage._availableCredits || [];
+        openModal('Partial Credit Application', `
+            <div style="font-size:11px; margin-bottom:12px;">Enter the amount to apply from each available credit note after saving the invoice.</div>
+            <div class="table-container"><table>
+                <thead><tr><th>Credit Note</th><th class="amount">Remaining</th><th class="amount">Apply</th></tr></thead>
+                <tbody>
+                    ${credits.map(cm => `<tr>
+                        <td><strong>${escapeHtml(cm.memo_number)}</strong></td>
+                        <td class="amount">${formatCurrency(cm.balance_remaining)}</td>
+                        <td><input type="number" step="0.01" class="credit-apply-amount" data-credit-memo-id="${cm.id}" data-max="${Number(cm.balance_remaining || 0)}" value="0" style="width:90px;"></td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="InvoicesPage.preparePartialCreditApplication()">Save Credit Choice</button>
+            </div>`);
+    },
+
+    preparePartialCreditApplication() {
+        const applications = $$('.credit-apply-amount').map(input => {
+            const amount = parseFloat(input.value) || 0;
+            const max = parseFloat(input.dataset.max) || 0;
+            return {
+                credit_memo_id: parseInt(input.dataset.creditMemoId),
+                amount: Math.min(amount, max),
+            };
+        }).filter(item => item.amount > 0);
+        InvoicesPage._pendingCreditApplications = applications.length ? { mode: 'partial', applications } : null;
+        closeModal();
     },
 
     toggleInlineCustomer() {
@@ -275,7 +566,7 @@ const InvoicesPage = {
                 name: form.inline_customer_name.value,
                 email: form.inline_customer_email.value || null,
                 phone: form.inline_customer_phone.value || null,
-                terms: form.inline_customer_terms.value || 'Net 30',
+                terms: form.inline_customer_terms.value || InvoicesPage._settings.default_terms || 'Net 30',
             });
             InvoicesPage._customers.push(customer);
             InvoicesPage._customers.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -290,24 +581,24 @@ const InvoicesPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    lineRowHtml(idx, line, items) {
-        const itemOpts = items.map(i => `<option value="${i.id}" ${line.item_id==i.id?'selected':''}>${escapeHtml(i.name)}</option>`).join('');
+    lineRowHtml(idx, line, items, canManage = true) {
+        const itemOpts = InvoicesPage.itemOptionsHtml(items, line.item_id);
         return `<tr data-line="${idx}">
-            <td><select class="line-item" onchange="InvoicesPage.itemSelected(${idx})">
+            <td><select class="line-item" onchange="InvoicesPage.itemSelected(${idx})" onkeydown="InvoicesPage.handleItemKeydown(${idx}, event)" onblur="InvoicesPage.resetItemFilter(${idx})" ${canManage ? '' : 'disabled'}>
                 <option value="">--</option>${itemOpts}</select></td>
-            <td><input class="line-desc" value="${escapeHtml(line.description || '')}"></td>
-            <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="InvoicesPage.recalc()"></td>
-            <td><select class="line-gst" onchange="InvoicesPage.recalc()">${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
-            <td><input class="line-rate" type="number" step="0.01" value="${line.rate || 0}" oninput="InvoicesPage.recalc()"></td>
+            <td><input class="line-desc" value="${escapeHtml(line.description || '')}" ${canManage ? '' : 'disabled'}></td>
+            <td><input class="line-qty" type="number" step="0.01" value="${line.quantity || 1}" oninput="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
+            <td><select class="line-gst" onchange="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}>${gstOptionsHtml(line.gst_code || 'GST15')}</select></td>
+            <td><input class="line-rate" type="number" step="0.01" value="${line.rate || 0}" oninput="InvoicesPage.recalc()" ${canManage ? '' : 'disabled'}></td>
             <td class="col-amount line-amount">${formatCurrency((line.quantity||1) * (line.rate||0))}</td>
-            <td><button type="button" class="btn btn-sm btn-danger" onclick="InvoicesPage.removeLine(${idx})">X</button></td>
+            <td>${canManage ? `<button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.removeLine(${idx})">Remove</button>` : ''}</td>
         </tr>`;
     },
 
     addLine() {
         const tbody = $('#inv-lines');
         const idx = InvoicesPage.lineCount++;
-        tbody.insertAdjacentHTML('beforeend', InvoicesPage.lineRowHtml(idx, {}, InvoicesPage._items));
+        tbody.insertAdjacentHTML('beforeend', InvoicesPage.lineRowHtml(idx, {}, InvoicesPage._items, true));
     },
 
     removeLine(idx) {
@@ -327,6 +618,52 @@ const InvoicesPage = {
         }
     },
 
+    applyItemFilter(idx, query) {
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        const filtered = InvoicesPage.filteredItems(query, currentValue);
+        row.dataset.itemFilterQuery = query;
+        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(filtered, currentValue)}`;
+        if (!(filtered || []).some(item => String(item.id) === String(currentValue))) {
+            itemSelect.value = '';
+        }
+    },
+
+    handleItemKeydown(idx, event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        const currentQuery = row.dataset.itemFilterQuery || '';
+        if (event.key === 'Escape') {
+            InvoicesPage.resetItemFilter(idx);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            InvoicesPage.applyItemFilter(idx, currentQuery.slice(0, -1));
+            event.preventDefault();
+            return;
+        }
+        if (event.key.length === 1) {
+            InvoicesPage.applyItemFilter(idx, currentQuery + event.key);
+            event.preventDefault();
+        }
+    },
+
+    resetItemFilter(idx) {
+        const row = $(`[data-line="${idx}"]`);
+        if (!row) return;
+        row.dataset.itemFilterQuery = '';
+        const itemSelect = row.querySelector('.line-item');
+        if (!itemSelect) return;
+        const currentValue = itemSelect.value;
+        itemSelect.innerHTML = `<option value="">--</option>${InvoicesPage.itemOptionsHtml(InvoicesPage._items || [], currentValue)}`;
+        if (currentValue) itemSelect.value = currentValue;
+    },
+
     recalc() {
         const lines = [];
         $$('#inv-lines tr').forEach(row => {
@@ -337,12 +674,104 @@ const InvoicesPage = {
             if (amountCell) amountCell.textContent = formatCurrency(amount);
         });
         const totals = calculateGstTotals(lines);
-        $('#inv-subtotal').textContent = formatCurrency(totals.subtotal);
-        $('#inv-tax').textContent = formatCurrency(totals.tax_amount);
-        $('#inv-total').textContent = formatCurrency(totals.total);
+        if ($('#inv-subtotal')) $('#inv-subtotal').textContent = formatCurrency(totals.subtotal);
+        if ($('#inv-tax')) $('#inv-tax').textContent = formatCurrency(totals.tax_amount);
+        if ($('#inv-total')) $('#inv-total').textContent = formatCurrency(totals.total);
     },
 
-    async save(e, id) {
+    async openPdf(id, invoiceNumber) {
+        API.open(`/invoices/${id}/pdf`, `invoice-${invoiceNumber}.pdf`);
+    },
+
+    async emailInvoice(id) {
+        const inv = await API.get(`/invoices/${id}`);
+        const customer = inv.customer_id ? await API.get(`/customers/${inv.customer_id}`) : null;
+        App.showDocumentEmailModal({
+            title: `Email Invoice #${inv.invoice_number}`,
+            endpoint: `/invoices/${id}/email`,
+            recipient: customer?.email || '',
+            defaultSubject: `Invoice #${inv.invoice_number}`,
+            successMessage: 'Invoice emailed',
+        });
+    },
+
+    async submitWithAction(e, id, action) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const form = e?.target?.form || e?.target?.closest?.('form');
+        if (!form) return;
+        await InvoicesPage.save({ preventDefault() {}, target: form }, id, action);
+    },
+
+    async void(id) {
+        if (!confirm('Void this invoice? This cannot be undone.')) return;
+        try {
+            await API.post(`/invoices/${id}/void`);
+            toast('Invoice voided');
+            await InvoicesPage.open(id);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async markSent(id, returnHash = null) {
+        try {
+            await API.post(`/invoices/${id}/send`);
+            toast('Invoice sent');
+            if (returnHash) {
+                await App.navigate(returnHash);
+                return;
+            }
+            await InvoicesPage.open(id);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async duplicate(id) {
+        try {
+            const inv = await API.post(`/invoices/${id}/duplicate`);
+            toast(`Duplicated as Invoice #${inv.invoice_number}`);
+            await InvoicesPage.open(inv.id);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async applyCreditMemo(cmId, amount, invoiceId) {
+        try {
+            await API.post(`/credit-memos/${cmId}/apply`, {
+                invoice_id: invoiceId,
+                amount,
+            });
+            toast('Credit applied');
+            await InvoicesPage.open(invoiceId);
+        } catch (err) { toast(err.message, 'error'); }
+    },
+
+    async _applyPendingCredits(invoice) {
+        if (!invoice?.id || !InvoicesPage._pendingCreditApplications) return invoice;
+        let remainingBalance = Number(invoice.balance_due || invoice.total || 0);
+        let applied = false;
+        if (InvoicesPage._pendingCreditApplications.mode === 'full') {
+            for (const credit of InvoicesPage._availableCredits || []) {
+                if (remainingBalance <= 0) break;
+                const amount = Math.min(Number(credit.balance_remaining || 0), remainingBalance);
+                if (amount <= 0) continue;
+                await API.post(`/credit-memos/${credit.id}/apply`, { invoice_id: invoice.id, amount });
+                remainingBalance -= amount;
+                applied = true;
+            }
+        } else if (InvoicesPage._pendingCreditApplications.mode === 'partial') {
+            for (const credit of InvoicesPage._pendingCreditApplications.applications || []) {
+                if (remainingBalance <= 0) break;
+                const amount = Math.min(Number(credit.amount || 0), remainingBalance);
+                if (amount <= 0) continue;
+                await API.post(`/credit-memos/${credit.credit_memo_id}/apply`, { invoice_id: invoice.id, amount });
+                remainingBalance -= amount;
+                applied = true;
+            }
+        }
+        InvoicesPage._pendingCreditApplications = null;
+        if (!applied) return invoice;
+        toast('Credit applied');
+        return API.get(`/invoices/${invoice.id}`);
+    },
+
+    async save(e, id, afterAction = null) {
         e.preventDefault();
         const form = e.target;
         const lines = [];
@@ -363,6 +792,7 @@ const InvoicesPage = {
         const data = {
             customer_id: parseInt(form.customer_id.value),
             date: form.date.value,
+            due_date: form.due_date.value || null,
             terms: form.terms.value,
             po_number: form.po_number.value || null,
             tax_rate: (parseFloat(form.tax_rate.value) || 0) / 100,
@@ -371,10 +801,33 @@ const InvoicesPage = {
         };
 
         try {
-            if (id) { await API.put(`/invoices/${id}`, data); toast('Invoice updated'); }
-            else { await API.post('/invoices', data); toast('Invoice created'); }
-            closeModal();
-            App.navigate(location.hash);
+            let savedInv;
+            if (id) { savedInv = await API.put(`/invoices/${id}`, data); toast('Invoice updated'); }
+            else { savedInv = await API.post('/invoices', data); toast('Invoice created'); }
+            if (!id) {
+                savedInv = await InvoicesPage._applyPendingCredits(savedInv);
+            }
+
+            if (afterAction === 'pdf' && savedInv?.id) {
+                InvoicesPage._detailState = savedInv;
+                App.navigate('#/invoices/detail');
+                InvoicesPage.openPdf(savedInv.id, savedInv.invoice_number || 'invoice');
+                return;
+            }
+            if (afterAction === 'email' && savedInv?.id) {
+                InvoicesPage._detailState = savedInv;
+                App.navigate('#/invoices/detail');
+                await InvoicesPage.emailInvoice(savedInv.id);
+                return;
+            }
+            if (afterAction === 'add-new') {
+                await InvoicesPage._loadEditorContext(null);
+                App.navigate('#/invoices/detail');
+                return;
+            }
+
+            InvoicesPage._detailState = null;
+            App.navigate('#/invoices');
         } catch (err) { toast(err.message, 'error'); }
     },
 };

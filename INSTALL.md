@@ -39,6 +39,11 @@ This is the easiest path for local development.
 
 ```bash
 cp .env.example .env
+# edit .env before first run:
+# - set POSTGRES_PASSWORD to a long random secret
+# - leave APP_DEBUG=false unless you explicitly need debug/reload
+# - set CORS_ALLOW_ORIGINS explicitly if browsers will access the API from another trusted origin
+# - set SMTP_PASSWORD only if authenticated SMTP is required
 docker compose up --build
 ```
 
@@ -51,6 +56,7 @@ The app container will:
 ### Result
 - app: **http://localhost:3001**
 - database: bundled `postgres:18`
+- Postgres is not published to the host by default; expose it only deliberately if you need local DB tooling access.
 
 ### Local Docker mounts
 The default compose stack uses:
@@ -93,9 +99,9 @@ If `DATABASE_URL` is set, it takes precedence over the `POSTGRES_*` variables.
 DATABASE_URL=
 POSTGRES_HOST=db.example.com
 POSTGRES_PORT=5432
-POSTGRES_DB=bookkeeper
-POSTGRES_USER=bookkeeper
-POSTGRES_PASSWORD=secret
+POSTGRES_DB=slowbooks
+POSTGRES_USER=slowbooks
+POSTGRES_PASSWORD=replace-with-a-long-random-password
 POSTGRES_SSLMODE=require
 ```
 
@@ -131,16 +137,16 @@ For a local database server, either:
 - leave `DATABASE_URL` blank and set:
   - `POSTGRES_HOST=localhost`
   - `POSTGRES_PORT=5432`
-  - `POSTGRES_DB=bookkeeper`
-  - `POSTGRES_USER=bookkeeper`
-  - `POSTGRES_PASSWORD=bookkeeper`
+  - `POSTGRES_DB=slowbooks`
+  - `POSTGRES_USER=slowbooks`
+  - `POSTGRES_PASSWORD=<your-random-secret>`
   - `POSTGRES_SSLMODE=disable`
 
 If you need to create the DB/user manually:
 
 ```bash
-sudo -u postgres psql -c "CREATE USER bookkeeper WITH PASSWORD 'bookkeeper'"
-sudo -u postgres psql -c "CREATE DATABASE bookkeeper OWNER bookkeeper"
+sudo -u postgres psql -c "CREATE USER slowbooks WITH PASSWORD '<your-random-secret>'"
+sudo -u postgres psql -c "CREATE DATABASE slowbooks OWNER slowbooks"
 ```
 
 ### Bootstrap the database
@@ -184,9 +190,9 @@ Use the returned bearer token when calling protected payroll/employee routes unt
 DATABASE_URL=
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-POSTGRES_DB=bookkeeper
-POSTGRES_USER=bookkeeper
-POSTGRES_PASSWORD=bookkeeper
+POSTGRES_DB=slowbooks
+POSTGRES_USER=slowbooks
+POSTGRES_PASSWORD=<your-random-secret>
 POSTGRES_SSLMODE=disable
 ```
 
@@ -195,7 +201,8 @@ POSTGRES_SSLMODE=disable
 ```env
 APP_HOST=0.0.0.0
 APP_PORT=3001
-APP_DEBUG=true
+APP_DEBUG=false
+CORS_ALLOW_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
 ```
 
 ---
@@ -254,3 +261,9 @@ Your local OS may be missing native libraries needed by WeasyPrint/PDF generatio
 
 ### Backups fail
 Make sure `pg_dump` / `pg_restore` are installed and reachable in `PATH`.
+## Security-sensitive environment settings
+
+- Set `BOOTSTRAP_ADMIN_TOKEN` in `.env` before remote first-admin setup. The Docker entrypoint no longer generates or prints this token.
+- Keep `POSTGRES_SSLMODE=disable` for the bundled Docker-only Postgres network, or use a TLS mode such as `require` for external or untrusted database networks.
+- Configure SMTP only through `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_TLS`). The Settings UI shows status and can send a test email, but it does not persist SMTP connection settings.
+- Set `SESSION_COOKIE_SECURE=true` and `SECURITY_HEADERS_ENABLE_HSTS=true` when serving SlowBooks over HTTPS.

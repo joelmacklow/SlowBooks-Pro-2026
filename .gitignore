@@ -1,4 +1,8 @@
 __pycache__/
+.venv/
+.pytest_cache/
+.code-review-graph/
+.nfs*
 *.pyc
 *.pyo
 .env
@@ -13,6 +17,7 @@ build/
 *.swo
 *~
 backups/
+uploads/
 data/postgres/
 AGENTS.md
 .codex

@@ -8,24 +8,31 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
 
 from app.models.recurring import RecurringInvoice
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.items import Item
+from app.routes.settings import _get_all as get_settings
 from app.services.accounting import (
     create_journal_entry, get_ar_account_id,
     get_default_income_account_id, get_gst_account_id,
 )
+from app.services.document_sequences import allocate_document_number
 from app.services.gst_calculations import calculate_document_gst, prices_include_gst
 from app.services.gst_lines import stored_gst_line_inputs
+from app.services.payment_terms import resolve_due_date_for_terms
 
 
 def _next_invoice_number(db: Session) -> str:
-    last = db.query(sqlfunc.max(Invoice.invoice_number)).scalar()
-    if last and last.isdigit():
-        return str(int(last) + 1).zfill(len(last))
-    return "1001"
+    return allocate_document_number(
+        db,
+        model=Invoice,
+        field_name="invoice_number",
+        prefix_key="invoice_prefix",
+        next_key="invoice_next_number",
+        default_prefix="",
+        default_next_number="1001",
+    )
 
 
 def _advance_next_due(current: date, frequency: str) -> date:
@@ -38,6 +45,14 @@ def _advance_next_due(current: date, frequency: str) -> date:
     elif frequency == "yearly":
         return current + relativedelta(years=1)
     return current + relativedelta(months=1)
+
+
+def calculate_next_due(start_date: date, frequency: str, *, as_of: date = None) -> date:
+    target = as_of or date.today()
+    next_due = start_date
+    while next_due < target:
+        next_due = _advance_next_due(next_due, frequency)
+    return next_due
 
 
 def generate_due_invoices(db: Session, as_of: date = None) -> list[int]:
@@ -71,14 +86,7 @@ def generate_due_invoices(db: Session, as_of: date = None) -> list[int]:
             gst_context="sales",
         )
 
-        # Parse terms for due date
-        due_date = rec.next_due + timedelta(days=30)
-        if rec.terms:
-            try:
-                days = int(rec.terms.lower().replace("net ", ""))
-                due_date = rec.next_due + timedelta(days=days)
-            except ValueError:
-                pass
+        due_date = resolve_due_date_for_terms(rec.next_due, rec.terms, get_settings(db).get("payment_terms_config"))
 
         invoice = Invoice(
             invoice_number=invoice_number, customer_id=rec.customer_id,

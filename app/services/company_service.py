@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DATABASE_URL
 from app.models.companies import Company
+from app.models.settings import DEFAULT_SETTINGS, Settings
 from scripts.bootstrap_database import run_bootstrap as run_database_bootstrap
 
 DATABASE_NAME_PATTERN = re.compile(r"[a-z0-9_]{1,63}\Z")
@@ -41,6 +42,46 @@ def _database_url(database_name: str) -> str:
     return urlunparse(parsed._replace(path=f"/{validated_name}"))
 
 
+def current_database_name() -> str:
+    return urlparse(DATABASE_URL).path.lstrip("/") or "bookkeeper"
+
+
+def default_company_entry(db: Session) -> dict:
+    settings = dict(DEFAULT_SETTINGS)
+    for row in db.query(Settings).all():
+        settings[row.key] = row.value
+    current_row = db.query(Company).filter(Company.database_name == current_database_name()).first()
+    return {
+        "id": current_row.id if current_row else None,
+        "name": settings.get("company_name") or "My Company",
+        "database_name": current_database_name(),
+        "description": current_row.description if current_row else "Default company",
+        "org_lock_date": current_row.org_lock_date.isoformat() if current_row and current_row.org_lock_date else None,
+        "last_accessed": current_row.last_accessed.isoformat() if current_row and current_row.last_accessed else None,
+        "is_default": True,
+    }
+
+
+def list_company_scope_options(db: Session) -> list[dict]:
+    default_company = default_company_entry(db)
+    options = [{
+        "key": "__current__",
+        "label": default_company["name"],
+        "database_name": default_company["database_name"],
+        "is_default": True,
+    }]
+    for company in list_companies(db):
+        if company["database_name"] == default_company["database_name"]:
+            continue
+        options.append({
+            "key": company["database_name"],
+            "label": company["name"],
+            "database_name": company["database_name"],
+            "is_default": False,
+        })
+    return options
+
+
 def _drop_database(database_name: str) -> None:
     validated_name = _validate_database_name(database_name)
     quoted_database_name = f'"{validated_name}"'
@@ -69,10 +110,77 @@ def list_companies(db: Session) -> list[dict]:
             "name": c.name,
             "database_name": c.database_name,
             "description": c.description,
+            "org_lock_date": c.org_lock_date.isoformat() if c.org_lock_date else None,
             "last_accessed": c.last_accessed.isoformat() if c.last_accessed else None,
         }
         for c in companies
     ]
+
+
+def update_company_metadata(
+    db: Session,
+    company_id: int,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    org_lock_date=None,
+) -> dict:
+    company = db.query(Company).filter(Company.id == company_id, Company.is_active == True).first()
+    if not company:
+        raise ValueError("Company not found")
+    if name is not None:
+        company.name = name
+    if description is not None:
+        company.description = description
+    company.org_lock_date = org_lock_date
+    db.commit()
+    db.refresh(company)
+    return {
+        "id": company.id,
+        "name": company.name,
+        "database_name": company.database_name,
+        "description": company.description,
+        "org_lock_date": company.org_lock_date.isoformat() if company.org_lock_date else None,
+        "last_accessed": company.last_accessed.isoformat() if company.last_accessed else None,
+    }
+
+
+def upsert_default_company_metadata(
+    db: Session,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    org_lock_date=None,
+) -> dict:
+    database_name = current_database_name()
+    company = db.query(Company).filter(Company.database_name == database_name).first()
+    if not company:
+        company = Company(
+            name=name or default_company_entry(db)["name"],
+            database_name=database_name,
+            description=description or "Default company",
+            org_lock_date=org_lock_date,
+            is_active=True,
+        )
+        db.add(company)
+    else:
+        if name is not None:
+            company.name = name
+        if description is not None:
+            company.description = description
+        company.org_lock_date = org_lock_date
+        company.is_active = True
+    db.commit()
+    db.refresh(company)
+    return {
+        "id": company.id,
+        "name": company.name,
+        "database_name": company.database_name,
+        "description": company.description,
+        "org_lock_date": company.org_lock_date.isoformat() if company.org_lock_date else None,
+        "last_accessed": company.last_accessed.isoformat() if company.last_accessed else None,
+        "is_default": True,
+    }
 
 
 def create_company(db: Session, name: str, database_name: str, description: str = None) -> dict:

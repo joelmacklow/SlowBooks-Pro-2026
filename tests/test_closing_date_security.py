@@ -52,6 +52,33 @@ class ClosingDateSecurityTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn('closing date', ctx.exception.detail.lower())
 
+    def test_check_closing_date_accepts_hashed_password_override(self):
+        from app.services.closing_date import check_closing_date, hash_closing_date_password
+
+        with self.Session() as db:
+            db.add_all([
+                Settings(key='closing_date', value='2026-04-30'),
+                Settings(key='closing_date_password', value=hash_closing_date_password('letmein')),
+            ])
+            db.commit()
+
+            check_closing_date(db, date(2026, 4, 30), password='letmein')
+
+    def test_check_closing_date_upgrades_legacy_plaintext_password_after_successful_use(self):
+        from app.services.closing_date import check_closing_date
+
+        with self.Session() as db:
+            db.add_all([
+                Settings(key='closing_date', value='2026-04-30'),
+                Settings(key='closing_date_password', value='letmein'),
+            ])
+            db.commit()
+
+            check_closing_date(db, date(2026, 4, 30), password='letmein')
+            stored = db.query(Settings).filter(Settings.key == 'closing_date_password').one().value
+
+        self.assertTrue(stored.startswith('pbkdf2_sha256$'))
+
 
 if __name__ == '__main__':
     unittest.main()

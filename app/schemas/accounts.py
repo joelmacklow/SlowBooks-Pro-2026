@@ -13,6 +13,7 @@ class AccountCreate(BaseModel):
     account_type: AccountType
     parent_id: Optional[int] = None
     description: Optional[str] = None
+    is_dashboard_favorite: bool = False
 
 
 class AccountUpdate(BaseModel):
@@ -22,6 +23,7 @@ class AccountUpdate(BaseModel):
     parent_id: Optional[int] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    is_dashboard_favorite: Optional[bool] = None
 
 
 class AccountResponse(BaseModel):
@@ -33,6 +35,7 @@ class AccountResponse(BaseModel):
     description: Optional[str]
     is_active: bool
     is_system: bool
+    is_dashboard_favorite: bool
     balance: Decimal
     created_at: datetime
     updated_at: datetime
@@ -47,6 +50,7 @@ class AccountSummary(BaseModel):
     account_type: AccountType
     is_active: bool
     is_system: bool
+    is_dashboard_favorite: bool
 
     model_config = {"from_attributes": True}
 

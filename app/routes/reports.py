@@ -7,13 +7,17 @@
 # General Ledger was CReportEngine::RunGLDetail() at 0x00211400.
 # ============================================================================
 
+import json
+import zipfile
 from datetime import date, timedelta
+from io import BytesIO
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
+from starlette.requests import Request
 
 from app.database import get_db
 from app.models.accounts import Account, AccountType
@@ -24,12 +28,26 @@ from app.models.transactions import Transaction, TransactionLine
 from app.models.invoices import Invoice, InvoiceStatus
 from app.models.payments import Payment
 from app.models.contacts import Customer
+from app.models.invoice_reminders import InvoiceReminderAudit, InvoiceReminderRule
 from app.schemas.email import StatementEmailRequest
+from app.schemas.invoice_reminders import InvoiceReminderPreviewResponse
 from pydantic import BaseModel
-from app.services.email_service import render_document_email, send_document_email
-from app.services.pdf_service import generate_statement_pdf
+from app.services.email_service import PUBLIC_EMAIL_FAILURE_DETAIL, render_document_email, send_document_email
+from app.services.pdf_service import generate_report_pdf, generate_statement_pdf
+from app.services.formatting import format_currency, format_date
 from app.routes.settings import _get_all as get_settings
 from app.services.auth import require_permissions
+from app.services.dashboard_metrics import (
+    cash_account_ids as _cash_account_ids,
+    cash_flow_category_for_account as _cash_flow_category_for_account,
+    natural_balance_amount as _natural_balance_amount,
+    opening_cash_balance as _opening_cash_balance,
+)
+from app.services.rate_limit import enforce_rate_limit
+from app.services.invoice_reminders import (
+    ensure_default_invoice_reminder_rules,
+    invoice_reminder_preview_items,
+)
 from app.services.gst_return import (
     calculate_gst_return,
     generate_gst101a_pdf,
@@ -45,6 +63,7 @@ from app.services.gst_return_filing import (
     get_confirmed_return,
 )
 from app.services.gst_settlement import build_settlement_state, confirm_settlement
+from app.services.fixed_assets import fixed_asset_reconciliation as build_fixed_asset_reconciliation
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -69,6 +88,663 @@ def _decimal_text(value) -> str:
 
 def _period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.day} {start_date.strftime('%b %Y')} - {end_date.day} {end_date.strftime('%b %Y')}"
+
+
+def _pdf_cell(text, align: str = "left", colspan: int = 1) -> dict:
+    return {
+        "text": text,
+        "align": align,
+        "colspan": colspan,
+    }
+
+
+def _pdf_row(*cells, class_name: str = "") -> dict:
+    return {
+        "cells": list(cells),
+        "class_name": class_name,
+    }
+
+
+def _report_pdf_response(pdf_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+def _zip_response(zip_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _financial_statements_pack_manifest(
+    *,
+    start_date: date,
+    end_date: date,
+    included_documents: list[dict],
+    missing_documents: list[str],
+) -> dict:
+    return {
+        "generated_on": date.today().isoformat(),
+        "pack_type": "financial_statements_pack",
+        "status": "partial",
+        "period": {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        "included_documents": included_documents,
+        "missing_document_categories": missing_documents,
+        "notes": [
+            "This pack bundles the statements the application already produces.",
+            "Missing document categories remain outstanding follow-up work for GAAP/compliance completeness.",
+            "Fixed asset reconciliation is included as a PDF so the pack stays consistent with the other exported reports.",
+        ],
+    }
+
+
+def _financial_year_start_for_date(company_settings: dict, as_of_date: date) -> date:
+    start_value = str(company_settings.get("financial_year_start") or "").strip()
+    if not start_value:
+        return date(as_of_date.year, 1, 1)
+
+    month, day = [int(part) for part in start_value.split("-")]
+    candidate = date(as_of_date.year, month, day)
+    if as_of_date < candidate:
+        candidate = date(as_of_date.year - 1, month, day)
+    return candidate
+
+
+def _company_settings(db: Session) -> dict:
+    return get_settings(db)
+
+
+def _customer_statement_context(db: Session, customer_id: int, as_of_date: date) -> tuple[Customer, list[Invoice], list[Payment]]:
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.customer_id == customer_id)
+        .filter(Invoice.status != InvoiceStatus.VOID)
+        .filter(Invoice.date <= as_of_date)
+        .order_by(Invoice.date)
+        .all()
+    )
+
+    payments = (
+        db.query(Payment)
+        .filter(Payment.customer_id == customer_id)
+        .filter(Payment.date <= as_of_date)
+        .order_by(Payment.date)
+        .all()
+    )
+    return customer, invoices, payments
+
+
+def _overdue_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
+    rows = (
+        db.query(Invoice)
+        .join(Customer, Invoice.customer_id == Customer.id)
+        .filter(Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIAL]))
+        .filter(Invoice.due_date.is_not(None))
+        .filter(Invoice.due_date < as_of_date)
+        .filter(Invoice.balance_due > 0)
+        .filter(Customer.is_active == True)
+        .order_by(Customer.name, Invoice.due_date, Invoice.id)
+        .all()
+    )
+
+    grouped: dict[int, dict] = {}
+    for invoice in rows:
+        customer = invoice.customer
+        email = (customer.email or "").strip() if customer else ""
+        if not email:
+            continue
+        entry = grouped.setdefault(customer.id, {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "recipient": email,
+            "overdue_invoice_count": 0,
+            "overdue_balance": Decimal("0.00"),
+            "oldest_due_date": invoice.due_date,
+            "latest_due_date": invoice.due_date,
+        })
+        entry["overdue_invoice_count"] += 1
+        entry["overdue_balance"] += Decimal(str(invoice.balance_due or 0))
+        entry["oldest_due_date"] = min(entry["oldest_due_date"], invoice.due_date)
+        entry["latest_due_date"] = max(entry["latest_due_date"], invoice.due_date)
+
+    results = []
+    for entry in grouped.values():
+        results.append({
+            "customer_id": entry["customer_id"],
+            "customer_name": entry["customer_name"],
+            "recipient": entry["recipient"],
+            "overdue_invoice_count": entry["overdue_invoice_count"],
+            "overdue_balance": float(entry["overdue_balance"]),
+            "oldest_due_date": entry["oldest_due_date"].isoformat(),
+            "latest_due_date": entry["latest_due_date"].isoformat(),
+        })
+    return sorted(results, key=lambda row: (row["oldest_due_date"], row["customer_name"]))
+
+
+def _monthly_statement_candidates(db: Session, as_of_date: date) -> list[dict]:
+    customers = (
+        db.query(Customer)
+        .filter(Customer.is_active == True)
+        .filter(Customer.monthly_statements_enabled == True)
+        .order_by(Customer.name, Customer.id)
+        .all()
+    )
+
+    return [
+        {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "recipient": (customer.email or "").strip(),
+            "statement_balance": float(customer.balance or 0),
+        }
+        for customer in customers
+    ]
+
+
+
+
+def _invoice_reminder_preview_items(db: Session, as_of_date: date) -> list[dict]:
+    return invoice_reminder_preview_items(db, as_of_date)
+
+def _report_tables_profit_loss(report: dict, company: dict) -> list[dict]:
+    rows = [_pdf_row(_pdf_cell("Income", colspan=2), class_name="section-row")]
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(entry["amount"], company), align="right"),
+        )
+        for entry in report["income"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Income"), _pdf_cell(format_currency(report["total_income"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Cost of Goods Sold", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"),
+        )
+        for entry in report["cogs"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Gross Profit"), _pdf_cell(format_currency(report["gross_profit"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Expenses", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"),
+        )
+        for entry in report["expenses"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Expenses"), _pdf_cell(format_currency(report["total_expenses"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Net Income"), _pdf_cell(format_currency(report["net_income"], company), align="right"), class_name="total-row"))
+    return [{
+        "columns": [{"label": "Account"}, {"label": "Amount", "align": "right", "width": "24%"}],
+        "rows": rows,
+    }]
+
+
+def _report_tables_balance_sheet(report: dict, company: dict) -> list[dict]:
+    rows = [_pdf_row(_pdf_cell("Assets", colspan=2), class_name="section-row")]
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["assets"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Assets"), _pdf_cell(format_currency(report["total_assets"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Liabilities", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["liabilities"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Total Liabilities"), _pdf_cell(format_currency(report["total_liabilities"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Equity", colspan=2), class_name="section-row"))
+    rows.extend(
+        _pdf_row(_pdf_cell(entry["account_name"]), _pdf_cell(format_currency(abs(entry["amount"]), company), align="right"))
+        for entry in report["equity"]
+    )
+    rows.append(_pdf_row(_pdf_cell("Current Earnings"), _pdf_cell(format_currency(report["current_earnings"], company), align="right")))
+    rows.append(_pdf_row(_pdf_cell("Total Equity"), _pdf_cell(format_currency(report["total_equity"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Total Liabilities + Equity"), _pdf_cell(format_currency(report["total_liabilities_and_equity"], company), align="right"), class_name="total-row"))
+    rows.append(_pdf_row(_pdf_cell("Difference"), _pdf_cell(format_currency(report["balance_difference"], company), align="right"), class_name="total-row"))
+    return [{
+        "columns": [{"label": "Account"}, {"label": "Amount", "align": "right", "width": "24%"}],
+        "rows": rows,
+    }]
+
+
+def _report_tables_trial_balance(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["account_number"] or ""),
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(entry["account_type"].replace("_", " ").title()),
+            _pdf_cell(format_currency(entry["debit_balance"], company) if entry["debit_balance"] else "", align="right"),
+            _pdf_cell(format_currency(entry["credit_balance"], company) if entry["credit_balance"] else "", align="right"),
+        )
+        for entry in report["accounts"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=3),
+            _pdf_cell(format_currency(report["total_debit"], company), align="right"),
+            _pdf_cell(format_currency(report["total_credit"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "columns": [
+            {"label": "Account Code", "width": "12%"},
+            {"label": "Account", "width": "30%"},
+            {"label": "Account Type", "width": "16%"},
+            {"label": "Debit", "align": "right", "width": "12%"},
+            {"label": "Credit", "align": "right", "width": "12%"},
+        ],
+        "rows": rows,
+        "empty_message": "No balances for this date.",
+    }]
+
+
+def _report_tables_cash_flow(report: dict, company: dict) -> list[dict]:
+    tables = []
+    label_map = {
+        "operating": "Operating Activities",
+        "investing": "Investing Activities",
+        "financing": "Financing Activities",
+    }
+    for key in ("operating", "investing", "financing"):
+        section = report[key]
+        rows = [
+            _pdf_row(
+                _pdf_cell(format_date(entry["date"], company)),
+                _pdf_cell(entry["description"]),
+                _pdf_cell(entry["reference"]),
+                _pdf_cell(format_currency(entry["amount"], company), align="right"),
+            )
+            for entry in section["items"]
+        ]
+        rows.append(
+            _pdf_row(
+                _pdf_cell(f'Net cash from {label_map[key].lower()}', colspan=3),
+                _pdf_cell(format_currency(section["total"], company), align="right"),
+                class_name="total-row",
+            )
+        )
+        tables.append({
+            "title": label_map[key],
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "Date", "width": "16%"},
+                {"label": "Description", "width": "46%"},
+                {"label": "Reference", "width": "18%"},
+                {"label": "Amount", "align": "right", "width": "20%"},
+            ],
+            "rows": rows,
+            "empty_message": f'No {label_map[key].lower()} cash flows for this period.',
+        })
+    tables.append({
+        "title": "Cash Summary",
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Measure", "width": "16%"},
+            {"label": "", "width": "46%"},
+            {"label": "", "width": "18%"},
+            {"label": "Amount", "align": "right", "width": "20%"},
+        ],
+        "rows": [
+            _pdf_row(_pdf_cell("Opening cash balance", colspan=3), _pdf_cell(format_currency(report["opening_cash"], company), align="right")),
+            _pdf_row(_pdf_cell("Net increase / (decrease) in cash", colspan=3), _pdf_cell(format_currency(report["net_cash_change"], company), align="right")),
+            _pdf_row(_pdf_cell("Closing cash balance", colspan=3), _pdf_cell(format_currency(report["closing_cash"], company), align="right"), class_name="total-row"),
+        ],
+    })
+    return tables
+
+
+def _report_tables_aging(report: dict, company: dict, party_label: str) -> list[dict]:
+    label_key = "customer_name" if party_label == "Customer" else "vendor_name"
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry[label_key]),
+            _pdf_cell(format_currency(entry["current"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_30"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_60"], company), align="right"),
+            _pdf_cell(format_currency(entry["over_90"], company), align="right"),
+            _pdf_cell(format_currency(entry["total"], company), align="right"),
+        )
+        for entry in report["items"]
+    ]
+    totals = report["totals"]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total"),
+            _pdf_cell(format_currency(totals["current"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_30"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_60"], company), align="right"),
+            _pdf_cell(format_currency(totals["over_90"], company), align="right"),
+            _pdf_cell(format_currency(totals["total"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "style": "width: 88%;",
+        "columns": [
+            {"label": party_label, "width": "26%"},
+            {"label": "Current", "align": "right"},
+            {"label": "1-30", "align": "right"},
+            {"label": "31-60", "align": "right"},
+            {"label": "61-90+", "align": "right"},
+            {"label": "Total", "align": "right"},
+        ],
+        "rows": rows,
+        "empty_message": f"No outstanding {party_label.lower()} balances.",
+    }]
+
+
+def _report_tables_income_by_customer(report: dict, company: dict) -> list[dict]:
+    invoice_total = sum(item["invoice_count"] for item in report["items"])
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["customer_name"]),
+            _pdf_cell(str(entry["invoice_count"]), align="right"),
+            _pdf_cell(format_currency(entry["total_sales"], company), align="right"),
+            _pdf_cell(format_currency(entry["total_paid"], company), align="right"),
+            _pdf_cell(format_currency(entry["total_balance"], company), align="right"),
+        )
+        for entry in report["items"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total"),
+            _pdf_cell(str(invoice_total), align="right"),
+            _pdf_cell(format_currency(report["total_sales"], company), align="right"),
+            _pdf_cell(format_currency(report["total_paid"], company), align="right"),
+            _pdf_cell(format_currency(report["total_balance"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Customer", "width": "32%"},
+            {"label": "Invoices", "align": "right", "width": "12%"},
+            {"label": "Sales", "align": "right", "width": "18%"},
+            {"label": "Paid", "align": "right", "width": "18%"},
+            {"label": "Balance", "align": "right", "width": "20%"},
+        ],
+        "rows": rows,
+        "empty_message": "No sales data for this period.",
+    }]
+
+
+def _report_tables_general_ledger(report: dict, company: dict) -> list[dict]:
+    tables = []
+    for account in report["accounts"]:
+        rows = [
+            _pdf_row(
+                _pdf_cell(format_date(entry["date"], company)),
+                _pdf_cell(entry["description"]),
+                _pdf_cell(entry["reference"]),
+                _pdf_cell(format_currency(entry["debit"], company) if entry["debit"] else "", align="right"),
+                _pdf_cell(format_currency(entry["credit"], company) if entry["credit"] else "", align="right"),
+            )
+            for entry in account["entries"]
+        ]
+        rows.append(
+            _pdf_row(
+                _pdf_cell("Total", colspan=3),
+                _pdf_cell(format_currency(account["total_debit"], company), align="right"),
+                _pdf_cell(format_currency(account["total_credit"], company), align="right"),
+                class_name="total-row",
+            )
+        )
+        tables.append({
+            "title": f'{account["account_number"] or ""} - {account["account_name"]}'.strip(" -"),
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "Date", "width": "16%"},
+                {"label": "Description", "width": "36%"},
+                {"label": "Reference", "width": "18%"},
+                {"label": "Debit", "align": "right", "width": "15%"},
+                {"label": "Credit", "align": "right", "width": "15%"},
+            ],
+            "rows": rows,
+            "empty_message": "No journal entries found.",
+        })
+    return tables or [{
+        "columns": [{"label": "General Ledger"}],
+        "rows": [],
+        "empty_message": "No journal entries found for this period.",
+    }]
+
+
+def _report_tables_fixed_assets_reconciliation(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["asset_number"] or ""),
+            _pdf_cell(entry["asset_name"] or ""),
+            _pdf_cell(entry["asset_type"] or ""),
+            _pdf_cell(format_date(entry["purchase_date"], company)),
+            _pdf_cell(format_currency(entry["purchase_price"], company), align="right"),
+            _pdf_cell(format_currency(entry["accumulated_depreciation"], company), align="right"),
+            _pdf_cell(format_currency(entry["book_value"], company), align="right"),
+        )
+        for entry in report["assets"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=4),
+            _pdf_cell(format_currency(report["total_cost"], company), align="right"),
+            _pdf_cell(format_currency(report["total_accumulated_depreciation"], company), align="right"),
+            _pdf_cell(format_currency(report["total_book_value"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [{
+        "style": "width: 88%; font-size: 8pt;",
+        "columns": [
+            {"label": "No.", "width": "10%"},
+            {"label": "Asset", "width": "26%"},
+            {"label": "Type", "width": "18%"},
+            {"label": "Purchase Date", "width": "14%"},
+            {"label": "Cost", "align": "right", "width": "10%"},
+            {"label": "Accum. Dep.", "align": "right", "width": "11%"},
+            {"label": "Book Value", "align": "right", "width": "11%"},
+        ],
+        "rows": rows,
+        "empty_message": "No fixed assets for this date.",
+    }]
+
+
+def _statement_of_changes_in_equity_rows(db: Session, start_date: date, end_date: date, auth) -> dict:
+    opening_date = start_date - timedelta(days=1)
+
+    def _balances(as_of_date: date) -> dict:
+        results = (
+            db.query(
+                Account.id,
+                Account.account_number,
+                Account.name,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
+            .join(TransactionLine, TransactionLine.account_id == Account.id)
+            .join(Transaction, TransactionLine.transaction_id == Transaction.id)
+            .filter(Account.account_type == AccountType.EQUITY)
+            .filter(Transaction.date <= as_of_date)
+            .group_by(Account.id, Account.account_number, Account.name)
+            .all()
+        )
+        rows = []
+        total = Decimal("0.00")
+        by_id = {}
+        for account_id, account_number, account_name, debit_total, credit_total in results:
+            opening_or_closing = _natural_balance_amount(AccountType.EQUITY, debit_total, credit_total)
+            rows.append({
+                "account_id": account_id,
+                "account_number": account_number,
+                "account_name": account_name,
+                "balance": float(opening_or_closing),
+            })
+            by_id[account_id] = opening_or_closing
+            total += opening_or_closing
+        rows.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+        return {"rows": rows, "total": float(total), "by_id": by_id}
+
+    opening = _balances(opening_date)
+    closing = _balances(end_date)
+    current_period_profit = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)["net_income"]
+
+    equity_rows = []
+    opening_total = Decimal(str(opening["total"]))
+    account_closing_total = Decimal(str(closing["total"]))
+    direct_movements_total = Decimal("0.00")
+
+    closing_lookup = closing["by_id"]
+    for row in opening["rows"]:
+        opening_balance = Decimal(str(row["balance"]))
+        closing_balance = Decimal(str(closing_lookup.get(row["account_id"], Decimal("0.00"))))
+        movement = closing_balance - opening_balance
+        direct_movements_total += movement
+        equity_rows.append({
+            "account_number": row["account_number"],
+            "account_name": row["account_name"],
+            "opening_balance": float(opening_balance),
+            "movement": float(movement),
+            "closing_balance": float(closing_balance),
+        })
+
+    for row in closing["rows"]:
+        if any(existing["account_number"] == row["account_number"] and existing["account_name"] == row["account_name"] for existing in equity_rows):
+            continue
+        closing_balance = Decimal(str(row["balance"]))
+        direct_movements_total += closing_balance
+        equity_rows.append({
+            "account_number": row["account_number"],
+            "account_name": row["account_name"],
+            "opening_balance": 0.0,
+            "movement": float(closing_balance),
+            "closing_balance": float(closing_balance),
+        })
+
+    equity_rows.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+
+    reported_closing_total = opening_total + direct_movements_total + Decimal(str(current_period_profit))
+    difference = account_closing_total - (opening_total + direct_movements_total)
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "equity_accounts": equity_rows,
+        "opening_total": float(opening_total),
+        "direct_movements_total": float(direct_movements_total),
+        "current_period_profit": float(current_period_profit),
+        "account_closing_total": float(account_closing_total),
+        "closing_total": float(reported_closing_total),
+        "difference": float(difference),
+        "is_balanced": abs(difference) < Decimal("0.005"),
+    }
+
+
+def _report_tables_statement_of_changes_in_equity(report: dict, company: dict) -> list[dict]:
+    rows = [
+        _pdf_row(
+            _pdf_cell(entry["account_number"] or ""),
+            _pdf_cell(entry["account_name"]),
+            _pdf_cell(format_currency(entry["opening_balance"], company), align="right"),
+            _pdf_cell(format_currency(entry["movement"], company), align="right"),
+            _pdf_cell(format_currency(entry["closing_balance"], company), align="right"),
+        )
+        for entry in report["equity_accounts"]
+    ]
+    rows.append(
+        _pdf_row(
+            _pdf_cell("Total", colspan=2),
+            _pdf_cell(format_currency(report["opening_total"], company), align="right"),
+            _pdf_cell(format_currency(report["direct_movements_total"], company), align="right"),
+            _pdf_cell(format_currency(report["account_closing_total"], company), align="right"),
+            class_name="total-row",
+        )
+    )
+    return [
+        {
+            "title": "Equity account roll-forward",
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "No.", "width": "12%"},
+                {"label": "Account", "width": "30%"},
+                {"label": "Opening", "align": "right", "width": "19%"},
+                {"label": "Movement", "align": "right", "width": "19%"},
+                {"label": "Closing", "align": "right", "width": "20%"},
+            ],
+            "rows": rows,
+            "empty_message": "No equity accounts for this period.",
+        },
+        {
+            "title": "Reconciliation",
+            "style": "width: 88%;",
+            "columns": [
+                {"label": "Measure", "width": "72%"},
+                {"label": "Amount", "align": "right", "width": "28%"},
+            ],
+            "rows": [
+                _pdf_row(_pdf_cell("Opening equity"), _pdf_cell(format_currency(report["opening_total"], company), align="right")),
+                _pdf_row(_pdf_cell("Direct equity movements"), _pdf_cell(format_currency(report["direct_movements_total"], company), align="right")),
+                _pdf_row(_pdf_cell("Current period profit / (loss)"), _pdf_cell(format_currency(report["current_period_profit"], company), align="right")),
+                _pdf_row(_pdf_cell("Closing equity"), _pdf_cell(format_currency(report["closing_total"], company), align="right"), class_name="total-row"),
+                _pdf_row(_pdf_cell("Reconciliation difference"), _pdf_cell(format_currency(report["difference"], company), align="right"), class_name="total-row"),
+            ],
+        },
+    ]
+
+
+def _report_tables_accounting_policies(company: dict, as_of_date: date) -> list[dict]:
+    policies = [
+        ("Basis of accounting", "The records are maintained on an accrual, double-entry basis."),
+        ("Presentation currency", f'{company.get("currency") or "NZD"} is used for presentation and reporting.'),
+        ("GST", f'GST is reported using the configured {company.get("gst_basis") or "invoice"} basis and the current company settings.'),
+        ("Revenue and expenses", "Revenue and expenses are recorded from source documents and journal entries in the general ledger."),
+        ("Fixed assets", "Fixed assets are carried at cost less accumulated depreciation and are reviewed through the fixed asset reconciliation."),
+        ("Reporting date", f'This document is prepared for the period ending {format_date(as_of_date, company)}.'),
+    ]
+    return [{
+        "title": "Accounting policies",
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Policy", "width": "30%"},
+            {"label": "Description", "width": "70%"},
+        ],
+        "rows": [_pdf_row(_pdf_cell(label), _pdf_cell(detail)) for label, detail in policies],
+        "empty_message": "No accounting policies available.",
+    }]
+
+
+def _report_tables_directors_approval(company: dict, as_of_date: date) -> list[dict]:
+    company_name = company.get("company_name") or "SlowBooks Pro 2026"
+    return [{
+        "title": "Directors' approval and signatures",
+        "style": "width: 88%;",
+        "columns": [
+            {"label": "Item", "width": "28%"},
+            {"label": "Details", "width": "72%"},
+        ],
+        "rows": [
+            _pdf_row(_pdf_cell("Company"), _pdf_cell(company_name)),
+            _pdf_row(_pdf_cell("Balance date"), _pdf_cell(format_date(as_of_date, company))),
+            _pdf_row(_pdf_cell("Approval"), _pdf_cell("The directors approve these financial statements for issue.")),
+            _pdf_row(_pdf_cell("Director signature"), _pdf_cell("____________________________")),
+            _pdf_row(_pdf_cell("Director name"), _pdf_cell("____________________________")),
+            _pdf_row(_pdf_cell("Date"), _pdf_cell("____________________________")),
+        ],
+        "empty_message": "No signature page content available.",
+    }]
 
 
 def _draft_return_confirmation_state(start_date: date, end_date: date, box9_adjustments: Decimal, box13_adjustments: Decimal) -> dict:
@@ -164,6 +840,7 @@ def profit_loss(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -172,8 +849,12 @@ def profit_loss(
 
     def get_account_totals(acct_type):
         results = (
-            db.query(Account.name, Account.account_number,
-                     sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit - TransactionLine.debit), 0))
+            db.query(
+                Account.name,
+                Account.account_number,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
             .join(TransactionLine, TransactionLine.account_id == Account.id)
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(Account.account_type == acct_type)
@@ -182,7 +863,14 @@ def profit_loss(
             .group_by(Account.id, Account.name, Account.account_number)
             .all()
         )
-        return [{"account_name": r[0], "account_number": r[1], "amount": float(r[2])} for r in results]
+        return [
+            {
+                "account_name": name,
+                "account_number": account_number,
+                "amount": float(_natural_balance_amount(acct_type, debit_total, credit_total)),
+            }
+            for name, account_number, debit_total, credit_total in results
+        ]
 
     income = get_account_totals(AccountType.INCOME)
     cogs = get_account_totals(AccountType.COGS)
@@ -207,14 +895,22 @@ def profit_loss(
 
 
 @router.get("/balance-sheet")
-def balance_sheet(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def balance_sheet(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     if not as_of_date:
         as_of_date = date.today()
 
     def get_balances(acct_type):
         results = (
-            db.query(Account.name, Account.account_number,
-                     sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit - TransactionLine.credit), 0))
+            db.query(
+                Account.name,
+                Account.account_number,
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+                sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+            )
             .join(TransactionLine, TransactionLine.account_id == Account.id)
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(Account.account_type == acct_type)
@@ -222,29 +918,360 @@ def balance_sheet(as_of_date: date = Query(default=None), db: Session = Depends(
             .group_by(Account.id, Account.name, Account.account_number)
             .all()
         )
-        return [{"account_name": r[0], "account_number": r[1], "amount": float(r[2])} for r in results]
+        return [
+            {
+                "account_name": name,
+                "account_number": account_number,
+                "amount": float(_natural_balance_amount(acct_type, debit_total, credit_total)),
+            }
+            for name, account_number, debit_total, credit_total in results
+        ]
 
     assets = get_balances(AccountType.ASSET)
     liabilities = get_balances(AccountType.LIABILITY)
     equity = get_balances(AccountType.EQUITY)
+    current_earnings = profit_loss(
+        start_date=date(1900, 1, 1),
+        end_date=as_of_date,
+        db=db,
+        auth=auth,
+    )["net_income"]
 
     total_assets = sum(a["amount"] for a in assets)
     total_liabilities = sum(abs(l["amount"]) for l in liabilities)
-    total_equity = sum(abs(e["amount"]) for e in equity)
+    total_equity = sum(abs(e["amount"]) for e in equity) + current_earnings
+    total_liabilities_and_equity = total_liabilities + total_equity
+    balance_difference = total_assets - total_liabilities_and_equity
 
     return {
         "as_of_date": as_of_date.isoformat(),
         "assets": assets,
         "liabilities": liabilities,
         "equity": equity,
+        "current_earnings": current_earnings,
         "total_assets": total_assets,
         "total_liabilities": total_liabilities,
         "total_equity": total_equity,
+        "total_liabilities_and_equity": total_liabilities_and_equity,
+        "balance_difference": balance_difference,
+        "is_balanced": abs(balance_difference) < 0.005,
     }
 
 
+@router.get("/profit-loss/pdf")
+def profit_loss_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Profit & Loss",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_profit_loss(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'ProfitLoss_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/balance-sheet/pdf")
+def balance_sheet_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = balance_sheet(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Balance Sheet",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_balance_sheet(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'BalanceSheet_{report["as_of_date"]}.pdf')
+
+
+@router.get("/fixed-assets-reconciliation")
+def fixed_assets_reconciliation_report(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    return build_fixed_asset_reconciliation(db, as_of_date or date.today())
+
+
+@router.get("/fixed-assets-reconciliation/pdf")
+def fixed_assets_reconciliation_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = fixed_assets_reconciliation_report(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Fixed Asset Reconciliation",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_fixed_assets_reconciliation(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'FixedAssetReconciliation_{report["as_of_date"]}.pdf')
+
+
+@router.get("/statement-of-changes-in-equity")
+def statement_of_changes_in_equity(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = _financial_year_start_for_date(company, end_date)
+    return _statement_of_changes_in_equity_rows(db, start_date, end_date, auth)
+
+
+@router.get("/statement-of-changes-in-equity/pdf")
+def statement_of_changes_in_equity_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = statement_of_changes_in_equity(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Statement of Changes in Equity",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_statement_of_changes_in_equity(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'StatementOfChangesInEquity_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/accounting-policies/pdf")
+def accounting_policies_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    as_of_date = as_of_date or date.today()
+    pdf_bytes = generate_report_pdf(
+        title="Accounting Policies",
+        company_settings=company,
+        subtitle=f'As of {format_date(as_of_date, company)}',
+        tables=_report_tables_accounting_policies(company, as_of_date),
+    )
+    return _report_pdf_response(pdf_bytes, f'AccountingPolicies_{as_of_date.isoformat()}.pdf')
+
+
+@router.get("/directors-approval/pdf")
+def directors_approval_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    as_of_date = as_of_date or date.today()
+    pdf_bytes = generate_report_pdf(
+        title="Directors' Approval and Signatures",
+        company_settings=company,
+        subtitle=f'As of {format_date(as_of_date, company)}',
+        tables=_report_tables_directors_approval(company, as_of_date),
+    )
+    return _report_pdf_response(pdf_bytes, f'DirectorsApproval_{as_of_date.isoformat()}.pdf')
+
+
+@router.get("/trial-balance")
+def trial_balance(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    if not as_of_date:
+        as_of_date = date.today()
+
+    results = (
+        db.query(
+            Account.id,
+            Account.account_number,
+            Account.name,
+            Account.account_type,
+            sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
+            sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
+        )
+        .join(TransactionLine, TransactionLine.account_id == Account.id)
+        .join(Transaction, TransactionLine.transaction_id == Transaction.id)
+        .filter(Transaction.date <= as_of_date)
+        .group_by(Account.id, Account.account_number, Account.name, Account.account_type)
+        .all()
+    )
+
+    accounts = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    for account_id, account_number, account_name, account_type, debit_total, credit_total in results:
+        net_balance = Decimal(str(debit_total or 0)) - Decimal(str(credit_total or 0))
+        if net_balance == 0:
+            continue
+
+        debit_balance = net_balance if net_balance > 0 else Decimal("0.00")
+        credit_balance = -net_balance if net_balance < 0 else Decimal("0.00")
+        total_debit += debit_balance
+        total_credit += credit_balance
+        accounts.append({
+            "account_id": account_id,
+            "account_number": account_number,
+            "account_name": account_name,
+            "account_type": account_type.value,
+            "debit_balance": float(debit_balance),
+            "credit_balance": float(credit_balance),
+        })
+
+    accounts.sort(key=lambda row: (row["account_number"] is None, row["account_number"] or "", row["account_name"]))
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "accounts": accounts,
+        "total_debit": float(total_debit),
+        "total_credit": float(total_credit),
+    }
+
+
+@router.get("/trial-balance/pdf")
+def trial_balance_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = trial_balance(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Trial Balance",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_trial_balance(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'TrialBalance_{report["as_of_date"]}.pdf')
+
+
+@router.get("/cash-flow")
+def cash_flow_report(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    if not start_date:
+        start_date = date(date.today().year, 1, 1)
+    if not end_date:
+        end_date = date.today()
+
+    cash_account_ids = _cash_account_ids(db)
+    if not cash_account_ids:
+        return {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "cash_account_ids": [],
+            "operating": {"items": [], "total": 0.0},
+            "investing": {"items": [], "total": 0.0},
+            "financing": {"items": [], "total": 0.0},
+            "opening_cash": 0.0,
+            "closing_cash": 0.0,
+            "net_cash_change": 0.0,
+        }
+
+    txns = (
+        db.query(Transaction)
+        .filter(Transaction.date >= start_date, Transaction.date <= end_date)
+        .order_by(Transaction.date, Transaction.id)
+        .all()
+    )
+
+    sections = {
+        "operating": {"items": [], "total": Decimal("0.00")},
+        "investing": {"items": [], "total": Decimal("0.00")},
+        "financing": {"items": [], "total": Decimal("0.00")},
+    }
+
+    for txn in txns:
+        cash_lines = [line for line in txn.lines if line.account_id in cash_account_ids]
+        counterpart_lines = [line for line in txn.lines if line.account_id not in cash_account_ids]
+        if not cash_lines or not counterpart_lines:
+            continue
+
+        net_cash = sum((Decimal(str(line.debit or 0)) - Decimal(str(line.credit or 0)) for line in cash_lines), Decimal("0.00"))
+        if net_cash == 0:
+            continue
+
+        categories = {_cash_flow_category_for_account(line.account) for line in counterpart_lines}
+        if categories == {"financing"}:
+            section_key = "financing"
+        elif categories == {"investing"}:
+            section_key = "investing"
+        elif "operating" in categories:
+            section_key = "operating"
+        elif "financing" in categories and "investing" not in categories:
+            section_key = "financing"
+        else:
+            section_key = "investing"
+
+        sections[section_key]["items"].append({
+            "transaction_id": txn.id,
+            "date": txn.date.isoformat(),
+            "description": txn.description or txn.source_type or "Cash movement",
+            "reference": txn.reference or "",
+            "amount": float(net_cash),
+            "source_type": txn.source_type or "",
+        })
+        sections[section_key]["total"] += net_cash
+
+    opening_cash = _opening_cash_balance(db, cash_account_ids, start_date)
+    net_cash_change = sum((section["total"] for section in sections.values()), Decimal("0.00"))
+    closing_cash = opening_cash + net_cash_change
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "cash_account_ids": sorted(cash_account_ids),
+        "operating": {"items": sections["operating"]["items"], "total": float(sections["operating"]["total"])},
+        "investing": {"items": sections["investing"]["items"], "total": float(sections["investing"]["total"])},
+        "financing": {"items": sections["financing"]["items"], "total": float(sections["financing"]["total"])},
+        "opening_cash": float(opening_cash),
+        "closing_cash": float(closing_cash),
+        "net_cash_change": float(net_cash_change),
+    }
+
+
+@router.get("/cash-flow/pdf")
+def cash_flow_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = cash_flow_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Cash Flow",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_cash_flow(report, company),
+    )
+    return _report_pdf_response(pdf_bytes, f'CashFlow_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
 @router.get("/ar-aging")
-def ar_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def ar_aging(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     if not as_of_date:
         as_of_date = date.today()
 
@@ -298,6 +1325,24 @@ def ar_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_d
     return {"as_of_date": as_of_date.isoformat(), "items": items, "totals": totals}
 
 
+@router.get("/ar-aging/pdf")
+def ar_aging_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = ar_aging(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Accounts Receivable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_aging(report, company, "Customer"),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'ARAging_{report["as_of_date"]}.pdf')
+
+
 @router.get("/gst-return")
 def gst_return_report(
     start_date: date = Query(default=None),
@@ -305,6 +1350,7 @@ def gst_return_report(
     box9_adjustments: Decimal = Query(default=Decimal("0.00")),
     box13_adjustments: Decimal = Query(default=Decimal("0.00")),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """GST101A return report."""
     if not start_date:
@@ -332,6 +1378,7 @@ def gst_return_report(
 def gst_returns_overview(
     as_of_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     as_of_date = as_of_date or date.today()
     settings = get_settings(db)
@@ -411,6 +1458,7 @@ def gst_return_transactions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=250),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -507,6 +1555,7 @@ def sales_tax_report(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """Compatibility alias for the NZ GST return report."""
     return gst_return_report(
@@ -515,6 +1564,7 @@ def sales_tax_report(
         box9_adjustments=Decimal("0.00"),
         box13_adjustments=Decimal("0.00"),
         db=db,
+        auth=auth,
     )
 
 
@@ -527,6 +1577,7 @@ def gst_return_pdf(
     return_due_date: date = Query(default=None),
     phone: str = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
@@ -548,7 +1599,7 @@ def gst_return_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="GST101A_{start_date}_{end_date}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="GST101A_{start_date}_{end_date}.pdf"'},
     )
 
 
@@ -558,6 +1609,7 @@ def general_ledger(
     end_date: date = Query(default=None),
     account_id: int = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CReportEngine::RunGLDetail() @ 0x00211400"""
     if not start_date:
@@ -612,11 +1664,245 @@ def general_ledger(
     }
 
 
+@router.get("/general-ledger/pdf")
+def general_ledger_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    account_id: int = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = general_ledger(start_date=start_date, end_date=end_date, account_id=account_id, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="General Ledger",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_general_ledger(report, company),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'GeneralLedger_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
+@router.get("/financial-statements-pack")
+def financial_statements_pack(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    company = _company_settings(db)
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = _financial_year_start_for_date(company, end_date)
+    included_documents: list[dict] = []
+    zip_entries: list[tuple[str, bytes]] = []
+
+    def add_pdf(path: str, label: str, filename: str, pdf_bytes: bytes):
+        zip_entries.append((path, pdf_bytes))
+        included_documents.append({
+            "label": label,
+            "path": path,
+            "filename": filename,
+            "media_type": "application/pdf",
+        })
+
+    profit_loss_report = profit_loss(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    profit_loss_pdf_bytes = generate_report_pdf(
+        title="Profit & Loss",
+        company_settings=company,
+        subtitle=f'{format_date(profit_loss_report["start_date"], company)} - {format_date(profit_loss_report["end_date"], company)}',
+        tables=_report_tables_profit_loss(profit_loss_report, company),
+    )
+    add_pdf(
+        "statements/ProfitLoss_%s_%s.pdf" % (profit_loss_report["start_date"], profit_loss_report["end_date"]),
+        "Profit & Loss",
+        f'ProfitLoss_{profit_loss_report["start_date"]}_{profit_loss_report["end_date"]}.pdf',
+        profit_loss_pdf_bytes,
+    )
+
+    balance_sheet_report = balance_sheet(as_of_date=end_date, db=db, auth=auth)
+    balance_sheet_pdf_bytes = generate_report_pdf(
+        title="Balance Sheet",
+        company_settings=company,
+        subtitle=f'As of {format_date(balance_sheet_report["as_of_date"], company)}',
+        tables=_report_tables_balance_sheet(balance_sheet_report, company),
+    )
+    add_pdf(
+        "statements/BalanceSheet_%s.pdf" % balance_sheet_report["as_of_date"],
+        "Balance Sheet",
+        f'BalanceSheet_{balance_sheet_report["as_of_date"]}.pdf',
+        balance_sheet_pdf_bytes,
+    )
+
+    trial_balance_report = trial_balance(as_of_date=end_date, db=db, auth=auth)
+    trial_balance_pdf_bytes = generate_report_pdf(
+        title="Trial Balance",
+        company_settings=company,
+        subtitle=f'As of {format_date(trial_balance_report["as_of_date"], company)}',
+        tables=_report_tables_trial_balance(trial_balance_report, company),
+    )
+    add_pdf(
+        "statements/TrialBalance_%s.pdf" % trial_balance_report["as_of_date"],
+        "Trial Balance",
+        f'TrialBalance_{trial_balance_report["as_of_date"]}.pdf',
+        trial_balance_pdf_bytes,
+    )
+
+    cash_flow_data = cash_flow_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    cash_flow_pdf_bytes = generate_report_pdf(
+        title="Cash Flow",
+        company_settings=company,
+        subtitle=f'{format_date(cash_flow_data["start_date"], company)} - {format_date(cash_flow_data["end_date"], company)}',
+        tables=_report_tables_cash_flow(cash_flow_data, company),
+    )
+    add_pdf(
+        "statements/CashFlow_%s_%s.pdf" % (cash_flow_data["start_date"], cash_flow_data["end_date"]),
+        "Cash Flow",
+        f'CashFlow_{cash_flow_data["start_date"]}_{cash_flow_data["end_date"]}.pdf',
+        cash_flow_pdf_bytes,
+    )
+
+    general_ledger_data = general_ledger(start_date=start_date, end_date=end_date, account_id=None, db=db, auth=auth)
+    general_ledger_pdf_bytes = generate_report_pdf(
+        title="General Ledger",
+        company_settings=company,
+        subtitle=f'{format_date(general_ledger_data["start_date"], company)} - {format_date(general_ledger_data["end_date"], company)}',
+        tables=_report_tables_general_ledger(general_ledger_data, company),
+        landscape=True,
+    )
+    add_pdf(
+        "ledger/GeneralLedger_%s_%s.pdf" % (general_ledger_data["start_date"], general_ledger_data["end_date"]),
+        "General Ledger",
+        f'GeneralLedger_{general_ledger_data["start_date"]}_{general_ledger_data["end_date"]}.pdf',
+        general_ledger_pdf_bytes,
+    )
+
+    ar_aging_data = ar_aging(as_of_date=end_date, db=db, auth=auth)
+    ar_aging_pdf_bytes = generate_report_pdf(
+        title="Accounts Receivable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(ar_aging_data["as_of_date"], company)}',
+        tables=_report_tables_aging(ar_aging_data, company, "Customer"),
+        landscape=True,
+    )
+    add_pdf(
+        "aging/ARAging_%s.pdf" % ar_aging_data["as_of_date"],
+        "Accounts Receivable Aging",
+        f'ARAging_{ar_aging_data["as_of_date"]}.pdf',
+        ar_aging_pdf_bytes,
+    )
+
+    ap_aging_data = ap_aging(as_of_date=end_date, db=db, auth=auth)
+    ap_aging_pdf_bytes = generate_report_pdf(
+        title="Accounts Payable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(ap_aging_data["as_of_date"], company)}',
+        tables=_report_tables_aging(ap_aging_data, company, "Vendor"),
+        landscape=True,
+    )
+    add_pdf(
+        "aging/APAging_%s.pdf" % ap_aging_data["as_of_date"],
+        "Accounts Payable Aging",
+        f'APAging_{ap_aging_data["as_of_date"]}.pdf',
+        ap_aging_pdf_bytes,
+    )
+
+    gst_return_data = gst_return_report(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    gst_return_pdf_bytes = generate_gst101a_pdf(gst_return_data, company)
+    add_pdf(
+        "gst/GST101A_%s_%s.pdf" % (gst_return_data["start_date"], gst_return_data["end_date"]),
+        "GST101A Return",
+        f'GST101A_{gst_return_data["start_date"]}_{gst_return_data["end_date"]}.pdf',
+        gst_return_pdf_bytes,
+    )
+
+    fixed_asset_reconciliation_data = fixed_assets_reconciliation_report(as_of_date=end_date, db=db, auth=auth)
+    fixed_asset_pdf_bytes = generate_report_pdf(
+        title="Fixed Asset Reconciliation",
+        company_settings=company,
+        subtitle=f'As of {format_date(fixed_asset_reconciliation_data["as_of_date"], company)}',
+        tables=_report_tables_fixed_assets_reconciliation(fixed_asset_reconciliation_data, company),
+    )
+    zip_entries.append((f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf', fixed_asset_pdf_bytes))
+    included_documents.append({
+        "label": "Fixed Asset Reconciliation",
+        "path": f'fixed-assets/FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf',
+        "filename": f'FixedAssetReconciliation_{fixed_asset_reconciliation_data["as_of_date"]}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    soce_data = statement_of_changes_in_equity(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    soce_pdf_bytes = generate_report_pdf(
+        title="Statement of Changes in Equity",
+        company_settings=company,
+        subtitle=f'{format_date(soce_data["start_date"], company)} - {format_date(soce_data["end_date"], company)}',
+        tables=_report_tables_statement_of_changes_in_equity(soce_data, company),
+    )
+    zip_entries.append((f'equity/StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf', soce_pdf_bytes))
+    included_documents.append({
+        "label": "Statement of Changes in Equity",
+        "path": f'equity/StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf',
+        "filename": f'StatementOfChangesInEquity_{soce_data["start_date"]}_{soce_data["end_date"]}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    accounting_policies_pdf_bytes = generate_report_pdf(
+        title="Accounting Policies",
+        company_settings=company,
+        subtitle=f'As of {format_date(end_date, company)}',
+        tables=_report_tables_accounting_policies(company, end_date),
+    )
+    zip_entries.append((f'policies/AccountingPolicies_{end_date.isoformat()}.pdf', accounting_policies_pdf_bytes))
+    included_documents.append({
+        "label": "Accounting Policies",
+        "path": f'policies/AccountingPolicies_{end_date.isoformat()}.pdf',
+        "filename": f'AccountingPolicies_{end_date.isoformat()}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    directors_approval_pdf_bytes = generate_report_pdf(
+        title="Directors' Approval and Signatures",
+        company_settings=company,
+        subtitle=f'As of {format_date(end_date, company)}',
+        tables=_report_tables_directors_approval(company, end_date),
+    )
+    zip_entries.append((f'directors/DirectorsApproval_{end_date.isoformat()}.pdf', directors_approval_pdf_bytes))
+    included_documents.append({
+        "label": "Directors Approval and Signatures",
+        "path": f'directors/DirectorsApproval_{end_date.isoformat()}.pdf',
+        "filename": f'DirectorsApproval_{end_date.isoformat()}.pdf',
+        "media_type": "application/pdf",
+    })
+
+    manifest = _financial_statements_pack_manifest(
+        start_date=start_date,
+        end_date=end_date,
+        included_documents=included_documents,
+        missing_documents=[
+            "notes_to_financial_statements",
+            "auditor_report",
+            "tax_reconciliation_to_taxable_income",
+            "tax_fixed_asset_schedule",
+            "ir10_or_equivalent_summary",
+        ],
+    )
+    zip_entries.append(("manifest.json", json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")))
+
+    with BytesIO() as buffer:
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path, payload in zip_entries:
+                archive.writestr(path, payload)
+        return _zip_response(buffer.getvalue(), f'FinancialStatementsPack_{start_date}_{end_date}.zip')
+
+
 @router.get("/income-by-customer")
 def income_by_customer(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CReportEngine::RunIncomeByCustomer() @ 0x00212000"""
     if not start_date:
@@ -669,8 +1955,31 @@ def income_by_customer(
     }
 
 
+@router.get("/income-by-customer/pdf")
+def income_by_customer_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = income_by_customer(start_date=start_date, end_date=end_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Income by Customer",
+        company_settings=company,
+        subtitle=f'{format_date(report["start_date"], company)} - {format_date(report["end_date"], company)}',
+        tables=_report_tables_income_by_customer(report, company),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'IncomeByCustomer_{report["start_date"]}_{report["end_date"]}.pdf')
+
+
 @router.get("/ap-aging")
-def ap_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_db)):
+def ap_aging(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
     """AP Aging report — mirrors AR aging but for bills."""
     if not as_of_date:
         as_of_date = date.today()
@@ -732,36 +2041,36 @@ def ap_aging(as_of_date: date = Query(default=None), db: Session = Depends(get_d
         }}
 
 
+@router.get("/ap-aging/pdf")
+def ap_aging_pdf(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    report = ap_aging(as_of_date=as_of_date, db=db, auth=auth)
+    company = _company_settings(db)
+    pdf_bytes = generate_report_pdf(
+        title="Accounts Payable Aging",
+        company_settings=company,
+        subtitle=f'As of {format_date(report["as_of_date"], company)}',
+        tables=_report_tables_aging(report, company, "Vendor"),
+        landscape=True,
+    )
+    return _report_pdf_response(pdf_bytes, f'APAging_{report["as_of_date"]}.pdf')
+
+
 @router.get("/customer-statement/{customer_id}/pdf")
 def customer_statement_pdf(
     customer_id: int,
     as_of_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
 ):
     """CStatementPrintLayout::RenderPage() @ 0x00224000"""
     if not as_of_date:
         as_of_date = date.today()
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.customer_id == customer_id)
-        .filter(Invoice.status != InvoiceStatus.VOID)
-        .filter(Invoice.date <= as_of_date)
-        .order_by(Invoice.date)
-        .all()
-    )
-
-    payments = (
-        db.query(Payment)
-        .filter(Payment.customer_id == customer_id)
-        .filter(Payment.date <= as_of_date)
-        .order_by(Payment.date)
-        .all()
-    )
+    customer, invoices, payments = _customer_statement_context(db, customer_id, as_of_date)
 
     company = get_settings(db)
     pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
@@ -777,29 +2086,19 @@ def email_customer_statement(
     customer_id: int,
     data: StatementEmailRequest,
     db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
 ):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=5,
+        window_seconds=60,
+        detail="Too many document email requests. Please wait and try again.",
+    )
     as_of_date = data.as_of_date or date.today()
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.customer_id == customer_id)
-        .filter(Invoice.status != InvoiceStatus.VOID)
-        .filter(Invoice.date <= as_of_date)
-        .order_by(Invoice.date)
-        .all()
-    )
-
-    payments = (
-        db.query(Payment)
-        .filter(Payment.customer_id == customer_id)
-        .filter(Payment.date <= as_of_date)
-        .order_by(Payment.date)
-        .all()
-    )
+    customer, invoices, payments = _customer_statement_context(db, customer_id, as_of_date)
 
     company = get_settings(db)
     try:
@@ -823,5 +2122,235 @@ def email_customer_statement(
             entity_id=customer.id,
         )
         return {"status": "sent"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=PUBLIC_EMAIL_FAILURE_DETAIL) from exc
+
+
+
+
+@router.get("/invoice-reminders/preview", response_model=InvoiceReminderPreviewResponse)
+def invoice_reminder_preview(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    as_of_date = as_of_date or date.today()
+    items = _invoice_reminder_preview_items(db, as_of_date)
+    return {
+        'as_of_date': as_of_date,
+        'items': items,
+        'item_count': len(items),
+    }
+
+@router.get("/overdue-statements/candidates")
+def overdue_statement_candidates(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    as_of_date = as_of_date or date.today()
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "items": _overdue_statement_candidates(db, as_of_date),
+    }
+
+
+@router.get("/monthly-statements/candidates")
+def monthly_statement_candidates(
+    as_of_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+):
+    as_of_date = as_of_date or date.today()
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "items": _monthly_statement_candidates(db, as_of_date),
+    }
+
+
+class OverdueStatementRecipient(BaseModel):
+    customer_id: int
+    recipient: str
+    subject: str | None = None
+
+
+class BatchOverdueStatementRequest(BaseModel):
+    as_of_date: date | None = None
+    recipients: list[OverdueStatementRecipient]
+
+
+class MonthlyStatementRecipient(BaseModel):
+    customer_id: int
+    recipient: str
+    subject: str | None = None
+
+
+class BatchMonthlyStatementRequest(BaseModel):
+    as_of_date: date | None = None
+    recipients: list[MonthlyStatementRecipient]
+
+
+@router.post("/overdue-statements/send")
+def send_overdue_statements(
+    data: BatchOverdueStatementRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
+):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=3,
+        window_seconds=60,
+        detail="Too many batch document email requests. Please wait and try again.",
+    )
+    as_of_date = data.as_of_date or date.today()
+    allowed = {
+        row["customer_id"]: row
+        for row in _overdue_statement_candidates(db, as_of_date)
+    }
+    company = get_settings(db)
+    results = []
+
+    for recipient in data.recipients:
+        candidate = allowed.get(recipient.customer_id)
+        if not candidate:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "status": "skipped",
+                "detail": "Customer is not currently an overdue statement candidate",
+            })
+            continue
+
+        try:
+            customer, invoices, payments = _customer_statement_context(db, recipient.customer_id, as_of_date)
+            pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
+            html_body = render_document_email(
+                document_label="Statement",
+                recipient_name=customer.name,
+                company_settings=company,
+                action_label="As of",
+                action_value=as_of_date,
+                message="Please find attached your overdue customer statement.",
+            )
+            send_document_email(
+                db,
+                to_email=recipient.recipient,
+                subject=recipient.subject or f"Overdue statement as at {as_of_date.isoformat()}",
+                html_body=html_body,
+                attachment_bytes=pdf_bytes,
+                attachment_name=f"Statement_{recipient.customer_id}_{as_of_date.isoformat()}.pdf",
+                entity_type="statement",
+                entity_id=customer.id,
+            )
+            results.append({
+                "customer_id": customer.id,
+                "customer_name": customer.name,
+                "recipient": recipient.recipient,
+                "status": "sent",
+                "detail": None,
+            })
+        except Exception as exc:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "failed",
+                "detail": "Email delivery failed",
+            })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "results": results,
+        "sent_count": sum(1 for row in results if row["status"] == "sent"),
+        "failed_count": sum(1 for row in results if row["status"] == "failed"),
+        "skipped_count": sum(1 for row in results if row["status"] == "skipped"),
+    }
+
+
+@router.post("/monthly-statements/send")
+def send_monthly_statements(
+    data: BatchMonthlyStatementRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(require_permissions("accounts.manage")),
+    request: Request = None,
+):
+    enforce_rate_limit(
+        request,
+        scope="email:documents",
+        limit=3,
+        window_seconds=60,
+        detail="Too many batch document email requests. Please wait and try again.",
+    )
+    as_of_date = data.as_of_date or date.today()
+    allowed = {
+        row["customer_id"]: row
+        for row in _monthly_statement_candidates(db, as_of_date)
+    }
+    company = get_settings(db)
+    results = []
+
+    for recipient in data.recipients:
+        candidate = allowed.get(recipient.customer_id)
+        if not candidate:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "status": "skipped",
+                "detail": "Customer is not currently a monthly statement candidate",
+            })
+            continue
+
+        if not (recipient.recipient or "").strip():
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "skipped",
+                "detail": "Customer does not have an email address",
+            })
+            continue
+
+        try:
+            customer, invoices, payments = _customer_statement_context(db, recipient.customer_id, as_of_date)
+            pdf_bytes = generate_statement_pdf(customer, invoices, payments, company, as_of_date)
+            html_body = render_document_email(
+                document_label="Statement",
+                recipient_name=customer.name,
+                company_settings=company,
+                action_label="As of",
+                action_value=as_of_date,
+                message="Please find attached your monthly customer statement.",
+            )
+            send_document_email(
+                db,
+                to_email=recipient.recipient,
+                subject=recipient.subject or f"Monthly statement as at {as_of_date.isoformat()}",
+                html_body=html_body,
+                attachment_bytes=pdf_bytes,
+                attachment_name=f"Statement_{recipient.customer_id}_{as_of_date.isoformat()}.pdf",
+                entity_type="statement",
+                entity_id=customer.id,
+            )
+            results.append({
+                "customer_id": customer.id,
+                "customer_name": customer.name,
+                "recipient": recipient.recipient,
+                "status": "sent",
+                "detail": None,
+            })
+        except Exception:
+            results.append({
+                "customer_id": recipient.customer_id,
+                "customer_name": candidate["customer_name"],
+                "recipient": recipient.recipient,
+                "status": "failed",
+                "detail": "Email delivery failed",
+            })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "results": results,
+        "sent_count": sum(1 for row in results if row["status"] == "sent"),
+        "failed_count": sum(1 for row in results if row["status"] == "failed"),
+        "skipped_count": sum(1 for row in results if row["status"] == "skipped"),
+    }
