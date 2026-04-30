@@ -4,7 +4,8 @@ const vm = require('vm');
 
 function createPayrollContext(overrides = {}) {
     const calls = [];
-    let modalHtml = '';
+    const navigations = [];
+    const backLabelCalls = [];
     const elements = {};
     const context = {
         API: {
@@ -75,18 +76,36 @@ function createPayrollContext(overrides = {}) {
             download: async () => {},
         },
         App: {
-            navigate() {},
+            navigate(hash) {
+                navigations.push(['navigate', hash]);
+                context.location.hash = hash;
+            },
+            openDetail(detailHash, originHash) {
+                navigations.push(['openDetail', detailHash, originHash]);
+                context.location.hash = detailHash;
+            },
+            detailBackLabel(detailHash, fallbackHash, fallbackLabel = 'Previous') {
+                backLabelCalls.push([detailHash, fallbackHash, fallbackLabel]);
+                if (fallbackHash === '#/payroll') return 'Back to Payroll';
+                if (String(fallbackHash || '').includes('mode=detail')) return 'Back to Timesheet Detail';
+                return 'Back to Timesheet Review';
+            },
+            navigateBackToDetailOrigin(detailHash, fallbackHash) {
+                navigations.push(['back', detailHash, fallbackHash]);
+                context.location.hash = detailHash;
+            },
             hasPermission(permission) {
                 if (overrides.permissions) return overrides.permissions.includes(permission);
                 return true;
             },
             confirmAction: async () => true,
         },
+        location: { hash: '#/payroll' },
         todayISO: () => '2026-04-01',
         formatCurrency: value => `$${Number(value || 0).toFixed(2)}`,
         formatDate: value => String(value || ''),
         escapeHtml: value => String(value || ''),
-        openModal: (_title, html) => { modalHtml = html; },
+        openModal() {},
         closeModal() {},
         toast() {},
         confirm: () => true,
@@ -108,7 +127,7 @@ function createPayrollContext(overrides = {}) {
     vm.createContext(context);
     const code = `${fs.readFileSync('app/static/js/payroll.js', 'utf8')}\nthis.PayrollPage = PayrollPage;`;
     vm.runInContext(code, context);
-    return { context, calls, getModalHtml: () => modalHtml, elements };
+    return { context, calls, navigations, backLabelCalls, getHash: () => context.location.hash, elements };
 }
 
 (async () => {
@@ -130,28 +149,62 @@ function createPayrollContext(overrides = {}) {
     admin.elements['timesheet-review-period-start'] = { value: '2026-04-01' };
     admin.elements['timesheet-review-period-end'] = { value: '2026-04-07' };
     await admin.context.PayrollPage.showTimesheetPeriodReview();
-    assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path.includes('/timesheets/periods?period_start=2026-04-01&period_end=2026-04-07')));
-    assert.ok(admin.getModalHtml().includes('Submitted'));
+    assert.deepStrictEqual(admin.navigations.pop(), ['openDetail', '#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07', '#/payroll']);
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07');
+    let html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
+    assert.ok(html.includes('Timesheet Review'));
+    assert.ok(html.includes('Period 2026-04-01 → 2026-04-07'));
+    assert.ok(html.includes('Review Period'));
+    assert.ok(html.includes('Export CSV'));
+    assert.ok(html.includes('Bulk Approve Submitted'));
+    assert.ok(html.includes('PayrollPage.showTimesheetDetail(11)'));
+    assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07', '#/payroll', 'Payroll']);
+
+    await admin.context.PayrollPage.bulkApproveTimesheets([11, 12]);
+    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'post' && path === '/timesheets/bulk-approve' && payload.timesheet_ids.length === 2));
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07');
+    admin.context.PayrollPage.exportTimesheetPeriodCsv('2026-04-01', '2026-04-07');
+    assert.ok(admin.calls.some(([kind, path, filename]) => kind === 'open' && path === '/timesheets/export?period_start=2026-04-01&period_end=2026-04-07' && filename === 'Timesheets_2026-04-01_2026-04-07.csv'));
 
     await admin.context.PayrollPage.showTimesheetPayRunReview(2);
-    assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/pay-runs/2'));
-    assert.ok(admin.getModalHtml().includes('Submitted'));
+    assert.deepStrictEqual(admin.navigations.pop(), ['openDetail', '#/payroll/timesheets?mode=payrun&run_id=2', '#/payroll']);
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=payrun&run_id=2');
+    html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
+    assert.ok(html.includes('Timesheet Review — Pay Run 2'));
+    assert.ok(html.includes('PayrollPage.showTimesheetDetail(21)'));
+    assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=payrun&run_id=2', '#/payroll', 'Payroll']);
 
     await admin.context.PayrollPage.showTimesheetDetail(5);
-    assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/5'));
-    assert.ok(admin.getModalHtml().includes('Correct'));
-    assert.ok(admin.getModalHtml().includes('Audit'));
-    assert.ok(admin.getModalHtml().includes('Break (hrs)'));
-    assert.ok(admin.getModalHtml().includes('timesheet-lines-table'));
+    assert.deepStrictEqual(admin.navigations.pop(), ['openDetail', '#/payroll/timesheets?mode=detail&id=5', '#/payroll/timesheets?mode=payrun&run_id=2']);
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=detail&id=5');
+    html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
+    assert.ok(html.includes('Timesheet #5'));
+    assert.ok(html.includes('Correct'));
+    assert.ok(html.includes('Approve'));
+    assert.ok(html.includes('Reject'));
+    assert.ok(html.includes('Open Audit'));
+    assert.ok(html.includes('timesheet-lines-table'));
+    assert.ok(html.includes('create'));
+    assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=detail&id=5', '#/payroll/timesheets?mode=period', 'Timesheet Review']);
 
     await admin.context.PayrollPage.openTimesheetCorrection(5);
-    assert.ok(admin.getModalHtml().includes('readonly'));
-    assert.ok(!admin.getModalHtml().includes('name="duration_hours"'));
-    assert.ok(!admin.getModalHtml().includes('name="entry_mode"'));
+    assert.deepStrictEqual(admin.navigations.pop(), ['openDetail', '#/payroll/timesheets?mode=correct&id=5', '#/payroll/timesheets?mode=detail&id=5']);
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=correct&id=5');
+    html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
+    assert.ok(html.includes('Correct Timesheet #5'));
+    assert.ok(html.includes('Reason'));
+    assert.ok(html.includes('Save Correction'));
+    assert.ok(html.includes('Add Line'));
+    assert.ok(html.includes("App.navigateBackToDetailOrigin('#/payroll/timesheets?mode=correct&id=5', '#/payroll/timesheets?mode=detail&id=5')"));
+    assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=correct&id=5', '#/payroll/timesheets?mode=detail&id=5', 'Timesheet Detail']);
 
     await admin.context.PayrollPage.showTimesheetAudit(5);
-    assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/5/audit'));
-    assert.ok(admin.getModalHtml().includes('create'));
+    assert.deepStrictEqual(admin.navigations.pop(), ['openDetail', '#/payroll/timesheets?mode=audit&id=5', '#/payroll/timesheets?mode=correct&id=5']);
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=audit&id=5');
+    html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
+    assert.ok(html.includes('Timesheet Audit #5'));
+    assert.ok(html.includes('create'));
+    assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=audit&id=5', '#/payroll/timesheets?mode=period', 'Timesheet Review']);
 
     admin.elements['timesheet-correction-lines-5'] = {
         querySelectorAll() {
@@ -179,6 +232,8 @@ function createPayrollContext(overrides = {}) {
     assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].end_time === '16:30'));
     assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].break_minutes === 30));
     assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].entry_mode === 'start_end'));
+    assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=detail&id=5');
+    assert.ok(admin.navigations.some(([kind, hash]) => kind === 'navigate' && hash === '#/payroll/timesheets?mode=detail&id=5'));
 
     await admin.context.PayrollPage.approveTimesheet(5);
     assert.ok(admin.calls.some(([kind, path]) => kind === 'post' && path === '/timesheets/5/approve'));
@@ -188,9 +243,6 @@ function createPayrollContext(overrides = {}) {
 
     await admin.context.PayrollPage.bulkApproveTimesheets([11, 12]);
     assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'post' && path === '/timesheets/bulk-approve' && payload.timesheet_ids.length === 2));
-
-    admin.context.PayrollPage.exportTimesheetPeriodCsv('2026-04-01', '2026-04-07');
-    assert.ok(admin.calls.some(([kind, path, filename]) => kind === 'open' && path === '/timesheets/export?period_start=2026-04-01&period_end=2026-04-07' && filename === 'Timesheets_2026-04-01_2026-04-07.csv'));
 })().catch(err => {
     console.error(err);
     process.exit(1);

@@ -27,10 +27,12 @@ vm.runInContext(code, context);
 assert.strictEqual(context.App.routePathFromHash('#/login?bootstrap_token=setup-url-token'), '/login');
 assert.strictEqual(context.App.routePathFromHash('#/reports/gst-return/detail?period=2026-04'), '/reports/gst-return/detail');
 assert.strictEqual(context.App.routePathFromHash('#/reports/trial-balance?period=this_year_to_date'), '/reports/trial-balance');
+assert.strictEqual(context.App.routePathFromHash('#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07'), '/payroll/timesheets');
 assert.strictEqual(context.App.routePathFromHash('#/'), '/');
 assert.strictEqual(context.App.routes['/reports/statement-of-changes-in-equity'].label, 'Statement of Changes in Equity');
 assert.strictEqual(typeof context.App.routes['/reports/statement-of-changes-in-equity'].render, 'function');
 assert.ok(context.App.routes['/payroll/detail']);
+assert.ok(context.App.routes['/payroll/timesheets']);
 assert.strictEqual(typeof context.App.openDetail, 'function');
 
 context.App.setDetailOrigin('#/invoices/detail', '#/customers/detail');

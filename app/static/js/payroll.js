@@ -205,6 +205,238 @@ const PayrollPage = {
         }
     },
 
+    _parseHashQuery(hash) {
+        const query = (hash || '').includes('?') ? String(hash).split('?')[1] : '';
+        const params = {};
+        for (const part of query.split('&').filter(Boolean)) {
+            const [key, value = ''] = part.split('=');
+            if (!key) continue;
+            params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
+        }
+        return params;
+    },
+
+    _timesheetReviewHash(params = {}) {
+        const query = Object.entries(params)
+            .filter(([, value]) => value !== undefined && value !== null && String(value) !== '')
+            .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+            .join('&');
+        return query ? `#/payroll/timesheets?${query}` : '#/payroll/timesheets';
+    },
+
+    _timesheetReviewQueryState() {
+        const rawHash = location?.hash || '#/payroll/timesheets';
+        const params = PayrollPage._parseHashQuery(rawHash);
+        const mode = params.mode || (params.id ? 'detail' : params.run_id ? 'payrun' : 'period');
+        return {
+            mode,
+            id: Number(params.id || 0) || null,
+            runId: Number(params.run_id || 0) || null,
+            periodStart: params.period_start || todayISO(),
+            periodEnd: params.period_end || todayISO(),
+            currentHash: rawHash,
+        };
+    },
+
+    _timesheetReviewBackButtonHtml(currentHash, fallbackHash, fallbackLabel) {
+        const backLabel = App.detailBackLabel(currentHash, fallbackHash, fallbackLabel);
+        return `<button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('${escapeHtml(currentHash)}', '${escapeHtml(fallbackHash)}')">${escapeHtml(backLabel)}</button>`;
+    },
+
+    _timesheetReviewHeaderHtml(title, currentHash, fallbackHash, fallbackLabel, actionsHtml = '') {
+        return `
+            <div class="page-header">
+                <div>
+                    <h2>${escapeHtml(title)}</h2>
+                </div>
+                <div class="btn-group">
+                    ${actionsHtml}
+                    ${PayrollPage._timesheetReviewBackButtonHtml(currentHash, fallbackHash, fallbackLabel)}
+                </div>
+            </div>`;
+    },
+
+    _timesheetReviewPeriodControlsHtml(periodStart, periodEnd, canExport) {
+        return `
+            <div class="settings-section">
+                <h3>Timesheet Review</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Period Start</label>
+                        <input id="timesheet-review-period-start" type="date" value="${escapeHtml(periodStart)}">
+                    </div>
+                    <div class="form-group">
+                        <label>Period End</label>
+                        <input id="timesheet-review-period-end" type="date" value="${escapeHtml(periodEnd)}">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="PayrollPage.showTimesheetPeriodReview()">Review Period</button>
+                    ${canExport ? `<button class="btn btn-secondary" onclick="PayrollPage.exportTimesheetPeriodCsv()">Export CSV</button>` : ''}
+                </div>
+                <p style="font-size:11px; color:var(--text-muted); margin-top:8px;">Review submitted timesheets, correct hours, approve work, and export scoped CSVs from the payroll screen.</p>
+            </div>`;
+    },
+
+    _renderTimesheetReviewGroupsHtml(data = {}, options = {}) {
+        const perms = PayrollPage._timesheetPermissions();
+        const canManage = perms.manage;
+        const canApprove = perms.approve || perms.manage;
+        const canExport = perms.export || perms.manage;
+        const bulkApproveIds = (data.submitted || []).map((row) => row.id);
+        const actionButtons = [];
+        if (canApprove && bulkApproveIds.length) {
+            actionButtons.push(`<button class="btn btn-primary" onclick="PayrollPage.bulkApproveTimesheets([${bulkApproveIds.join(',')}])">Bulk Approve Submitted</button>`);
+        }
+        if (canExport && options.periodStart && options.periodEnd) {
+            actionButtons.push(`<button class="btn btn-secondary" onclick="PayrollPage.exportTimesheetPeriodCsv('${options.periodStart}', '${options.periodEnd}')">Export CSV</button>`);
+        }
+        const header = options.periodStart && options.periodEnd
+            ? `Period ${escapeHtml(options.periodStart)} → ${escapeHtml(options.periodEnd)}`
+            : options.payRunId
+                ? `Pay Run #${escapeHtml(String(options.payRunId))}`
+                : '';
+        return `
+            ${header ? `<div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">${header}</div>` : ''}
+            ${actionButtons.length ? `<div class="form-actions" style="margin-bottom:10px;">${actionButtons.join('')}</div>` : ''}
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>ID</th><th>Employee</th><th>Period</th><th>Status</th><th class="amount">Hours</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <tr><td colspan="6"><strong>Submitted</strong></td></tr>
+                        ${PayrollPage._timesheetSummaryRows(data.submitted || [], canManage ? '' : '')}
+                        <tr><td colspan="6"><strong>Approved</strong></td></tr>
+                        ${PayrollPage._timesheetSummaryRows(data.approved || [], canManage ? '' : '')}
+                        <tr><td colspan="6"><strong>Rejected</strong></td></tr>
+                        ${PayrollPage._timesheetSummaryRows(data.rejected || [], canManage ? '' : '')}
+                        <tr><td colspan="6"><strong>Draft</strong></td></tr>
+                        ${PayrollPage._timesheetSummaryRows(data.draft || [], canManage ? '' : '')}
+                        <tr><td colspan="6"><strong>Locked</strong></td></tr>
+                        ${PayrollPage._timesheetSummaryRows(data.locked || [], canManage ? '' : '')}
+                    </tbody>
+                </table>
+            </div>`;
+    },
+
+    _renderTimesheetDetailHtml(detail = {}, timesheetId, mode = 'detail') {
+        const canManage = PayrollPage._timesheetPermissions().manage;
+        const canApprove = PayrollPage._timesheetPermissions().approve || canManage;
+        const currentHash = PayrollPage._timesheetReviewHash({ mode, id: timesheetId });
+        const fallbackHash = PayrollPage._timesheetReviewHash({ mode: 'period' });
+        const lines = (detail.lines || []).map((line) => `
+            <tr>
+                <td>${escapeHtml(formatDate(line.work_date))}</td>
+                <td>${escapeHtml(PayrollPage._lineHoursDisplay(line) || String(line.duration_hours ?? ''))}</td>
+                <td>${escapeHtml(PayrollPage._timeInputValue(line.start_time))}</td>
+                <td>${escapeHtml(PayrollPage._timeInputValue(line.end_time))}</td>
+                <td>${escapeHtml(PayrollPage._breakHoursDisplay(line))}</td>
+                <td>${escapeHtml(line.notes || '')}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
+        const auditRows = (detail.audit_events || []).map((event) => `
+            <tr>
+                <td>${escapeHtml(String(event.id || ''))}</td>
+                <td>${escapeHtml(event.action || '')}</td>
+                <td>${escapeHtml(String(event.status_from || ''))}</td>
+                <td>${escapeHtml(String(event.status_to || ''))}</td>
+                <td>${escapeHtml(event.reason || '')}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" style="font-size:11px; color:var(--text-muted);">No audit events</td></tr>';
+        const actions = mode === 'correct' ? '' : `
+            ${canManage ? `<button class="btn btn-primary" onclick="PayrollPage.openTimesheetCorrection(${timesheetId})">Correct</button>` : ''}
+            ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.approveTimesheet(${timesheetId})">Approve</button>` : ''}
+            ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.rejectTimesheet(${timesheetId})">Reject</button>` : ''}
+            <button class="btn btn-secondary" onclick="PayrollPage.showTimesheetAudit(${timesheetId})">Audit</button>
+        `;
+        if (mode === 'correct') {
+            return `
+                ${PayrollPage._timesheetReviewHeaderHtml(`Correct Timesheet #${timesheetId}`, currentHash, `#/payroll/timesheets?mode=detail&id=${timesheetId}`, 'Timesheet Detail')}
+                <form onsubmit="PayrollPage.submitTimesheetCorrection(event, ${timesheetId})">
+                    <div class="form-group">
+                        <label>Reason</label>
+                        <textarea name="reason" rows="3" required></textarea>
+                    </div>
+                    <div class="table-container" style="margin-top:8px;">
+                        <table id="timesheet-correction-lines-${timesheetId}" class="compact-table timesheet-lines-table">
+                            <thead><tr><th>Work Date</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
+                            <tbody>${PayrollPage._timesheetLineRows(detail.lines || [])}</tbody>
+                        </table>
+                    </div>
+                    <div class="form-actions" style="margin-top:10px;">
+                        <button type="button" class="btn btn-secondary" onclick="PayrollPage.addTimesheetLineRow('timesheet-correction-lines-${timesheetId}')">Add Line</button>
+                        <button type="button" class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('${escapeHtml(currentHash)}', '#/payroll/timesheets?mode=detail&id=${timesheetId}')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Correction</button>
+                    </div>
+                </form>`;
+        }
+        return `
+            ${PayrollPage._timesheetReviewHeaderHtml(
+                mode === 'audit' ? `Timesheet Audit #${timesheetId}` : `Timesheet #${timesheetId}`,
+                currentHash,
+                fallbackHash,
+                'Timesheet Review',
+                actions,
+            )}
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
+                Period ${escapeHtml(formatDate(detail.period_start))} → ${escapeHtml(formatDate(detail.period_end))}
+                · Status <strong style="color:${PayrollPage._timesheetStatusTone(detail.status)};">${escapeHtml(detail.status)}</strong>
+                · Total Hours <strong>${escapeHtml(String(detail.total_hours ?? '0.00'))}</strong>
+            </div>
+            <div class="table-container">
+                <table class="compact-table timesheet-lines-table">
+                    <thead><tr><th>Work Date</th><th>Hours</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Notes</th></tr></thead>
+                    <tbody>${lines}</tbody>
+                </table>
+            </div>
+            <div class="table-container" style="margin-top:10px;">
+                <table>
+                    <thead><tr><th>ID</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
+                    <tbody>${auditRows}</tbody>
+                </table>
+            </div>
+            ${mode === 'audit' ? '' : `
+                <div class="form-actions" style="margin-top:10px;">
+                    <button class="btn btn-secondary" onclick="PayrollPage.showTimesheetAudit(${timesheetId})">Open Audit</button>
+                </div>
+            `}
+        `;
+    },
+
+    async renderTimesheetReviewScreen() {
+        const { mode, id, runId, periodStart, periodEnd, currentHash } = PayrollPage._timesheetReviewQueryState();
+        const perms = PayrollPage._timesheetPermissions();
+        if (!perms.manage && !perms.approve && !perms.export) {
+            return `
+                ${PayrollPage._timesheetReviewHeaderHtml('Timesheet Review', currentHash, '#/payroll', 'Payroll')}
+                <div class="empty-state"><p>You do not have permission to review timesheets.</p></div>`;
+        }
+
+        if (mode === 'payrun') {
+            const data = await API.get(`/timesheets/pay-runs/${runId}`);
+            return `
+                ${PayrollPage._timesheetReviewHeaderHtml(`Timesheet Review — Pay Run ${runId}`, currentHash, '#/payroll', 'Payroll')}
+                ${PayrollPage._renderTimesheetReviewGroupsHtml(data, { payRunId: runId })}`;
+        }
+
+        if (mode === 'detail' || mode === 'audit' || mode === 'correct') {
+            const detail = await API.get(`/timesheets/${id}`);
+            if (mode === 'audit') {
+                try {
+                    detail.audit_events = await API.get(`/timesheets/${id}/audit`);
+                } catch (_err) {
+                    detail.audit_events = detail.audit_events || [];
+                }
+            }
+            return PayrollPage._renderTimesheetDetailHtml(detail, id, mode);
+        }
+
+        const data = await API.get(`/timesheets/periods?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}`);
+        return `
+            ${PayrollPage._timesheetReviewHeaderHtml('Timesheet Review', currentHash, '#/payroll', 'Payroll')}
+            ${PayrollPage._timesheetReviewPeriodControlsHtml(periodStart, periodEnd, perms.export || perms.manage)}
+            ${PayrollPage._renderTimesheetReviewGroupsHtml(data, { periodStart, periodEnd })}`;
+    },
+
     _detailQueryState() {
         const rawHash = location?.hash || '#/payroll/detail';
         const query = rawHash.includes('?') ? rawHash.split('?')[1] : '';
@@ -360,131 +592,23 @@ const PayrollPage = {
 
     async showTimesheetPeriodReview() {
         const { periodStart, periodEnd } = PayrollPage._reviewPeriodValues();
-        await PayrollPage._loadTimesheetReviewFromUrl(
-            `/timesheets/periods?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}`,
-            'Timesheet Review',
-            { periodStart, periodEnd },
-        );
+        App.openDetail(PayrollPage._timesheetReviewHash({ mode: 'period', period_start: periodStart, period_end: periodEnd }), '#/payroll');
     },
 
     async showTimesheetPayRunReview(runId) {
-        await PayrollPage._loadTimesheetReviewFromUrl(
-            `/timesheets/pay-runs/${runId}`,
-            `Timesheet Review — Pay Run ${runId}`,
-            { payRunId: runId },
-        );
+        App.openDetail(PayrollPage._timesheetReviewHash({ mode: 'payrun', run_id: runId }), '#/payroll');
     },
 
     async showTimesheetDetail(timesheetId) {
-        try {
-            const detail = await API.get(`/timesheets/${timesheetId}`);
-            const canManage = PayrollPage._timesheetPermissions().manage;
-            const canApprove = PayrollPage._timesheetPermissions().approve || canManage;
-            const lines = (detail.lines || []).map((line) => `
-                <tr>
-                    <td>${escapeHtml(formatDate(line.work_date))}</td>
-                    <td>${escapeHtml(PayrollPage._lineHoursDisplay(line) || String(line.duration_hours ?? ''))}</td>
-                    <td>${escapeHtml(PayrollPage._timeInputValue(line.start_time))}</td>
-                    <td>${escapeHtml(PayrollPage._timeInputValue(line.end_time))}</td>
-                    <td>${escapeHtml(PayrollPage._breakHoursDisplay(line))}</td>
-                    <td>${escapeHtml(line.notes || '')}</td>
-                </tr>
-            `).join('') || '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
-            const auditRows = (detail.audit_events || []).map((event) => `
-                <tr>
-                    <td>${escapeHtml(String(event.id || ''))}</td>
-                    <td>${escapeHtml(event.action || '')}</td>
-                    <td>${escapeHtml(String(event.status_from || ''))}</td>
-                    <td>${escapeHtml(String(event.status_to || ''))}</td>
-                    <td>${escapeHtml(event.reason || '')}</td>
-                </tr>
-            `).join('') || '<tr><td colspan="5" style="font-size:11px; color:var(--text-muted);">No audit events</td></tr>';
-            openModal(`Timesheet #${timesheetId}`, `
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
-                    Period ${escapeHtml(formatDate(detail.period_start))} → ${escapeHtml(formatDate(detail.period_end))}
-                    · Status <strong style="color:${PayrollPage._timesheetStatusTone(detail.status)};">${escapeHtml(detail.status)}</strong>
-                    · Total Hours <strong>${escapeHtml(String(detail.total_hours ?? '0.00'))}</strong>
-                </div>
-                <div class="table-container">
-                    <table class="compact-table timesheet-lines-table">
-                        <thead><tr><th>Work Date</th><th>Hours</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Notes</th></tr></thead>
-                        <tbody>${lines}</tbody>
-                    </table>
-                </div>
-                ${canManage ? `
-                    <div class="form-actions" style="margin-top:10px;">
-                        <button class="btn btn-primary" onclick="PayrollPage.openTimesheetCorrection(${timesheetId})">Correct</button>
-                        ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.approveTimesheet(${timesheetId})">Approve</button>` : ''}
-                        ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.rejectTimesheet(${timesheetId})">Reject</button>` : ''}
-                        <button class="btn btn-secondary" onclick="PayrollPage.showTimesheetAudit(${timesheetId})">Audit</button>
-                    </div>
-                ` : ''}
-                <div class="table-container" style="margin-top:10px;">
-                    <table>
-                        <thead><tr><th>ID</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
-                        <tbody>${auditRows}</tbody>
-                    </table>
-                </div>
-                <div class="form-actions" style="margin-top:10px;">
-                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                </div>`);
-        } catch (err) {
-            toast(err.message, 'error');
-        }
+        App.openDetail(PayrollPage._timesheetReviewHash({ mode: 'detail', id: timesheetId }), location?.hash || '#/payroll/timesheets');
     },
 
     async showTimesheetAudit(timesheetId) {
-        try {
-            const events = await API.get(`/timesheets/${timesheetId}/audit`);
-            const rows = (events || []).map((event) => `
-                <tr>
-                    <td>${escapeHtml(String(event.id || ''))}</td>
-                    <td>${escapeHtml(event.action || '')}</td>
-                    <td>${escapeHtml(String(event.status_from || ''))}</td>
-                    <td>${escapeHtml(String(event.status_to || ''))}</td>
-                    <td>${escapeHtml(event.reason || '')}</td>
-                </tr>
-            `).join('') || '<tr><td colspan="5" style="font-size:11px; color:var(--text-muted);">No audit events</td></tr>';
-            openModal(`Timesheet Audit #${timesheetId}`, `
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>ID</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>
-                <div class="form-actions" style="margin-top:10px;">
-                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                </div>`);
-        } catch (err) {
-            toast(err.message, 'error');
-        }
+        App.openDetail(PayrollPage._timesheetReviewHash({ mode: 'audit', id: timesheetId }), location?.hash || '#/payroll/timesheets');
     },
 
     async openTimesheetCorrection(timesheetId) {
-        try {
-            const detail = await API.get(`/timesheets/${timesheetId}`);
-            const rows = (detail.lines || []).length ? detail.lines : [{ work_date: '', start_time: '', end_time: '', break_hours: '', notes: '' }];
-            openModal(`Correct Timesheet #${timesheetId}`, `
-                <form onsubmit="PayrollPage.submitTimesheetCorrection(event, ${timesheetId})">
-                    <div class="form-group">
-                        <label>Reason</label>
-                        <textarea name="reason" rows="3" required></textarea>
-                    </div>
-                    <div class="table-container" style="margin-top:8px;">
-                        <table id="timesheet-correction-lines-${timesheetId}" class="compact-table timesheet-lines-table">
-                            <thead><tr><th>Work Date</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
-                            <tbody>${PayrollPage._timesheetLineRows(rows)}</tbody>
-                        </table>
-                    </div>
-                    <div class="form-actions" style="margin-top:10px;">
-                        <button type="button" class="btn btn-secondary" onclick="PayrollPage.addTimesheetLineRow('timesheet-correction-lines-${timesheetId}')">Add Line</button>
-                        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save Correction</button>
-                    </div>
-                </form>`);
-        } catch (err) {
-            toast(err.message, 'error');
-        }
+        App.openDetail(PayrollPage._timesheetReviewHash({ mode: 'correct', id: timesheetId }), location?.hash || PayrollPage._timesheetReviewHash({ mode: 'detail', id: timesheetId }));
     },
 
     async submitTimesheetCorrection(e, timesheetId) {
@@ -498,9 +622,8 @@ const PayrollPage = {
         }
         try {
             await API.put(`/timesheets/${timesheetId}`, { reason, lines });
-            closeModal();
             toast('Timesheet corrected');
-            await PayrollPage.showTimesheetDetail(timesheetId);
+            App.navigate(PayrollPage._timesheetReviewHash({ mode: 'detail', id: timesheetId }));
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -519,7 +642,7 @@ const PayrollPage = {
         try {
             await API.post(`/timesheets/${timesheetId}/approve`, {});
             toast('Timesheet approved');
-            await PayrollPage.showTimesheetDetail(timesheetId);
+            App.navigate(location?.hash || PayrollPage._timesheetReviewHash({ mode: 'detail', id: timesheetId }));
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -531,7 +654,7 @@ const PayrollPage = {
         try {
             await API.post(`/timesheets/${timesheetId}/reject`, { reason });
             toast('Timesheet rejected');
-            await PayrollPage.showTimesheetDetail(timesheetId);
+            App.navigate(location?.hash || PayrollPage._timesheetReviewHash({ mode: 'detail', id: timesheetId }));
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -550,7 +673,7 @@ const PayrollPage = {
         try {
             await API.post('/timesheets/bulk-approve', { timesheet_ids: timesheetIds });
             toast('Timesheets approved');
-            await PayrollPage.showTimesheetPeriodReview();
+            App.navigate(location?.hash || PayrollPage._timesheetReviewHash({ mode: 'period' }));
         } catch (err) {
             toast(err.message, 'error');
         }
