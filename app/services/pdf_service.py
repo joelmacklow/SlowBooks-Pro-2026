@@ -62,7 +62,10 @@ def _resolve_static_asset_uri(path_value: str | None) -> str | None:
 
 def _template_company_settings(company_settings: dict | None) -> dict:
     company = dict(company_settings or {})
-    company["company_logo_src"] = _resolve_static_asset_uri(company.get("company_logo_path"))
+    company["company_logo_src"] = (
+        company.get("company_logo_data_uri")
+        or _resolve_static_asset_uri(company.get("company_logo_path"))
+    )
     return company
 
 

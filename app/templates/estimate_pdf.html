@@ -23,6 +23,7 @@
             <div class="doc-number">Estimate #{{ est.estimate_number }}</div>
             {% if est.expiration_date %}<div class="doc-subtitle">Valid until {{ est.expiration_date | fdate }}</div>{% endif %}
         </div>
+        {% include "_document_logo.html" %}
     </div>
 
     <table class="meta-table">

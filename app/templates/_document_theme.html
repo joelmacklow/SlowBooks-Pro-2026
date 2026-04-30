@@ -1,3 +1,4 @@
+{% include "_document_fonts.html" %}
 @page { size: {{ page_size | default('A4') }}; margin: {{ page_margin | default('1.5cm') }}; }
 :root {
     --ink: #1f2933;
@@ -9,7 +10,7 @@
     --panel: #f8fafc;
 }
 body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 9.5pt;
     color: var(--ink);
     line-height: 1.45;
@@ -24,7 +25,9 @@ body {
     margin-bottom: 18px;
 }
 .company-panel {
-    max-width: 60%;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 58%;
 }
 .company-name {
     font-size: 16pt;
@@ -39,13 +42,24 @@ body {
     margin: 0 0 6px 0;
     object-fit: contain;
 }
+.header-logo {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+.header-logo img {
+    display: block;
+    max-width: 3.2cm;
+    max-height: 1.8cm;
+    object-fit: contain;
+}
 .company-meta {
     font-size: 9pt;
     color: var(--muted);
     line-height: 1.55;
 }
 .doc-panel {
-    min-width: 5cm;
+    flex: 0 0 auto;
+    min-width: 4.4cm;
     text-align: right;
 }
 .doc-kicker {

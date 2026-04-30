@@ -2,12 +2,25 @@
 <html>
 <head>
 <style>
+    {% include "_document_fonts.html" %}
     @page { size: {% if landscape %}A4 landscape{% else %}A4{% endif %}; margin: 1.5cm; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.35; }
-    .header { margin-bottom: 18px; }
+    @page {
+        @bottom-left { content: element(report-footer); }
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 7.5pt;
+            color: #6a7482;
+        }
+    }
+    body { font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.35; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1cm; margin-bottom: 18px; }
+    .header-main { flex: 1 1 0; min-width: 0; max-width: 54%; }
     .title { font-size: 24pt; font-weight: 700; color: #1f1f1f; margin: 0 0 6px 0; }
     .company-name { font-size: 13pt; font-weight: 700; color: #2f3b4c; margin-bottom: 2px; }
     .subtitle { font-size: 11pt; font-weight: 600; color: #3f4a59; margin-bottom: 2px; }
+    .header-logo { flex: 0 0 auto; align-self: flex-start; }
+    .header-logo img { display: block; max-width: 3.4cm; max-height: 2cm; object-fit: contain; }
     .table-title { font-size: 10pt; font-weight: 700; color: #2f3b4c; margin: 18px 0 8px 0; }
     table.report { width: 100%; border-collapse: collapse; margin: 0 auto 14px auto; table-layout: fixed; }
     table.report thead th { border-bottom: 1px solid #aeb7c3; color: #4f5d73; font-size: 7.5pt; font-weight: 700; padding: 4px 6px; text-align: left; text-transform: uppercase; }
@@ -17,17 +30,17 @@
     table.report tr.section-row td { border-bottom: none; padding-top: 10px; font-weight: 700; color: #2f3b4c; }
     table.report tr.total-row td { font-weight: 700; border-top: 1px solid #aeb7c3; }
     table.report tr.empty-row td { color: #7a8594; font-style: italic; }
-    .footer-left, .footer-right { position: fixed; bottom: 0; font-size: 7.5pt; color: #6a7482; }
-    .footer-left { left: 0; }
-    .footer-right { right: 0; text-align: right; }
-    .footer-right::after { content: "Page " counter(page) " of " counter(pages); }
+    .footer { position: running(report-footer); font-size: 7.5pt; color: #6a7482; }
 </style>
 </head>
 <body>
     <div class="header">
-        <div class="title">{{ title }}</div>
-        <div class="company-name">{{ company.company_name or 'SlowBooks Pro 2026' }}</div>
-        {% if subtitle %}<div class="subtitle">{{ subtitle }}</div>{% endif %}
+        <div class="header-main">
+            <div class="title">{{ title }}</div>
+            <div class="company-name">{{ company.company_name or 'SlowBooks Pro 2026' }}</div>
+            {% if subtitle %}<div class="subtitle">{{ subtitle }}</div>{% endif %}
+        </div>
+        {% include "_document_logo.html" %}
     </div>
 
     {% for table in tables %}
@@ -60,7 +73,6 @@
         </table>
     {% endfor %}
 
-    <div class="footer-left">{{ title }} | {{ company.company_name or 'SlowBooks Pro 2026' }} | {{ generated_on | fdate }}</div>
-    <div class="footer-right"></div>
+    <div class="footer">{{ title }} | {{ company.company_name or 'SlowBooks Pro 2026' }} | {{ generated_on | fdate }}</div>
 </body>
 </html>

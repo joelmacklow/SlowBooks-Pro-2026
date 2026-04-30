@@ -6,7 +6,7 @@
 # at HKCU\Software\Intuit\QuickBooks\12.0\Preferences.
 # ============================================================================
 
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, func
+from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, func
 
 from app.database import Base
 from app.services.payment_terms import DEFAULT_PAYMENT_TERMS_CONFIG
@@ -17,7 +17,7 @@ class Settings(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, nullable=False)
-    value = Column(String(500), nullable=True)
+    value = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -60,6 +60,7 @@ DEFAULT_SETTINGS = {
     "purchase_order_delivery_locations": "",
     # Feature 15: Company Logo
     "company_logo_path": "",
+    "company_logo_data_uri": "",
     # NZ localization foundation
     "country": "NZ",
     "tax_regime": "NZ",

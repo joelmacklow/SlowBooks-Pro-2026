@@ -1,6 +1,8 @@
 import sys
 import types
 import unittest
+import base64
+import tempfile
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -30,6 +32,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
     def setUp(self):
         CapturingHTML.rendered = []
         pdf_service.HTML = CapturingHTML
+        self._uploads_tmp = tempfile.TemporaryDirectory()
+        self._uploads_path = Path(self._uploads_tmp.name)
+        self._logo_file = self._uploads_path / "company_logo.png"
+        self._logo_file.write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/kWQAAAAASUVORK5CYII="
+        ))
+        self._uploads_patch = mock.patch("app.services.pdf_service.UPLOADS_DIR", self._uploads_path)
+        self._uploads_patch.start()
         self.company = {
             "locale": "en-NZ",
             "currency": "NZD",
@@ -37,6 +47,10 @@ class PdfServiceFormattingTests(unittest.TestCase):
             "company_logo_path": "/static/uploads/company_logo.png",
             "gst_number": "123-456-789",
         }
+
+    def tearDown(self):
+        self._uploads_patch.stop()
+        self._uploads_tmp.cleanup()
 
     def test_invoice_pdf_uses_rendered_company_settings(self):
         invoice = SimpleNamespace(
@@ -68,18 +82,21 @@ class PdfServiceFormattingTests(unittest.TestCase):
             notes=None,
         )
 
-        fake_logo = Path("/tmp/slowbooks-test-logo.png")
-        with mock.patch("app.services.pdf_service.Path.exists", autospec=True) as mock_exists, \
-             mock.patch("app.services.pdf_service.UPLOADS_DIR", Path("/tmp")):
-            mock_exists.side_effect = lambda path_obj: str(path_obj) == str(fake_logo)
-            company = dict(self.company)
-            company["company_logo_path"] = "/static/uploads/slowbooks-test-logo.png"
-            pdf_service.generate_invoice_pdf(invoice, company)
+        company = dict(self.company)
+        pdf_service.generate_invoice_pdf(invoice, company)
 
         rendered = CapturingHTML.rendered[-1]
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
         self.assertIn('class="company-logo"', rendered)
-        self.assertIn(fake_logo.as_uri(), rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertNotIn('<div class="company-name">SlowBooks NZ</div>', rendered)
         self.assertIn('GST Number', rendered)
         self.assertIn('123-456-789', rendered)
@@ -95,6 +112,29 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("Wellington Wellington 6011", rendered)
         self.assertIn('class="no-wrap"', rendered)
         self.assertIn('payment-advice-table', rendered)
+
+    def test_report_pdf_prefers_database_logo_data_uri(self):
+        report_company = dict(self.company)
+        report_company["company_logo_path"] = "/static/uploads/missing-logo.png"
+        report_company["company_logo_data_uri"] = "data:image/png;base64,Zm9v"
+
+        pdf_service.generate_report_pdf(
+            title="Trial Balance",
+            company_settings=report_company,
+            subtitle="As of 30 Apr 2026",
+            tables=[{
+                "columns": [{"label": "Account"}, {"label": "Debit", "align": "right"}],
+                "rows": [{
+                    "cells": [{"text": "Business Bank"}, {"text": "$92.00", "align": "right"}],
+                }],
+            }],
+            landscape=False,
+        )
+
+        rendered = CapturingHTML.rendered[-1]
+        self.assertIn("data:image/png;base64,Zm9v", rendered)
+        self.assertNotIn("missing-logo.png", rendered)
+        self.assertIn('class="header-logo"', rendered)
 
     def test_estimate_pdf_uses_rendered_company_settings(self):
         estimate = SimpleNamespace(
@@ -123,6 +163,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("13 Apr 2026", rendered)
         self.assertIn("13 May 2026", rendered)
         self.assertIn("$1,234.50", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertIn("ESTIMATE", rendered)
         self.assertIn("Quote Summary", rendered)
 
@@ -165,6 +207,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("$1,234.50", rendered)
         self.assertIn("$234.50", rendered)
         self.assertIn("$1,000.00", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertIn("Balance Summary", rendered)
         self.assertIn("Payment Advice", rendered)
 
@@ -204,6 +248,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("PAYE", rendered)
         self.assertIn("ACC Earners' Levy", rendered)
         self.assertIn("$2,241.72", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
 
     def test_credit_memo_pdf_uses_rendered_company_settings(self):
         credit_memo = SimpleNamespace(
@@ -224,6 +270,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("CREDIT NOTE", rendered)
         self.assertIn("13 Apr 2026", rendered)
         self.assertIn("$1,419.68", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertIn("Credit Summary", rendered)
 
     def test_purchase_order_pdf_uses_rendered_company_settings(self):
@@ -247,6 +295,8 @@ class PdfServiceFormattingTests(unittest.TestCase):
         self.assertIn("Purchase Order", rendered)
         self.assertIn("20 Apr 2026", rendered)
         self.assertIn("$1,419.68", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertIn("Delivery Details", rendered)
 
     def test_invoice_pdf_escapes_untrusted_html_fields(self):
@@ -299,8 +349,21 @@ class PdfServiceFormattingTests(unittest.TestCase):
         )
 
         rendered = CapturingHTML.rendered[-1]
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Regular.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Italic.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-SemiBold.woff2')", rendered)
+        self.assertIn("url('static/fonts/inter/Inter-Bold.woff2')", rendered)
+        self.assertNotIn("fonts.googleapis.com", rendered)
+        self.assertNotIn("fonts.gstatic.com", rendered)
         self.assertIn("@page { size: A4; margin: 1.5cm; }", rendered)
-        self.assertIn("position: fixed; bottom: 0;", rendered)
+        self.assertIn("@bottom-left { content: element(report-footer); }", rendered)
+        self.assertIn("@bottom-right {", rendered)
+        self.assertIn("content: \"Page \" counter(page) \" of \" counter(pages);", rendered)
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", rendered)
+        self.assertIn("font-size: 7.5pt;", rendered)
+        self.assertIn('class="header-logo"', rendered)
+        self.assertIn(self._logo_file.as_uri(), rendered)
         self.assertIn("Trial Balance", rendered)
 
     def test_pdf_service_resolves_legacy_upload_logo_paths(self):
@@ -312,6 +375,14 @@ class PdfServiceFormattingTests(unittest.TestCase):
             resolved = pdf_service._resolve_static_asset_uri("/static/uploads/company_logo.png")
 
         self.assertEqual(resolved, legacy_logo.as_uri())
+
+    def test_pdf_font_assets_are_vendored_locally(self):
+        font_dir = Path("app/static/fonts/inter")
+        self.assertTrue((font_dir / "Inter-Regular.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Italic.woff2").exists())
+        self.assertTrue((font_dir / "Inter-SemiBold.woff2").exists())
+        self.assertTrue((font_dir / "Inter-Bold.woff2").exists())
+        self.assertTrue((font_dir / "LICENSE.txt").exists())
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@
             <div class="doc-number">#{{ po.po_number }}</div>
             {% if po.expected_date %}<div class="doc-subtitle">Expected {{ po.expected_date | fdate }}</div>{% endif %}
         </div>
+        {% include "_document_logo.html" %}
     </div>
 
     <table class="meta-table">

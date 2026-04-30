@@ -108,7 +108,7 @@ const SettingsPage = {
                     <h3>Company Logo</h3>
                     <div class="form-grid">
                         <div class="form-group">
-                            ${s.company_logo_path ? `<img src="${escapeHtml(s.company_logo_path)}" style="max-width:200px; max-height:80px; margin-bottom:8px; display:block;">` : ''}
+                            ${s.company_logo_data_uri || s.company_logo_path ? `<img src="${escapeHtml(s.company_logo_data_uri || s.company_logo_path)}" style="max-width:200px; max-height:80px; margin-bottom:8px; display:block;">` : ''}
                             <input type="file" id="logo-upload" accept="image/png,image/jpeg,image/gif" onchange="SettingsPage.uploadLogo(this)">
                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">PNG, JPG/JPEG, or GIF. Max 200x80px recommended.</div>
                         </div>
