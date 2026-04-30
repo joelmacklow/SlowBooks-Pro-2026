@@ -6,7 +6,12 @@
     @page { size: {% if landscape %}A4 landscape{% else %}A4{% endif %}; margin: 1.5cm; }
     @page {
         @bottom-left { content: element(report-footer); }
-        @bottom-right { content: "Page " counter(page) " of " counter(pages); }
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 7.5pt;
+            color: #6a7482;
+        }
     }
     body { font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.35; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1cm; margin-bottom: 18px; }

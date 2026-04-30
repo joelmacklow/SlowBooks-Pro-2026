@@ -18,7 +18,10 @@ class ReportPdfLayoutTests(unittest.TestCase):
         self.assertIn("margin: 0 auto 14px auto;", template)
         self.assertIn("white-space: nowrap;", template)
         self.assertIn("@bottom-left { content: element(report-footer); }", template)
-        self.assertIn("@bottom-right { content: \"Page \" counter(page) \" of \" counter(pages); }", template)
+        self.assertIn("@bottom-right {", template)
+        self.assertIn("content: \"Page \" counter(page) \" of \" counter(pages);", template)
+        self.assertIn("font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;", template)
+        self.assertIn("font-size: 7.5pt;", template)
         self.assertNotIn("position: fixed; bottom: 0;", template)
 
     def test_header_logo_copy_is_larger_and_report_tile_is_slightly_narrower(self):
