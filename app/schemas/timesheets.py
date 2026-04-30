@@ -90,6 +90,8 @@ class TimesheetLineResponse(BaseModel):
 class TimesheetAuditEventResponse(BaseModel):
     id: int
     actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    actor_email: Optional[str] = None
     action: str
     status_from: Optional[str] = None
     status_to: Optional[str] = None
@@ -102,6 +104,7 @@ class TimesheetAuditEventResponse(BaseModel):
 class TimesheetListResponse(BaseModel):
     id: int
     employee_id: int
+    employee_name: Optional[str] = None
     pay_run_id: Optional[int] = None
     period_start: date
     period_end: date

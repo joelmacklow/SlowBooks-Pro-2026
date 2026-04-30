@@ -134,6 +134,24 @@ const PayrollPage = {
         return 'var(--text-primary)';
     },
 
+    _formatAuditTimestamp(value) {
+        if (!value) return '';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return String(value);
+        return `${parsed.toISOString().slice(0, 10)} ${parsed.toISOString().slice(11, 19)} UTC`;
+    },
+
+    _auditUserLabel(event = {}) {
+        const name = String(event.actor_name || '').trim();
+        const email = String(event.actor_email || '').trim();
+        const actorId = event.actor_user_id != null ? String(event.actor_user_id) : '';
+        if (name && email) return `${name} (${email})`;
+        if (name) return name;
+        if (email) return email;
+        if (actorId) return `User #${actorId}`;
+        return 'Unknown user';
+    },
+
     _timesheetSummaryRows(rows = [], actionHtml = '') {
         if (!rows.length) {
             return '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">None</td></tr>';
@@ -141,7 +159,7 @@ const PayrollPage = {
         return rows.map((row) => `
             <tr>
                 <td><strong>#${row.id}</strong></td>
-                <td>${escapeHtml(String(row.employee_id || ''))}</td>
+                <td>${escapeHtml(row.employee_name || String(row.employee_id || ''))}</td>
                 <td>${escapeHtml(formatDate(row.period_start))} → ${escapeHtml(formatDate(row.period_end))}</td>
                 <td><span style="font-weight:700; color:${PayrollPage._timesheetStatusTone(row.status)};">${escapeHtml(row.status)}</span></td>
                 <td class="amount">${escapeHtml(String(row.total_hours ?? '0.00'))}</td>
@@ -335,18 +353,19 @@ const PayrollPage = {
         `).join('') || '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
         const auditRows = (detail.audit_events || []).map((event) => `
             <tr>
-                <td>${escapeHtml(String(event.id || ''))}</td>
+                <td>${escapeHtml(PayrollPage._formatAuditTimestamp(event.created_at))}</td>
+                <td>${escapeHtml(PayrollPage._auditUserLabel(event))}</td>
                 <td>${escapeHtml(event.action || '')}</td>
                 <td>${escapeHtml(String(event.status_from || ''))}</td>
                 <td>${escapeHtml(String(event.status_to || ''))}</td>
                 <td>${escapeHtml(event.reason || '')}</td>
             </tr>
-        `).join('') || '<tr><td colspan="5" style="font-size:11px; color:var(--text-muted);">No audit events</td></tr>';
+        `).join('') || '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No history events</td></tr>';
         const actions = mode === 'correct' ? '' : `
             ${canManage ? `<button class="btn btn-primary" onclick="PayrollPage.openTimesheetCorrection(${timesheetId})">Correct</button>` : ''}
             ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.approveTimesheet(${timesheetId})">Approve</button>` : ''}
             ${canApprove ? `<button class="btn btn-secondary" onclick="PayrollPage.rejectTimesheet(${timesheetId})">Reject</button>` : ''}
-            <button class="btn btn-secondary" onclick="PayrollPage.showTimesheetAudit(${timesheetId})">Audit</button>
+            <button class="btn btn-secondary" onclick="PayrollPage.showTimesheetAudit(${timesheetId})">History</button>
         `;
         if (mode === 'correct') {
             return `
@@ -389,8 +408,9 @@ const PayrollPage = {
                 </table>
             </div>
             <div class="table-container" style="margin-top:10px;">
+                <h3 style="margin-bottom:8px;">History</h3>
                 <table>
-                    <thead><tr><th>ID</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
+                    <thead><tr><th>Date/Time</th><th>User</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
                     <tbody>${auditRows}</tbody>
                 </table>
             </div>
@@ -420,7 +440,7 @@ const PayrollPage = {
 
         if (mode === 'detail' || mode === 'audit' || mode === 'correct') {
             const detail = await API.get(`/timesheets/${id}`);
-            if (mode === 'audit') {
+            if (mode === 'detail' || mode === 'audit') {
                 try {
                     detail.audit_events = await API.get(`/timesheets/${id}/audit`);
                 } catch (_err) {

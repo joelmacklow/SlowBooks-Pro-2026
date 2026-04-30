@@ -27,8 +27,8 @@ function createPayrollContext(overrides = {}) {
                     return {
                         period_start: '2026-04-01',
                         period_end: '2026-04-07',
-                        submitted: [{ id: 11, employee_id: 7, period_start: '2026-04-01', period_end: '2026-04-07', status: 'submitted', total_hours: '8.00' }],
-                        approved: [{ id: 12, employee_id: 8, period_start: '2026-04-01', period_end: '2026-04-07', status: 'approved', total_hours: '7.50' }],
+                        submitted: [{ id: 11, employee_id: 7, employee_name: 'Aroha Ngata', period_start: '2026-04-01', period_end: '2026-04-07', status: 'submitted', total_hours: '8.00' }],
+                        approved: [{ id: 12, employee_id: 8, employee_name: 'Matiu Rangi', period_start: '2026-04-01', period_end: '2026-04-07', status: 'approved', total_hours: '7.50' }],
                         draft: [],
                         rejected: [],
                         locked: [],
@@ -39,7 +39,7 @@ function createPayrollContext(overrides = {}) {
                         period_start: '2026-04-01',
                         period_end: '2026-04-07',
                         pay_run_id: 2,
-                        submitted: [{ id: 21, employee_id: 9, period_start: '2026-04-01', period_end: '2026-04-07', status: 'submitted', total_hours: '8.00' }],
+                        submitted: [{ id: 21, employee_id: 9, employee_name: 'Wiremu Pene', period_start: '2026-04-01', period_end: '2026-04-07', status: 'submitted', total_hours: '8.00' }],
                         approved: [],
                         draft: [],
                         rejected: [],
@@ -53,12 +53,13 @@ function createPayrollContext(overrides = {}) {
                         period_end: '2026-04-07',
                         status: 'submitted',
                         total_hours: '8.00',
+                        employee_name: 'Aroha Ngata',
                         lines: [{ work_date: '2026-04-01', entry_mode: 'start_end', start_time: '2026-04-01T08:00:00', end_time: '2026-04-01T16:30:00', break_minutes: 30, notes: 'Shift' }],
-                        audit_events: [{ id: 1, action: 'create', status_from: null, status_to: 'draft', reason: null }],
+                        audit_events: [{ id: 1, action: 'create', status_from: null, status_to: 'draft', reason: null, created_at: '2026-04-01T10:15:00Z' }],
                     };
                 }
                 if (path === '/timesheets/5/audit') {
-                    return [{ id: 1, action: 'create', status_from: null, status_to: 'draft', reason: null }];
+                    return [{ id: 1, action: 'create', status_from: null, status_to: 'draft', reason: null, created_at: '2026-04-01T10:15:00Z', actor_name: 'Owner User', actor_email: 'owner@example.com' }];
                 }
                 throw new Error(`unexpected get ${path}`);
             },
@@ -158,6 +159,7 @@ function createPayrollContext(overrides = {}) {
     assert.ok(html.includes('Export CSV'));
     assert.ok(html.includes('Bulk Approve Submitted'));
     assert.ok(html.includes('PayrollPage.showTimesheetDetail(11)'));
+    assert.ok(html.includes('Aroha Ngata'));
     assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=period&period_start=2026-04-01&period_end=2026-04-07', '#/payroll', 'Payroll']);
 
     await admin.context.PayrollPage.bulkApproveTimesheets([11, 12]);
@@ -171,6 +173,7 @@ function createPayrollContext(overrides = {}) {
     assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=payrun&run_id=2');
     html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
     assert.ok(html.includes('Timesheet Review — Pay Run 2'));
+    assert.ok(html.includes('Wiremu Pene'));
     assert.ok(html.includes('PayrollPage.showTimesheetDetail(21)'));
     assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=payrun&run_id=2', '#/payroll', 'Payroll']);
 
@@ -182,9 +185,14 @@ function createPayrollContext(overrides = {}) {
     assert.ok(html.includes('Correct'));
     assert.ok(html.includes('Approve'));
     assert.ok(html.includes('Reject'));
-    assert.ok(html.includes('Open Audit'));
+    assert.ok(html.includes('History'));
     assert.ok(html.includes('timesheet-lines-table'));
+    assert.ok(html.includes('Date/Time'));
+    assert.ok(html.includes('User'));
+    assert.ok(html.includes('2026-04-01 10:15:00 UTC'));
+    assert.ok(html.includes('Owner User (owner@example.com)'));
     assert.ok(html.includes('create'));
+    assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/5/audit'));
     assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=detail&id=5', '#/payroll/timesheets?mode=period', 'Timesheet Review']);
 
     await admin.context.PayrollPage.openTimesheetCorrection(5);
@@ -203,6 +211,7 @@ function createPayrollContext(overrides = {}) {
     assert.strictEqual(admin.getHash(), '#/payroll/timesheets?mode=audit&id=5');
     html = await admin.context.PayrollPage.renderTimesheetReviewScreen();
     assert.ok(html.includes('Timesheet Audit #5'));
+    assert.ok(html.includes('History'));
     assert.ok(html.includes('create'));
     assert.deepStrictEqual(admin.backLabelCalls.pop(), ['#/payroll/timesheets?mode=audit&id=5', '#/payroll/timesheets?mode=period', 'Timesheet Review']);
 
