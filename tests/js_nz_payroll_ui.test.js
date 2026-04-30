@@ -50,6 +50,7 @@ async function runPayrollPage() {
     const code = `${fs.readFileSync('app/static/js/payroll.js', 'utf8')}\nthis.PayrollPage = PayrollPage;`;
     const calls = [];
     const navigations = [];
+    const backLabelCalls = [];
     const context = {
         API: {
             get: async (path) => {
@@ -150,7 +151,10 @@ async function runPayrollPage() {
                 navigations.push(detailHash);
                 context.location.hash = detailHash;
             },
-            detailBackLabel() { return 'Back to Payroll'; },
+            detailBackLabel(detailHash, fallbackHash) {
+                backLabelCalls.push([detailHash, fallbackHash]);
+                return 'Back to Payroll';
+            },
             navigateBackToDetailOrigin() {},
         },
         closeModal() {},
@@ -164,7 +168,7 @@ async function runPayrollPage() {
     };
     vm.createContext(context);
     vm.runInContext(code, context);
-    return { html: await context.PayrollPage.render(), calls, navigations, context };
+    return { html: await context.PayrollPage.render(), calls, navigations, backLabelCalls, context };
 }
 
 (async () => {
@@ -189,7 +193,7 @@ async function runPayrollPage() {
     assert.ok(!employeeHtml.includes('Filing Status'));
     assert.ok(!employeeHtml.includes('Allowances'));
 
-    const { html: payrollHtml, calls, navigations, context } = await runPayrollPage();
+    const { html: payrollHtml, calls, navigations, backLabelCalls, context } = await runPayrollPage();
     assert.ok(calls.includes('/payroll'));
     assert.ok(calls.includes('/employees?active_only=true'));
     assert.ok(payrollHtml.includes('New Pay Run'));
@@ -213,6 +217,8 @@ async function runPayrollPage() {
     const newDetailHtml = await context.PayrollPage.renderDetailScreen();
     assert.ok(newDetailHtml.includes('New Pay Run'));
     assert.ok(newDetailHtml.includes('Create Draft Run'));
+    assert.ok(newDetailHtml.includes("App.navigateBackToDetailOrigin('#/payroll/detail?mode=new', '#/payroll')"));
+    assert.deepStrictEqual(backLabelCalls.pop(), ['#/payroll/detail?mode=new', '#/payroll']);
 
     navigations.length = 0;
     await context.PayrollPage.viewRun(1);
@@ -222,6 +228,8 @@ async function runPayrollPage() {
     assert.ok(viewDetailHtml.includes('Back to Payroll'));
     assert.ok(viewDetailHtml.indexOf('>Process<') > -1);
     assert.ok(viewDetailHtml.indexOf('>Process<') < viewDetailHtml.indexOf('Back to Payroll'));
+    assert.ok(viewDetailHtml.includes("App.navigateBackToDetailOrigin('#/payroll/detail?id=1', '#/payroll')"));
+    assert.deepStrictEqual(backLabelCalls.pop(), ['#/payroll/detail?id=1', '#/payroll']);
     navigations.length = 0;
     await context.PayrollPage.viewRun(2);
     assert.deepStrictEqual(navigations, ['#/payroll/detail?id=2']);
@@ -229,6 +237,8 @@ async function runPayrollPage() {
     assert.ok(processedDetailHtml.includes('Pay Run 2'));
     assert.ok(processedDetailHtml.includes('Employment Information generated'));
     assert.ok(processedDetailHtml.includes('Aroha Ngata'));
+    assert.ok(processedDetailHtml.includes("App.navigateBackToDetailOrigin('#/payroll/detail?id=2', '#/payroll')"));
+    assert.deepStrictEqual(backLabelCalls.pop(), ['#/payroll/detail?id=2', '#/payroll']);
 })().catch(err => {
     console.error(err);
     process.exit(1);

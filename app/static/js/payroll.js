@@ -219,12 +219,12 @@ const PayrollPage = {
         return { mode, id };
     },
 
-    _detailBackButtonHtml() {
-        const backLabel = App.detailBackLabel('#/payroll/detail', '#/payroll', 'Payroll');
-        return `<button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('#/payroll/detail', '#/payroll')">${escapeHtml(backLabel)}</button>`;
+    _detailBackButtonHtml(detailHash = '#/payroll/detail') {
+        const backLabel = App.detailBackLabel(detailHash, '#/payroll', 'Payroll');
+        return `<button class="btn btn-secondary" onclick="App.navigateBackToDetailOrigin('${escapeHtml(detailHash)}', '#/payroll')">${escapeHtml(backLabel)}</button>`;
     },
 
-    _detailHeaderHtml(title, actionsHtml = '') {
+    _detailHeaderHtml(title, actionsHtml = '', detailHash = '#/payroll/detail') {
         return `
             <div class="page-header">
                 <div>
@@ -232,7 +232,7 @@ const PayrollPage = {
                 </div>
                 <div class="btn-group">
                     ${actionsHtml}
-                    ${PayrollPage._detailBackButtonHtml()}
+                    ${PayrollPage._detailBackButtonHtml(detailHash)}
                 </div>
             </div>`;
     },
@@ -271,7 +271,7 @@ const PayrollPage = {
             const employees = state.employees || [];
             if (!employees.length) {
                 return `
-                    ${PayrollPage._detailHeaderHtml('New Pay Run')}
+                    ${PayrollPage._detailHeaderHtml('New Pay Run', '', '#/payroll/detail?mode=new')}
                     <div class="empty-state"><p>Add an active employee before creating a pay run.</p></div>`;
             }
             const today = todayISO();
@@ -290,7 +290,7 @@ const PayrollPage = {
                 </tr>
             `).join('');
             return `
-                ${PayrollPage._detailHeaderHtml('New Pay Run')}
+                ${PayrollPage._detailHeaderHtml('New Pay Run', '', '#/payroll/detail?mode=new')}
                 <div class="detail-panel">
                     <form onsubmit="PayrollPage.save(event)">
                         <div class="form-grid">
@@ -315,7 +315,7 @@ const PayrollPage = {
 
         if (!id) {
             return `
-                ${PayrollPage._detailHeaderHtml('Payroll Run')}
+                ${PayrollPage._detailHeaderHtml('Payroll Run', '', '#/payroll/detail')}
                 <div class="empty-state"><p>Select a payroll run or create a new one first.</p></div>`;
         }
 
@@ -331,12 +331,14 @@ const PayrollPage = {
         const run = state.run || {};
         const latestFiling = (state.filingHistory || [])[0];
         const rows = PayrollPage._detailPayRunRows(run, canViewPayslips, canEmailPayslips);
+        const detailHash = `#/payroll/detail?id=${id}`;
         return `
             ${PayrollPage._detailHeaderHtml(
                 `Pay Run ${String(run.id || id)}`,
                 `${String(run.status || '').toLowerCase() === 'draft' && canProcessRun ? `<button class="btn btn-primary" onclick="PayrollPage.processRun(${run.id})">Process</button>` : ''}` +
                 `${String(run.status || '').toLowerCase() === 'processed' && canViewPayslips ? `<button class="btn btn-secondary" onclick="PayrollPage.viewRun(${run.id})">Refresh</button>` : ''}` +
                 `${String(run.status || '').toLowerCase() === 'processed' && canExportFiling ? `<button class="btn btn-secondary" onclick="PayrollPage.exportEmploymentInformation(${run.id})">Employment Information</button>` : ''}`,
+                detailHash,
             )}
             <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
                 Pay Date: <strong>${formatDate(run.pay_date)}</strong>
