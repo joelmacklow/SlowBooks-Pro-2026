@@ -10,6 +10,28 @@ const PayrollPage = {
         return raw.length > 5 ? raw.slice(0, 5) : raw;
     },
 
+    _breakHoursDisplay(line = {}) {
+        const provided = Number(line.break_hours);
+        if (Number.isFinite(provided) && provided > 0) return provided.toFixed(2);
+        const minutes = Number(line.break_minutes ?? 0);
+        if (!Number.isFinite(minutes) || minutes <= 0) return '';
+        return (minutes / 60).toFixed(2);
+    },
+
+    _lineHoursDisplay(line = {}) {
+        const start = PayrollPage._timeInputValue(line.start_time);
+        const end = PayrollPage._timeInputValue(line.end_time);
+        const breakMinutes = Number(line.break_minutes ?? 0);
+        if (!start || !end || !Number.isFinite(breakMinutes) || breakMinutes < 0) return String(line.duration_hours ?? '');
+        const startParts = start.split(':').map(Number);
+        const endParts = end.split(':').map(Number);
+        if (startParts.some((part) => !Number.isFinite(part)) || endParts.some((part) => !Number.isFinite(part))) {
+            return String(line.duration_hours ?? '');
+        }
+        const workedMinutes = ((endParts[0] * 60) + endParts[1]) - ((startParts[0] * 60) + startParts[1]) - breakMinutes;
+        return workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
+    },
+
     _timesheetPermissions() {
         const hasPermission = typeof App !== 'undefined' && typeof App.hasPermission === 'function'
             ? (permission) => App.hasPermission(permission)
@@ -36,22 +58,16 @@ const PayrollPage = {
     _timesheetLineRows(lines = []) {
         const source = Array.isArray(lines) && lines.length
             ? lines
-            : [{ work_date: '', entry_mode: 'duration', duration_hours: '', start_time: '', end_time: '', break_minutes: '', notes: '' }];
+            : [{ work_date: '', start_time: '', end_time: '', break_hours: '', notes: '' }];
         return source.map((line) => `
             <tr>
-                <td><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required></td>
-                <td>
-                    <select name="entry_mode">
-                        <option value="duration" ${String(line.entry_mode || 'duration') === 'duration' ? 'selected' : ''}>Duration</option>
-                        <option value="start_end" ${String(line.entry_mode || '') === 'start_end' ? 'selected' : ''}>Start / End</option>
-                    </select>
-                </td>
-                <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" value="${escapeHtml(String(line.duration_hours ?? ''))}"></td>
-                <td><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
-                <td><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
-                <td><input type="number" name="break_minutes" min="0" step="1" value="${escapeHtml(String(line.break_minutes ?? 0))}"></td>
-                <td><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
-                <td><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>
+                <td class="col-work-date"><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required></td>
+                <td class="col-time"><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
+                <td class="col-time"><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
+                <td class="col-break"><input type="number" name="break_hours" min="0" max="12" step="0.01" value="${escapeHtml(String(PayrollPage._breakHoursDisplay(line) || line.break_hours || ''))}"></td>
+                <td class="col-hours"><input type="text" name="calculated_hours" value="${escapeHtml(PayrollPage._lineHoursDisplay(line))}" readonly tabindex="-1"></td>
+                <td class="col-notes"><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
+                <td class="col-actions"><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>
             </tr>
         `).join('');
     },
@@ -61,29 +77,21 @@ const PayrollPage = {
         if (!table) return [];
         return Array.from(table.querySelectorAll('tbody tr')).map((row) => {
             const workDate = row.querySelector('input[name="work_date"]')?.value;
-            const entryMode = row.querySelector('select[name="entry_mode"]')?.value || 'duration';
-            const durationHours = row.querySelector('input[name="duration_hours"]')?.value;
             const startTime = row.querySelector('input[name="start_time"]')?.value;
             const endTime = row.querySelector('input[name="end_time"]')?.value;
-            const breakMinutes = row.querySelector('input[name="break_minutes"]')?.value;
+            const breakHours = Number(row.querySelector('input[name="break_hours"]')?.value || 0);
             const notes = row.querySelector('input[name="notes"]')?.value;
             if (!workDate) return null;
             const payload = {
                 work_date: workDate,
-                entry_mode: entryMode === 'start_end' ? 'start_end' : 'duration',
+                entry_mode: 'start_end',
                 notes: notes || null,
+                start_time: startTime || null,
+                end_time: endTime || null,
+                break_minutes: Number.isFinite(breakHours) ? Math.round(breakHours * 60) : 0,
             };
-            if (payload.entry_mode === 'start_end') {
-                payload.start_time = startTime || null;
-                payload.end_time = endTime || null;
-                payload.break_minutes = Number(breakMinutes || 0);
-            } else {
-                payload.duration_hours = durationHours || null;
-            }
             return payload;
-        }).filter((line) => line && (line.entry_mode === 'start_end'
-            ? line.start_time && line.end_time
-            : Number(line.duration_hours) > 0));
+        }).filter((line) => line && line.start_time && line.end_time);
     },
 
     addTimesheetLineRow(tableId, line = {}) {
@@ -93,19 +101,13 @@ const PayrollPage = {
         if (!tbody) return;
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required></td>
-            <td>
-                <select name="entry_mode">
-                    <option value="duration" ${String(line.entry_mode || 'duration') === 'duration' ? 'selected' : ''}>Duration</option>
-                    <option value="start_end" ${String(line.entry_mode || '') === 'start_end' ? 'selected' : ''}>Start / End</option>
-                </select>
-            </td>
-            <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" value="${escapeHtml(String(line.duration_hours ?? ''))}"></td>
-            <td><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
-            <td><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
-            <td><input type="number" name="break_minutes" min="0" step="1" value="${escapeHtml(String(line.break_minutes ?? 0))}"></td>
-            <td><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
-            <td><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>
+            <td class="col-work-date"><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required></td>
+            <td class="col-time"><input type="time" name="start_time" value="${escapeHtml(PayrollPage._timeInputValue(line.start_time))}"></td>
+            <td class="col-time"><input type="time" name="end_time" value="${escapeHtml(PayrollPage._timeInputValue(line.end_time))}"></td>
+            <td class="col-break"><input type="number" name="break_hours" min="0" max="12" step="0.01" value="${escapeHtml(String(PayrollPage._breakHoursDisplay(line) || line.break_hours || ''))}"></td>
+            <td class="col-hours"><input type="text" name="calculated_hours" value="${escapeHtml(PayrollPage._lineHoursDisplay(line))}" readonly tabindex="-1"></td>
+            <td class="col-notes"><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
+            <td class="col-actions"><button type="button" class="btn btn-sm btn-danger" onclick="PayrollPage.removeTimesheetLineRow(this)">Remove</button></td>
         `;
         tbody.appendChild(row);
     },
@@ -226,14 +228,13 @@ const PayrollPage = {
             const lines = (detail.lines || []).map((line) => `
                 <tr>
                     <td>${escapeHtml(formatDate(line.work_date))}</td>
-                    <td>${escapeHtml(line.entry_mode || 'duration')}</td>
-                    <td>${escapeHtml(String(line.duration_hours ?? ''))}</td>
-                    <td>${escapeHtml(line.start_time || '')}</td>
-                    <td>${escapeHtml(line.end_time || '')}</td>
-                    <td>${escapeHtml(String(line.break_minutes ?? ''))}</td>
+                    <td>${escapeHtml(PayrollPage._lineHoursDisplay(line) || String(line.duration_hours ?? ''))}</td>
+                    <td>${escapeHtml(PayrollPage._timeInputValue(line.start_time))}</td>
+                    <td>${escapeHtml(PayrollPage._timeInputValue(line.end_time))}</td>
+                    <td>${escapeHtml(PayrollPage._breakHoursDisplay(line))}</td>
                     <td>${escapeHtml(line.notes || '')}</td>
                 </tr>
-            `).join('') || '<tr><td colspan="7" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
+            `).join('') || '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
             const auditRows = (detail.audit_events || []).map((event) => `
                 <tr>
                     <td>${escapeHtml(String(event.id || ''))}</td>
@@ -250,8 +251,8 @@ const PayrollPage = {
                     · Total Hours <strong>${escapeHtml(String(detail.total_hours ?? '0.00'))}</strong>
                 </div>
                 <div class="table-container">
-                    <table>
-                        <thead><tr><th>Work Date</th><th>Mode</th><th>Hours</th><th>Start</th><th>End</th><th>Break</th><th>Notes</th></tr></thead>
+                    <table class="compact-table timesheet-lines-table">
+                        <thead><tr><th>Work Date</th><th>Hours</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Notes</th></tr></thead>
                         <tbody>${lines}</tbody>
                     </table>
                 </div>
@@ -307,17 +308,19 @@ const PayrollPage = {
     async openTimesheetCorrection(timesheetId) {
         try {
             const detail = await API.get(`/timesheets/${timesheetId}`);
-            const rows = (detail.lines || []).length ? detail.lines : [{ work_date: '', entry_mode: 'duration' }];
+            const rows = (detail.lines || []).length ? detail.lines : [{ work_date: '', start_time: '', end_time: '', break_hours: '', notes: '' }];
             openModal(`Correct Timesheet #${timesheetId}`, `
                 <form onsubmit="PayrollPage.submitTimesheetCorrection(event, ${timesheetId})">
                     <div class="form-group">
                         <label>Reason</label>
                         <textarea name="reason" rows="3" required></textarea>
                     </div>
-                    <table id="timesheet-correction-lines-${timesheetId}" class="compact-table">
-                        <thead><tr><th>Work Date</th><th>Mode</th><th>Hours</th><th>Start</th><th>End</th><th>Break</th><th>Notes</th><th></th></tr></thead>
-                        <tbody>${PayrollPage._timesheetLineRows(rows)}</tbody>
-                    </table>
+                    <div class="table-container" style="margin-top:8px;">
+                        <table id="timesheet-correction-lines-${timesheetId}" class="compact-table timesheet-lines-table">
+                            <thead><tr><th>Work Date</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
+                            <tbody>${PayrollPage._timesheetLineRows(rows)}</tbody>
+                        </table>
+                    </div>
                     <div class="form-actions" style="margin-top:10px;">
                         <button type="button" class="btn btn-secondary" onclick="PayrollPage.addTimesheetLineRow('timesheet-correction-lines-${timesheetId}')">Add Line</button>
                         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>

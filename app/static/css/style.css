@@ -424,12 +424,41 @@ body {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
     border-radius: 0;
-    overflow: hidden;
+    overflow: auto;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
+}
+
+.compact-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.compact-table th,
+.compact-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.compact-table input,
+.compact-table select,
+.compact-table textarea {
+    width: 100%;
+    min-width: 0;
+}
+
+.timesheet-lines-table .col-work-date { width: 96px; }
+.timesheet-lines-table .col-time { width: 76px; }
+.timesheet-lines-table .col-break { width: 90px; }
+.timesheet-lines-table .col-hours { width: 94px; }
+.timesheet-lines-table .col-notes { width: auto; }
+.timesheet-lines-table .col-actions { width: 64px; }
+
+.timesheet-lines-table .col-actions .btn {
+    white-space: nowrap;
 }
 
 thead th {

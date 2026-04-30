@@ -34,19 +34,18 @@ const TimesheetSelfServicePage = {
         return (hours * 60) + minutes;
     },
 
-    _lineMode(line = {}) {
-        return String(line.entry_mode || (line.start_time || line.end_time ? 'start_end' : 'duration')).trim().toLowerCase() || 'duration';
+    _breakHoursDisplay(line = {}) {
+        const provided = Number(line.break_hours);
+        if (Number.isFinite(provided) && provided > 0) return provided.toFixed(2);
+        const minutes = Number(line.break_minutes ?? 0);
+        if (!Number.isFinite(minutes) || minutes <= 0) return '';
+        return (minutes / 60).toFixed(2);
     },
 
     _lineHoursDisplay(line = {}) {
-        const mode = TimesheetSelfServicePage._lineMode(line);
-        if (mode === 'duration') {
-            const duration = Number(line.duration_hours);
-            return Number.isFinite(duration) && duration > 0 ? duration.toFixed(2) : '';
-        }
         const start = TimesheetSelfServicePage._minutesFromTime(line.start_time);
         const end = TimesheetSelfServicePage._minutesFromTime(line.end_time);
-        const breakMinutes = Number(line.break_minutes || 0);
+        const breakMinutes = Number(line.break_minutes ?? (Number(line.break_hours) * 60));
         if (start == null || end == null || end <= start || !Number.isFinite(breakMinutes) || breakMinutes < 0) return '';
         const workedMinutes = end - start - breakMinutes;
         return workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
@@ -55,42 +54,29 @@ const TimesheetSelfServicePage = {
     _lineRows(lines = []) {
         const source = Array.isArray(lines) && lines.length
             ? lines
-            : [{ work_date: '', entry_mode: 'start_end', duration_hours: '', start_time: '', end_time: '', break_minutes: 0, notes: '' }];
+            : [{ work_date: '', start_time: '', end_time: '', break_hours: '', notes: '' }];
         return source.map((line) => `
             <tr>
-                <td><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-                <td>
-                    <select name="entry_mode" onchange="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))">
-                        <option value="start_end" ${TimesheetSelfServicePage._lineMode(line) === 'start_end' ? 'selected' : ''}>Start / End</option>
-                        <option value="duration" ${TimesheetSelfServicePage._lineMode(line) === 'duration' ? 'selected' : ''}>Duration</option>
-                    </select>
-                </td>
-                <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" value="${escapeHtml(String(line.duration_hours ?? ''))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-                <td><input type="time" name="start_time" value="${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.start_time))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-                <td><input type="time" name="end_time" value="${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.end_time))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-                <td><input type="number" name="break_minutes" min="0" step="1" value="${escapeHtml(String(line.break_minutes ?? 0))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-                <td><input type="text" name="calculated_hours" value="${escapeHtml(TimesheetSelfServicePage._lineHoursDisplay(line))}" readonly tabindex="-1"></td>
-                <td><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
-                <td><button type="button" class="btn btn-sm btn-danger" onclick="TimesheetSelfServicePage.removeLineRow(this)">Remove</button></td>
+                <td class="col-work-date"><input type="date" name="work_date" value="${escapeHtml(line.work_date || '')}" required oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+                <td class="col-time"><input type="time" name="start_time" value="${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.start_time))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+                <td class="col-time"><input type="time" name="end_time" value="${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.end_time))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+                <td class="col-break"><input type="number" name="break_hours" min="0" max="12" step="0.01" value="${escapeHtml(String(TimesheetSelfServicePage._breakHoursDisplay(line) || line.break_hours || ''))}" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+                <td class="col-hours"><input type="text" name="calculated_hours" value="${escapeHtml(TimesheetSelfServicePage._lineHoursDisplay(line))}" readonly tabindex="-1"></td>
+                <td class="col-notes"><input type="text" name="notes" value="${escapeHtml(line.notes || '')}" placeholder="Optional"></td>
+                <td class="col-actions"><button type="button" class="btn btn-sm btn-danger" onclick="TimesheetSelfServicePage.removeLineRow(this)">Remove</button></td>
             </tr>
         `).join('');
     },
 
     refreshLineCalculation(row) {
         if (!row) return;
-        const mode = String(row.querySelector('select[name="entry_mode"]')?.value || 'start_end').toLowerCase();
+        const start = TimesheetSelfServicePage._minutesFromTime(row.querySelector('input[name="start_time"]')?.value);
+        const end = TimesheetSelfServicePage._minutesFromTime(row.querySelector('input[name="end_time"]')?.value);
+        const breakHours = Number(row.querySelector('input[name="break_hours"]')?.value || 0);
         let calculated = '';
-        if (mode === 'duration') {
-            const duration = Number(row.querySelector('input[name="duration_hours"]')?.value || '');
-            calculated = Number.isFinite(duration) && duration > 0 ? duration.toFixed(2) : '';
-        } else {
-            const start = TimesheetSelfServicePage._minutesFromTime(row.querySelector('input[name="start_time"]')?.value);
-            const end = TimesheetSelfServicePage._minutesFromTime(row.querySelector('input[name="end_time"]')?.value);
-            const breakMinutes = Number(row.querySelector('input[name="break_minutes"]')?.value || 0);
-            if (start != null && end != null && end > start && Number.isFinite(breakMinutes) && breakMinutes >= 0) {
-                const workedMinutes = end - start - breakMinutes;
-                calculated = workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
-            }
+        if (start != null && end != null && end > start && Number.isFinite(breakHours) && breakHours >= 0) {
+            const workedHours = ((end - start) / 60) - breakHours;
+            calculated = workedHours > 0 ? workedHours.toFixed(2) : '';
         }
         const field = row.querySelector('input[name="calculated_hours"]');
         if (field) field.value = calculated;
@@ -101,31 +87,19 @@ const TimesheetSelfServicePage = {
         if (!table) return [];
         return Array.from(table.querySelectorAll('tbody tr')).map((row) => {
             const workDate = row.querySelector('input[name="work_date"]')?.value;
-            const durationHours = row.querySelector('input[name="duration_hours"]')?.value;
-            const entryMode = String(row.querySelector('select[name="entry_mode"]')?.value || 'start_end').toLowerCase() === 'duration'
-                ? 'duration'
-                : 'start_end';
             const notes = row.querySelector('input[name="notes"]')?.value;
             const startTime = row.querySelector('input[name="start_time"]')?.value;
             const endTime = row.querySelector('input[name="end_time"]')?.value;
-            const breakMinutes = row.querySelector('input[name="break_minutes"]')?.value;
+            const breakHours = Number(row.querySelector('input[name="break_hours"]')?.value || 0);
             return {
                 work_date: workDate,
-                entry_mode: entryMode,
+                entry_mode: 'start_end',
                 notes: notes || null,
-                ...(entryMode === 'duration'
-                    ? { duration_hours: durationHours }
-                    : {
-                        start_time: startTime || null,
-                        end_time: endTime || null,
-                        break_minutes: Number(breakMinutes || 0),
-                    }),
+                start_time: startTime || null,
+                end_time: endTime || null,
+                break_minutes: Number.isFinite(breakHours) ? Math.round(breakHours * 60) : 0,
             };
-        }).filter((line) => line.work_date && (
-            line.entry_mode === 'duration'
-                ? Number(line.duration_hours) > 0
-                : line.start_time && line.end_time
-        ));
+        }).filter((line) => line.work_date && line.start_time && line.end_time);
     },
 
     addLineRow(tableId) {
@@ -135,20 +109,13 @@ const TimesheetSelfServicePage = {
         if (!tbody) return;
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><input type="date" name="work_date" required oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-            <td>
-                <select name="entry_mode" onchange="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))">
-                    <option value="start_end" selected>Start / End</option>
-                    <option value="duration">Duration</option>
-                </select>
-            </td>
-            <td><input type="number" name="duration_hours" min="0.01" max="24" step="0.01" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-            <td><input type="time" name="start_time" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-            <td><input type="time" name="end_time" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-            <td><input type="number" name="break_minutes" min="0" step="1" value="0" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
-            <td><input type="text" name="calculated_hours" readonly tabindex="-1"></td>
-            <td><input type="text" name="notes" placeholder="Optional"></td>
-            <td><button type="button" class="btn btn-sm btn-danger" onclick="TimesheetSelfServicePage.removeLineRow(this)">Remove</button></td>
+            <td class="col-work-date"><input type="date" name="work_date" required oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+            <td class="col-time"><input type="time" name="start_time" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+            <td class="col-time"><input type="time" name="end_time" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+            <td class="col-break"><input type="number" name="break_hours" min="0" max="12" step="0.01" value="0" oninput="TimesheetSelfServicePage.refreshLineCalculation(this.closest('tr'))"></td>
+            <td class="col-hours"><input type="text" name="calculated_hours" readonly tabindex="-1"></td>
+            <td class="col-notes"><input type="text" name="notes" placeholder="Optional"></td>
+            <td class="col-actions"><button type="button" class="btn btn-sm btn-danger" onclick="TimesheetSelfServicePage.removeLineRow(this)">Remove</button></td>
         `;
         tbody.appendChild(row);
         TimesheetSelfServicePage.refreshLineCalculation(row);
@@ -167,15 +134,14 @@ const TimesheetSelfServicePage = {
     },
 
     lineRowsReadonly(lines = []) {
-        if (!lines.length) return '<tr><td colspan="7" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
+        if (!lines.length) return '<tr><td colspan="6" style="font-size:11px; color:var(--text-muted);">No lines</td></tr>';
         return lines.map((line) => `
             <tr>
                 <td>${escapeHtml(formatDate(line.work_date))}</td>
-                <td>${escapeHtml(line.entry_mode || 'duration')}</td>
                 <td>${escapeHtml(TimesheetSelfServicePage._lineHoursDisplay(line) || String(line.duration_hours ?? '0.00'))}</td>
                 <td>${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.start_time))}</td>
                 <td>${escapeHtml(TimesheetSelfServicePage._timeInputValue(line.end_time))}</td>
-                <td>${escapeHtml(String(line.break_minutes ?? ''))}</td>
+                <td>${escapeHtml(TimesheetSelfServicePage._breakHoursDisplay(line))}</td>
                 <td>${escapeHtml(line.notes || '')}</td>
             </tr>
         `).join('');
@@ -238,10 +204,12 @@ const TimesheetSelfServicePage = {
                     </div>
                     ${isEditable ? `
                         <form onsubmit="TimesheetSelfServicePage.updateTimesheet(event, ${detail.id})">
-                            <table id="self-timesheet-edit-lines" class="compact-table">
-                                <thead><tr><th>Work Date</th><th>Mode</th><th>Duration</th><th>Start</th><th>End</th><th>Break</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
-                                <tbody>${TimesheetSelfServicePage._lineRows(detail.lines || [])}</tbody>
-                            </table>
+                            <div class="table-container" style="margin-top:8px;">
+                                <table id="self-timesheet-edit-lines" class="compact-table timesheet-lines-table">
+                                    <thead><tr><th>Work Date</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
+                                    <tbody>${TimesheetSelfServicePage._lineRows(detail.lines || [])}</tbody>
+                                </table>
+                            </div>
                             <div class="form-actions" style="margin-top:10px;">
                                 <button type="button" class="btn btn-secondary" onclick="TimesheetSelfServicePage.addLineRow('self-timesheet-edit-lines')">Add Line</button>
                                 <button type="button" class="btn btn-secondary" onclick="TimesheetSelfServicePage.downloadTimesheetCsv(${detail.id})">Download CSV</button>
@@ -251,8 +219,8 @@ const TimesheetSelfServicePage = {
                         </form>
                     ` : `
                         <div class="table-container">
-                            <table>
-                                <thead><tr><th>Work Date</th><th>Mode</th><th>Hours</th><th>Start</th><th>End</th><th>Break</th><th>Notes</th></tr></thead>
+                            <table class="compact-table timesheet-lines-table">
+                                <thead><tr><th>Work Date</th><th>Hours</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Notes</th></tr></thead>
                                 <tbody>${TimesheetSelfServicePage.lineRowsReadonly(detail.lines || [])}</tbody>
                             </table>
                         </div>
@@ -264,7 +232,7 @@ const TimesheetSelfServicePage = {
             ` : `
                 <div class="settings-section">
                     <h3>Create Timesheet</h3>
-                    <p style="font-size:11px; color:var(--text-muted); margin-top:-4px; margin-bottom:10px;">Enter start/end times with break minutes to calculate daily hours automatically, or switch a row to duration mode if needed.</p>
+                    <p style="font-size:11px; color:var(--text-muted); margin-top:-4px; margin-bottom:10px;">Enter start/end times with break hours to calculate daily hours automatically.</p>
                     <form onsubmit="TimesheetSelfServicePage.createTimesheet(event)">
                         <div class="form-grid">
                             <div class="form-group">
@@ -276,10 +244,12 @@ const TimesheetSelfServicePage = {
                                 <input type="date" name="period_end" required>
                             </div>
                         </div>
-                        <table id="self-timesheet-create-lines" class="compact-table">
-                            <thead><tr><th>Work Date</th><th>Mode</th><th>Duration</th><th>Start</th><th>End</th><th>Break</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
-                            <tbody>${TimesheetSelfServicePage._lineRows()}</tbody>
-                        </table>
+                        <div class="table-container" style="margin-top:8px;">
+                            <table id="self-timesheet-create-lines" class="compact-table timesheet-lines-table">
+                                <thead><tr><th>Work Date</th><th>Start</th><th>End</th><th>Break (hrs)</th><th>Calculated Hours</th><th>Notes</th><th></th></tr></thead>
+                                <tbody>${TimesheetSelfServicePage._lineRows()}</tbody>
+                            </table>
+                        </div>
                         <div class="form-actions" style="margin-top:10px;">
                             <button type="button" class="btn btn-secondary" onclick="TimesheetSelfServicePage.addLineRow('self-timesheet-create-lines')">Add Line</button>
                             <button type="submit" class="btn btn-primary">Create Draft</button>

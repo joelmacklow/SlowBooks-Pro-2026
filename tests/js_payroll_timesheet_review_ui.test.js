@@ -141,6 +141,13 @@ function createPayrollContext(overrides = {}) {
     assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/5'));
     assert.ok(admin.getModalHtml().includes('Correct'));
     assert.ok(admin.getModalHtml().includes('Audit'));
+    assert.ok(admin.getModalHtml().includes('Break (hrs)'));
+    assert.ok(admin.getModalHtml().includes('timesheet-lines-table'));
+
+    await admin.context.PayrollPage.openTimesheetCorrection(5);
+    assert.ok(admin.getModalHtml().includes('readonly'));
+    assert.ok(!admin.getModalHtml().includes('name="duration_hours"'));
+    assert.ok(!admin.getModalHtml().includes('name="entry_mode"'));
 
     await admin.context.PayrollPage.showTimesheetAudit(5);
     assert.ok(admin.calls.some(([kind, path]) => kind === 'get' && path === '/timesheets/5/audit'));
@@ -152,11 +159,10 @@ function createPayrollContext(overrides = {}) {
                 querySelector(selector) {
                     const values = {
                         'input[name="work_date"]': { value: '2026-04-01' },
-                        'select[name="entry_mode"]': { value: 'duration' },
-                        'input[name="duration_hours"]': { value: '8.25' },
-                        'input[name="start_time"]': { value: '' },
-                        'input[name="end_time"]': { value: '' },
-                        'input[name="break_minutes"]': { value: '0' },
+                        'input[name="start_time"]': { value: '08:00' },
+                        'input[name="end_time"]': { value: '16:30' },
+                        'input[name="break_hours"]': { value: '0.50' },
+                        'input[name="calculated_hours"]': { value: '8.00' },
                         'input[name="notes"]': { value: 'Adjusted' },
                     };
                     return values[selector] || null;
@@ -169,7 +175,10 @@ function createPayrollContext(overrides = {}) {
         5,
     );
     assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.reason === 'Adjusted after review'));
-    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].duration_hours === '8.25'));
+    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].start_time === '08:00'));
+    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].end_time === '16:30'));
+    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].break_minutes === 30));
+    assert.ok(admin.calls.some(([kind, path, payload]) => kind === 'put' && path === '/timesheets/5' && payload.lines[0].entry_mode === 'start_end'));
 
     await admin.context.PayrollPage.approveTimesheet(5);
     assert.ok(admin.calls.some(([kind, path]) => kind === 'post' && path === '/timesheets/5/approve'));

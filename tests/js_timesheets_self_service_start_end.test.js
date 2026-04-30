@@ -41,11 +41,9 @@ function buildContext({ hash = '#/my-timesheets', timesheets = [] } = {}) {
 function makeRow(values) {
     const fields = {
         'input[name="work_date"]': { value: values.work_date || '2026-04-01' },
-        'select[name="entry_mode"]': { value: values.entry_mode || 'start_end' },
-        'input[name="duration_hours"]': { value: values.duration_hours || '' },
         'input[name="start_time"]': { value: values.start_time || '' },
         'input[name="end_time"]': { value: values.end_time || '' },
-        'input[name="break_minutes"]': { value: String(values.break_minutes ?? '0') },
+        'input[name="break_hours"]': { value: String(values.break_hours ?? '0') },
         'input[name="calculated_hours"]': { value: values.calculated_hours || '' },
         'input[name="notes"]': { value: values.notes || '' },
     };
@@ -60,22 +58,25 @@ function makeRow(values) {
     {
         const { context } = buildContext();
         const html = await context.TimesheetSelfServicePage.renderTimesheets();
-        assert.ok(html.includes('Enter start/end times with break minutes'));
+        assert.ok(html.includes('Enter start/end times with break hours'));
         assert.ok(html.includes('name="start_time"'));
         assert.ok(html.includes('name="end_time"'));
-        assert.ok(html.includes('name="break_minutes"'));
+        assert.ok(html.includes('name="break_hours"'));
         assert.ok(html.includes('name="calculated_hours"'));
-        assert.ok(html.includes('Start / End'));
+        assert.ok(!html.includes('name="duration_hours"'));
+        assert.ok(!html.includes('name="entry_mode"'));
+        assert.ok(html.includes('readonly'));
+        assert.ok(html.includes('Break (hrs)'));
+        assert.ok(html.includes('timesheet-lines-table'));
     }
 
     {
         const { context, posts, navigations } = buildContext();
         const tableRow = makeRow({
             work_date: '2026-04-01',
-            entry_mode: 'start_end',
             start_time: '08:00',
             end_time: '16:30',
-            break_minutes: 30,
+            break_hours: 0.5,
             notes: 'Shift',
         });
         context.document.getElementById = (id) => {
@@ -103,10 +104,10 @@ function makeRow(values) {
         assert.strictEqual(posts.length, 1);
         assert.strictEqual(posts[0][0], '/timesheets/self');
         assert.strictEqual(posts[0][1].period_start, '2026-04-01');
-        assert.strictEqual(posts[0][1].lines[0].entry_mode, 'start_end');
         assert.strictEqual(posts[0][1].lines[0].start_time, '08:00');
         assert.strictEqual(posts[0][1].lines[0].end_time, '16:30');
         assert.strictEqual(posts[0][1].lines[0].break_minutes, 30);
+        assert.strictEqual(posts[0][1].lines[0].entry_mode, 'start_end');
         assert.ok(!Object.prototype.hasOwnProperty.call(posts[0][1].lines[0], 'duration_hours'));
         assert.deepStrictEqual(navigations, ['#/my-timesheets?id=99']);
     }
