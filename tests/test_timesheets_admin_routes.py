@@ -238,12 +238,16 @@ class TimesheetAdminRouteTests(unittest.TestCase):
             submitted = self._submitted_timesheet(company_db, employee_id=employee.id, hours=Decimal("7.75"))
 
             detail = get_timesheet(submitted.id, db=company_db, auth=admin_auth)
-            audit = get_timesheet_audit(submitted.id, db=company_db, auth=admin_auth)
+            audit = get_timesheet_audit(submitted.id, db=company_db, master_db=master_db, auth=admin_auth)
 
         self.assertEqual(detail.id, submitted.id)
+        self.assertEqual(detail.employee_name, "Aroha Ngata")
         self.assertEqual(detail.status, "submitted")
         self.assertGreaterEqual(len(detail.audit_events), 2)
         self.assertEqual([event.action for event in audit], ["create", "submit"])
+        self.assertEqual([event.actor_name for event in audit], [None, "Owner User"])
+        self.assertEqual([event.actor_email for event in audit], [None, "owner@example.com"])
+        self.assertTrue(all(event.created_at is not None for event in audit))
 
     def test_admin_can_correct_submitted_timesheet_with_reason(self):
         from app.models.timesheets import TimesheetAuditEvent

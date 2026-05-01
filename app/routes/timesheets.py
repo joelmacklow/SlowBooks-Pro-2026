@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.models.auth import User
 from app.database import get_db, get_master_db
 from app.models.timesheets import Timesheet
 from app.models.payroll import PayRun
@@ -47,8 +48,24 @@ def _resolved_employee_id(master_db: Session, db: Session, auth) -> int:
 
 def _detail_response(timesheet) -> TimesheetDetailResponse:
     response = TimesheetDetailResponse.model_validate(timesheet)
+    response.employee_name = f"{timesheet.employee.first_name} {timesheet.employee.last_name}".strip()
     response.lines = sorted(response.lines, key=lambda line: (line.work_date, line.id))
     response.audit_events = sorted(response.audit_events, key=lambda event: event.id)
+    return response
+
+
+def _list_response(timesheet) -> TimesheetListResponse:
+    response = TimesheetListResponse.model_validate(timesheet)
+    response.employee_name = f"{timesheet.employee.first_name} {timesheet.employee.last_name}".strip()
+    return response
+
+
+def _audit_response(event, actor_map: dict[int, User]) -> TimesheetAuditEventResponse:
+    response = TimesheetAuditEventResponse.model_validate(event)
+    actor = actor_map.get(event.actor_user_id) if event.actor_user_id is not None else None
+    if actor is not None:
+        response.actor_name = actor.full_name
+        response.actor_email = actor.email
     return response
 
 
@@ -58,11 +75,11 @@ def _readiness_response(*, period_start: date, period_end: date, timesheets, pay
         period_start=period_start,
         period_end=period_end,
         pay_run_id=pay_run_id,
-        draft=[TimesheetListResponse.model_validate(row) for row in grouped["draft"]],
-        submitted=[TimesheetListResponse.model_validate(row) for row in grouped["submitted"]],
-        approved=[TimesheetListResponse.model_validate(row) for row in grouped["approved"]],
-        rejected=[TimesheetListResponse.model_validate(row) for row in grouped["rejected"]],
-        locked=[TimesheetListResponse.model_validate(row) for row in grouped["locked"]],
+        draft=[_list_response(row) for row in grouped["draft"]],
+        submitted=[_list_response(row) for row in grouped["submitted"]],
+        approved=[_list_response(row) for row in grouped["approved"]],
+        rejected=[_list_response(row) for row in grouped["rejected"]],
+        locked=[_list_response(row) for row in grouped["locked"]],
     )
 
 
@@ -100,7 +117,7 @@ def list_self_timesheets(
         )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
-    return [TimesheetListResponse.model_validate(row) for row in rows]
+    return [_list_response(row) for row in rows]
 
 
 @router.post("/self", response_model=TimesheetDetailResponse, status_code=201)
@@ -326,10 +343,17 @@ def bulk_approve_timesheets_route(
 def get_timesheet_audit(
     timesheet_id: int,
     db: Session = Depends(get_db),
+    master_db: Session = Depends(get_master_db),
     auth=Depends(require_permissions("timesheets.manage")),
 ):
     try:
-        return [TimesheetAuditEventResponse.model_validate(event) for event in get_timesheet_audit_events(db, timesheet_id=timesheet_id)]
+        events = get_timesheet_audit_events(db, timesheet_id=timesheet_id)
+        actor_ids = {event.actor_user_id for event in events if event.actor_user_id is not None}
+        actor_map = {
+            user.id: user
+            for user in master_db.query(User).filter(User.id.in_(actor_ids)).all()
+        } if actor_ids else {}
+        return [_audit_response(event, actor_map) for event in events]
     except ValueError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
 
