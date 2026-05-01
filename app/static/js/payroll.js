@@ -407,12 +407,14 @@ const PayrollPage = {
                     <tbody>${lines}</tbody>
                 </table>
             </div>
-            <div class="table-container" style="margin-top:10px;">
-                <h3 style="margin-bottom:8px;">History</h3>
-                <table>
-                    <thead><tr><th>Date/Time</th><th>User</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
-                    <tbody>${auditRows}</tbody>
-                </table>
+            <div class="settings-section" style="margin-top:12px;">
+                <h3>History</h3>
+                <div class="table-container" style="margin-top:8px;">
+                    <table>
+                        <thead><tr><th>Date/Time</th><th>User</th><th>Action</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
+                        <tbody>${auditRows}</tbody>
+                    </table>
+                </div>
             </div>
             ${mode === 'audit' ? '' : `
                 <div class="form-actions" style="margin-top:10px;">

@@ -186,6 +186,7 @@ function createPayrollContext(overrides = {}) {
     assert.ok(html.includes('Approve'));
     assert.ok(html.includes('Reject'));
     assert.ok(html.includes('History'));
+    assert.ok(html.includes('<div class="settings-section" style="margin-top:12px;">'));
     assert.ok(html.includes('timesheet-lines-table'));
     assert.ok(html.includes('Date/Time'));
     assert.ok(html.includes('User'));
